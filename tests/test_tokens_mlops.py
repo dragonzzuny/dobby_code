@@ -270,6 +270,89 @@ class TestLeakage(unittest.TestCase):
         self.assertIn("DESCRIPTION", out["verdict"])
 
 
+class TestExternalLeakage(unittest.TestCase):
+    """The class of leak that every pipeline check passes."""
+
+    def _clean_pipeline(self, **extra):
+        return ExperimentSetup(
+            steps=("GroupKFold.split", "StandardScaler.fit", "model.fit"),
+            split_method="GroupKFold", seeds=(0, 1, 2), data_version="v1",
+            environment_pinned=True, command="python t.py",
+            n_train=800, n_test=200, holdout_split_before_run=True, **extra)
+
+    def test_published_labels_invalidate_a_clean_pipeline(self):
+        out = detect_leakage(self._clean_pipeline(
+            external_signals=("labels_published",)))
+        self.assertTrue(out["blocks_result"])
+        self.assertTrue(any(l["kind"] == "answer_available_externally"
+                            and l["severity"] == "confirmed"
+                            for l in out["leaks"]))
+
+    def test_pretraining_contamination_is_confirmed(self):
+        out = detect_leakage(self._clean_pipeline(
+            external_signals=("pretrained_on_this_data",)))
+        self.assertTrue(out["blocks_result"])
+
+    def test_public_origin_alone_is_only_suspected(self):
+        out = detect_leakage(self._clean_pipeline(
+            external_signals=("public_dataset_origin",)))
+        self.assertFalse(out["blocks_result"])
+        self.assertEqual(out["suspected"], 1)
+
+    def test_unknown_signal_is_reported_not_ignored(self):
+        out = detect_leakage(self._clean_pipeline(
+            external_signals=("vibes",)))
+        self.assertTrue(any("unrecognized" in l["detail"]
+                            for l in out["leaks"]))
+
+    def test_clean_pipeline_with_no_external_signal_passes(self):
+        out = detect_leakage(self._clean_pipeline())
+        self.assertFalse(out["blocks_result"])
+
+
+class TestRuleViolations(unittest.TestCase):
+    def test_reading_test_labels_is_confirmed_and_unfixable_by_caveat(self):
+        out = detect_leakage(ExperimentSetup(
+            steps=("GroupKFold.split",), split_method="GroupKFold",
+            rule_violations=("read_test_labels",)))
+        leak = next(l for l in out["leaks"]
+                    if l["kind"] == "evaluation_rule_violated")
+        self.assertEqual(leak["severity"], "confirmed")
+        self.assertIn("not sufficient", leak["fix"])
+
+    def test_multiple_violations_all_reported(self):
+        out = detect_leakage(ExperimentSetup(
+            steps=("GroupKFold.split",), split_method="GroupKFold",
+            rule_violations=("read_test_labels", "trained_on_test",
+                             "copied_solution")))
+        kinds = [l for l in out["leaks"]
+                 if l["kind"] == "evaluation_rule_violated"]
+        self.assertEqual(len(kinds), 3)
+
+    def test_unknown_violation_surfaced(self):
+        out = detect_leakage(ExperimentSetup(
+            steps=("GroupKFold.split",), split_method="GroupKFold",
+            rule_violations=("jaywalking",)))
+        self.assertTrue(any("unrecognized" in l["detail"]
+                            for l in out["leaks"]))
+
+
+class TestHoldoutOrdering(unittest.TestCase):
+    def test_holdout_not_split_before_the_run_is_suspected(self):
+        out = detect_leakage(ExperimentSetup(
+            steps=("GroupKFold.split",), split_method="GroupKFold",
+            n_test=200, holdout_split_before_run=False))
+        self.assertTrue(any("BEFORE the run" in l["detail"]
+                            for l in out["leaks"]))
+
+    def test_holdout_split_first_clears_it(self):
+        out = detect_leakage(ExperimentSetup(
+            steps=("GroupKFold.split",), split_method="GroupKFold",
+            n_test=200, holdout_split_before_run=True))
+        self.assertFalse(any("BEFORE the run" in l["detail"]
+                             for l in out["leaks"]))
+
+
 class TestReproducibility(unittest.TestCase):
     def test_missing_everything_lists_every_gap_with_a_consequence(self):
         out = check_reproducibility(ExperimentSetup())
@@ -402,7 +485,11 @@ class TestCombinedGate(unittest.TestCase):
                             split_method="GroupKFold", group_column=None,
                             seeds=(0, 1, 2), data_version="sha256:abc",
                             environment_pinned=True,
-                            command="python train.py", n_train=800, n_test=200),
+                            command="python train.py", n_train=800, n_test=200,
+                            # An "every gate passes" fixture must actually
+                            # satisfy every gate, including the ordering rule
+                            # that the holdout was carved out before the run.
+                            holdout_split_before_run=True),
             baseline_runs=[0.700, 0.701, 0.702],
             candidate_runs=[0.900, 0.901, 0.902],
             metric="roc_auc", score=0.90,

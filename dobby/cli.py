@@ -573,6 +573,18 @@ def cmd_ml(args):
     _out(ml_gate(ExperimentSetup(**setup_kwargs), **gate_kwargs))
 
 
+def cmd_pipeline(args):
+    """Suggest and validate an inference-time layer stack for a call budget."""
+    from .search import suggest_pipeline, validate_pipeline
+    out = suggest_pipeline(budget_calls=args.budget, task_kind=args.kind)
+    _out({
+        "task_kind": out["task_kind"],
+        "rationale": out["rationale"],
+        "layers": [{"kind": l.kind, "n": l.n, "keep": l.keep} for l in out["layers"]],
+        "validation": out["validation"],
+    })
+
+
 # --------------------------------------------------------------- main ----
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="dobby",
@@ -698,6 +710,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--file", required=True,
                    help="JSON describing the experiment setup and results")
     p.set_defaults(fn=cmd_ml)
+
+    p = sub.add_parser("pipeline", parents=[common],
+                       help="compose an inference-time layer stack for a budget")
+    p.add_argument("--budget", type=int, default=8,
+                   help="total model calls available")
+    p.add_argument("--kind", default="general",
+                   choices=["general", "verifiable", "open_ended"])
+    p.set_defaults(fn=cmd_pipeline)
     return ap
 
 

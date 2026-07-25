@@ -77,6 +77,43 @@ LEAKAGE_GROUP_SPILLOVER = "group_spillover"
 LEAKAGE_TEMPORAL = "temporal_shuffle"
 LEAKAGE_DUPLICATE_ROWS = "duplicate_rows_across_split"
 LEAKAGE_TEST_REUSE = "test_set_reused_for_selection"
+LEAKAGE_EXTERNAL_SOURCE = "answer_available_externally"
+LEAKAGE_RULE_VIOLATION = "evaluation_rule_violated"
+
+#: External-source leakage: the labels exist somewhere public, so a capable agent
+#: can *look them up* rather than predict them. This is invisible to every
+#: pipeline check above — the split is clean, the transforms are fitted
+#: correctly, and the score is still meaningless.
+#:
+#: It is not hypothetical. The ML-engineering benchmark most used for agent
+#: evaluation documents exactly this in its own task set: one image task draws
+#: from a publicly labelled dataset an agent can find, another exposes test-span
+#: files that leak the answer, and a third contains a field that permits trivially
+#: perfect prediction. A benchmark that ships a rule-violation detector and a
+#: plagiarism detector alongside its tasks is telling you that clean-looking
+#: pipelines are not the binding constraint on trustworthy ML results.
+EXTERNAL_SOURCE_SIGNALS: tuple[str, ...] = (
+    "public_dataset_origin",     # the data is a re-hosted public dataset
+    "labels_published",          # ground truth is downloadable
+    "leaderboard_accessible",    # the score oracle can be queried
+    "test_ids_searchable",       # test rows are identifiable in a public source
+    "pretrained_on_this_data",   # the model saw these rows in pretraining
+)
+
+#: Actions that make a reported score invalid regardless of the pipeline. These
+#: are *rules*, not statistics: no amount of cross-validation repairs a run that
+#: read the answers.
+RULE_VIOLATIONS: dict[str, str] = {
+    "read_test_labels": "test labels were opened, so the score measures memory",
+    "hand_labeled_test": "test rows were labelled by hand during the run",
+    "trained_on_test": "test rows were included in training data",
+    "leaderboard_probing": "the score oracle was queried repeatedly to select a "
+                           "model, making it a validation set",
+    "copied_solution": "the solution was copied from an existing public "
+                       "solution rather than derived",
+    "modified_metric": "the evaluation metric or its implementation was changed "
+                       "during the run",
+}
 
 
 @dataclasses.dataclass
@@ -107,6 +144,16 @@ class ExperimentSetup:
     duplicate_rows: int | None = None
     n_train: int | None = None
     n_test: int | None = None
+    #: Signals from EXTERNAL_SOURCE_SIGNALS that apply to this dataset. Supplied
+    #: by the caller because no local check can discover them — the whole point
+    #: is that the answer lives outside the pipeline.
+    external_signals: tuple[str, ...] = ()
+    #: Keys from RULE_VIOLATIONS that occurred during the run.
+    rule_violations: tuple[str, ...] = ()
+    #: True when the holdout was carved out BEFORE the agent/search began. The
+    #: ordering is what matters: a holdout split after the fact has already been
+    #: seen by whatever produced the candidates.
+    holdout_split_before_run: bool = False
 
     def step_index(self, needle: str) -> int | None:
         for i, step in enumerate(self.steps):
@@ -237,6 +284,49 @@ def detect_leakage(setup: ExperimentSetup) -> dict:
             f"{setup.duplicate_rows} duplicate row(s) exist: identical rows on "
             "both sides of the split are memorization, scored as generalization",
             "deduplicate before splitting, or split on a content hash"))
+
+    # 5b. external-source leakage — invisible to every pipeline check.
+    for signal in setup.external_signals:
+        if signal not in EXTERNAL_SOURCE_SIGNALS:
+            leaks.append(Leak(
+                LEAKAGE_EXTERNAL_SOURCE, "suspected",
+                f"unrecognized external signal {signal!r}",
+                f"use one of {list(EXTERNAL_SOURCE_SIGNALS)}"))
+            continue
+        confirmed_signals = ("labels_published", "leaderboard_accessible",
+                             "pretrained_on_this_data")
+        leaks.append(Leak(
+            LEAKAGE_EXTERNAL_SOURCE,
+            "confirmed" if signal in confirmed_signals else "suspected",
+            f"'{signal}': the ground truth for this task is reachable outside "
+            "the pipeline, so a capable agent can retrieve the answer instead "
+            "of predicting it. Every split-level check still passes",
+            "hold out a private slice the public source cannot cover, or "
+            "re-scope the task to something the public source does not answer"))
+
+    # 5c. rule violations — no statistic repairs a run that read the answers.
+    for violation in setup.rule_violations:
+        detail = RULE_VIOLATIONS.get(violation)
+        if detail is None:
+            leaks.append(Leak(
+                LEAKAGE_RULE_VIOLATION, "suspected",
+                f"unrecognized rule violation {violation!r}",
+                f"use one of {sorted(RULE_VIOLATIONS)}"))
+            continue
+        leaks.append(Leak(
+            LEAKAGE_RULE_VIOLATION, "confirmed", detail,
+            "the run is invalid; re-run under the evaluation rules. Reporting "
+            "this score with a caveat is not sufficient"))
+
+    # 5d. holdout carved out after the fact.
+    if setup.n_test and not setup.holdout_split_before_run:
+        leaks.append(Leak(
+            LEAKAGE_TEST_REUSE, "suspected",
+            "a holdout exists but was not recorded as split BEFORE the run: if "
+            "it was carved out afterwards, whatever produced the candidates has "
+            "already seen it",
+            "split the holdout first, keep it unreadable during the run, and "
+            "score the winner on it exactly once"))
 
     # 6. test-set reuse for selection.
     if setup.test_set_evaluations > 1:
