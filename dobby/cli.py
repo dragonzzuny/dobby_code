@@ -371,8 +371,19 @@ def cmd_panel(args):
               "note": "dry run: no provider was invoked"})
         return
 
+    from .progress import Tracker
+    from .spend import record_round
+    tracker = Tracker(label=f"panel:{protocol.id}", total=len(tasks))
+
+    def report(result, done, total):
+        # stderr, so stdout stays a clean JSON document for piping.
+        tracker.complete_unit(result.duration_s, failed=not result.ok)
+        print(tracker.bar(), file=sys.stderr, flush=True)
+
     round_ = run_round(tasks, cwd=_repo(args),
-                       max_concurrency=args.concurrency)
+                       max_concurrency=args.concurrency,
+                       on_complete=report if args.progress else None)
+    record_round(_data(args), round_, role=args.role)
     diversity = analyze(round_.texts, round_.labels) if round_.texts else None
     _out({
         "protocol": protocol.id,
@@ -384,6 +395,15 @@ def cmd_panel(args):
                      "chars": len(r.text), "truncated": r.truncated,
                      "text": r.text} for r in round_.ok_results],
         "diversity": diversity.to_dict() if diversity else None,
+        "timing": {
+            "wall_s": round(round_.wall_s, 2),
+            "agent_s": round(round_.serial_s, 2),
+            "parallelism": round_.speedup(),
+            "slowest": max((r.duration_s for r in round_.results
+                            if r is not None), default=0.0),
+            "note": ("a round finishes when its SLOWEST member does; "
+                     "parallelism is agent time over wall time"),
+        },
         "next": ("feed the answers through the grounding gate before synthesis: "
                  "ungrounded ideation is novel-sounding and low-feasibility"),
     })
@@ -585,6 +605,54 @@ def cmd_pipeline(args):
     })
 
 
+def cmd_sandbox(args):
+    """Run a command with its output withheld from context, or query a capture."""
+    from .sandbox import Capture, extract, run as sandbox_run, sweep
+    data = _data(args)
+    if args.action == "sweep":
+        _out(sweep(data, keep_hours=args.keep_hours))
+        return
+    if args.action == "run":
+        if not args.command:
+            sys.exit("sandbox run needs --command")
+        result = sandbox_run(args.command, data_dir=data, cwd=_repo(args),
+                             timeout_s=args.timeout,
+                             allow_network=args.allow_network,
+                             protected_paths=(_config(args).get("protected_paths")
+                                              or []))
+        _out(result.to_dict())
+        return
+    if args.action == "extract":
+        if not args.handle:
+            sys.exit("sandbox extract needs --handle")
+        path = os.path.join(data, "state", "sandbox", args.handle)
+        if not os.path.exists(path):
+            sys.exit(f"no capture at {path}")
+        with open(path, "rb") as f:
+            total = sum(1 for _ in f)
+        capture = Capture(handle=args.handle, path=path,
+                          bytes_total=os.path.getsize(path),
+                          lines_total=total, truncated=False)
+        _out(extract(capture, pattern=args.pattern, head=args.head,
+                     tail=args.tail, around=args.around,
+                     max_lines=args.max_lines))
+        return
+    sys.exit(f"unknown sandbox action {args.action!r}")
+
+
+def cmd_spend(args):
+    """Where the session's agent time went."""
+    from .spend import render_detail, statusline, summarize
+    data = _data(args)
+    window = args.window * 60 if args.window else None
+    if args.line:
+        print(statusline(data, window_s=window))
+        return
+    print(render_detail(data, window_s=window))
+    if args.json:
+        _out(summarize(data, window_s=window))
+
+
 # --------------------------------------------------------------- main ----
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="dobby",
@@ -654,6 +722,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="include the routed knowledge pack in each prompt")
     p.add_argument("--dry-run", action="store_true",
                    help="show the assignments and prompts without invoking")
+    p.add_argument("--progress", action="store_true",
+                   help="print a progress bar to stderr as agents finish")
     p.set_defaults(fn=cmd_panel)
 
     p = sub.add_parser("memory", parents=[common])
@@ -718,6 +788,33 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--kind", default="general",
                    choices=["general", "verifiable", "open_ended"])
     p.set_defaults(fn=cmd_pipeline)
+
+    p = sub.add_parser("sandbox", parents=[common],
+                       help="run with output withheld from context; query it")
+    p.add_argument("action", choices=["run", "extract", "sweep"])
+    p.add_argument("--command", default=None)
+    p.add_argument("--timeout", type=int, default=300)
+    p.add_argument("--allow-network", action="store_true",
+                   help="keep proxy routes (network is NOT truly blocked either "
+                        "way; see the module docstring)")
+    p.add_argument("--handle", default=None,
+                   help="capture handle, e.g. ab12cd34ef.out")
+    p.add_argument("--pattern", default=None)
+    p.add_argument("--head", type=int, default=None)
+    p.add_argument("--tail", type=int, default=None)
+    p.add_argument("--around", type=int, default=0)
+    p.add_argument("--max-lines", type=int, default=200)
+    p.add_argument("--keep-hours", type=float, default=24.0)
+    p.set_defaults(fn=cmd_sandbox)
+
+    p = sub.add_parser("spend", parents=[common],
+                       help="agent time per provider; --line for a status bar")
+    p.add_argument("--line", action="store_true",
+                   help="one-line form, for a host statusLine command")
+    p.add_argument("--window", type=float, default=None,
+                   help="restrict to the last N minutes")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_spend)
     return ap
 
 

@@ -168,8 +168,6 @@ The load-bearing negative section. Each item is a claim this repository is
 
 Recorded so they are not mistaken for oversights.
 
-- **Sandboxed execution** (context-mode's largest lever): raw payloads still enter
-  context when a caller reads them directly.
 - **AST-level call graph**: `blast_radius` consumes an edge list; there is no
   Tree-sitter parser, so import/call edges must be supplied.
 - **Embedding retrieval**: deliberate (ADR-2), and it is the main ceiling on §9.4.
@@ -182,8 +180,9 @@ Recorded so they are not mistaken for oversights.
   callable to `providers/fanout.py` is not done, so the tree search has never
   executed a model call.
 
-Closed since 0.1.0: team topologies (`swarm/topologies.py`) and API-kind provider
-transport (`providers/api.py`).
+Closed since 0.1.0: team topologies (`swarm/topologies.py`), API-kind provider
+transport (`providers/api.py`), and sandboxed execution (`dobby/sandbox.py`,
+measured at 99.6% of a 5001-line output withheld from context).
 
 ---
 

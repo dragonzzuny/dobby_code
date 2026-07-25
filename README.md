@@ -1,7 +1,7 @@
 # dobby
 
 [![ci](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml/badge.svg)](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-456-3fb950)](tests/)
+[![tests](https://img.shields.io/badge/tests-529-3fb950)](tests/)
 [![python](https://img.shields.io/badge/python-3.10%2B-4c8eda)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/dependencies-PyYAML%20only-4c8eda)](#install)
 [![platforms](https://img.shields.io/badge/platforms-linux%20%7C%20macos%20%7C%20windows-4c8eda)](.github/workflows/ci.yml)
@@ -230,6 +230,68 @@ you when a style constraint is a **net loss** — because it often is.
 **Failing commands are never condensed.** The detail that explains a failure is
 the first thing a summarizer drops.
 
+### Sandboxed execution — `dobby/sandbox.py`
+
+Compression makes a large output smaller. This stops it entering context at all.
+
+```bash
+dobby sandbox run --command "{python} build.py"
+# → exit_code, a 241-byte preview, and a handle. Measured on a 5001-line run:
+#   63,935 bytes produced · 241 bytes into context · 99.6% withheld
+
+dobby sandbox extract --handle <h> --pattern ERROR
+# → matched 1 of 5001 source lines
+```
+
+Output is **withheld unless asked for**, which inverts the usual default.
+Compressing 320 KB to 10% still costs 32 KB of context; extracting three
+matching lines costs 200 bytes.
+
+**Failing commands are never condensed**, extractions are bounded twice (lines
+*and* characters, because either alone is escapable), and a command that exceeds
+its size cap is *killed* rather than truncated — a run whose tail is missing
+looks complete, and the tail is where failures print.
+
+The isolation is honest about its limits. `Result.network_blocked` is always
+`False`: proxy variables are cleared and offline hints set, but a determined
+binary can still open a socket, and real isolation needs a namespace or a
+container. It is a boundary against **accidents**, not hostile code.
+
+### Time, progress, and where it went — `dobby/progress.py`, `dobby/spend.py`
+
+```bash
+dobby panel "..." --size 4 --progress     # live bar on stderr
+dobby spend                               # per-provider breakdown
+dobby spend --line                        # one line, for a host status bar
+```
+
+```
+panel:adversarial: [#########---------------] 3/8 ~2m left  (1 failed)
+
+running 2: codex:security 1m13s, claude:correctness 51s | eta ~1m02s
+  | agents 8 · 4m19s spent · 2.29x parallel · 1 failed | top claude 2m22s
+```
+
+Most progress bars lie, because they assume every remaining unit costs what the
+average finished one cost — false when provider calls vary by an order of
+magnitude. So this one:
+
+- **refuses to estimate below 3 completions** — one sample measures one thing,
+  not a rate;
+- reports a **range** from observed spread, widening when work is erratic;
+- extrapolates parallel work on **waves, not items** — a round finishes when its
+  slowest member does, so six agents in two waves cost two round-trips;
+- reports **agent time and wall time separately**. Agent time is what was
+  *bought*; wall time is what was *waited*. Their ratio is the parallelism
+  actually achieved, and either number alone misleads in the opposite direction.
+
+To put it in Claude Code's status bar, set `statusLine` in `settings.json`:
+
+```json
+{ "statusLine": { "type": "command",
+                  "command": "python -m dobby.cli spend --line" } }
+```
+
 ### Design contract — `DESIGN.md`
 
 YAML token frontmatter plus prose rules, validated:
@@ -273,14 +335,18 @@ dobby/review.py    PBR review, QA/QC split, priced severity
 dobby/mlops.py     leakage / reproducibility / rigor / interpretation
 dobby/tokens.py    output condensers, snapshots, blast radius
 dobby/research.py  search planning, claim + citation verification
-dobby/design.py    DESIGN.md validation
+dobby/design.py    DESIGN.md validation, aesthetics, contrast
+dobby/search.py    solution-tree search, layer composition, case bank
+dobby/sandbox.py   execution whose output never enters context
+dobby/progress.py  ETA that refuses to guess
+dobby/spend.py     where the session's agent time went
 
 .dobby/            PROJECT DATA — ontology, knowledge, policies, config
 .claude/rules/     scoped rules
 .claude/skills/    procedures
 mcp/               optional MCP gateway: 4 meta-tools, allowlisted, no network
 evals/             retrieval gold (dev / val / holdout)
-tests/             344 tests
+tests/             529 tests
 docs/              architecture, operating manual, failure catalog, threat
                    model, research evidence matrix
 ```
@@ -288,7 +354,7 @@ docs/              architecture, operating manual, failure catalog, threat
 ## Verify it yourself
 
 ```bash
-python -m unittest discover -s tests -q      # 344 tests
+python -m unittest discover -s tests -q      # 529 tests
 python -m dobby.cli slice --scenario SELF-CHECK
 python -m dobby.cli doctor
 ```

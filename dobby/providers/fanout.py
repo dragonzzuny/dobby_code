@@ -227,12 +227,19 @@ def run_round(tasks: Sequence[AgentTask], *,
               cwd: str | None = None,
               max_concurrency: int | None = None,
               isolate: bool | None = None,
-              output_cap: int | None = None) -> FanoutRound:
+              output_cap: int | None = None,
+              on_complete=None) -> FanoutRound:
     """Run every task concurrently; return one result per task, input-ordered.
 
     `isolate=None` decides from the specs (isolate iff ≥2 mutating providers).
     Pass False to force a shared tree — correct for read-only panels and for
     callers that have already arranged isolation themselves.
+
+    `on_complete(result, done, total)` fires as each agent finishes, in
+    completion order rather than input order. It exists so a caller can show
+    progress during a round that takes minutes; without it the only signal is
+    silence followed by everything at once. A callback that raises is swallowed —
+    a broken progress display must not lose a completed round's results.
     """
     tasks = list(tasks)
     if not tasks:
@@ -275,6 +282,7 @@ def run_round(tasks: Sequence[AgentTask], *,
             return result
 
         results: list[ProviderResult] = [None] * len(tasks)  # type: ignore[list-item]
+        finished = 0
         with concurrent.futures.ThreadPoolExecutor(max_workers=limit) as pool:
             futures = {pool.submit(call, t): i for i, t in enumerate(tasks)}
             for fut in concurrent.futures.as_completed(futures):
@@ -286,6 +294,14 @@ def run_round(tasks: Sequence[AgentTask], *,
                     results[idx] = ProviderResult(
                         provider=tasks[idx].provider_id, ok=False,
                         error=f"orchestrator error: {type(exc).__name__}: {exc}")
+                finished += 1
+                if on_complete is not None:
+                    try:
+                        on_complete(results[idx], finished, len(tasks))
+                    except Exception:  # noqa: BLE001
+                        # A broken progress display must never cost a round that
+                        # already succeeded. Swallowed deliberately.
+                        pass
 
         isolated = trees.available
         # Read diffs before the worktrees are torn down by __exit__.
