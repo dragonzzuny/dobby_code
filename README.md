@@ -1,5 +1,12 @@
 # dobby
 
+[![ci](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml/badge.svg)](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-344-3fb950)](tests/)
+[![python](https://img.shields.io/badge/python-3.10%2B-4c8eda)](https://www.python.org/)
+[![deps](https://img.shields.io/badge/dependencies-PyYAML%20only-4c8eda)](#install)
+[![platforms](https://img.shields.io/badge/platforms-linux%20%7C%20macos%20%7C%20windows-4c8eda)](.github/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-Apache--2.0-8b949e)](LICENSE)
+
 A portable agent harness. Drop it into any repository and a capable model starts
 behaving like a disciplined engineer: evidence before claims, scope held, outputs
 validated, sessions continuous — and it gets better at *that* repository over
