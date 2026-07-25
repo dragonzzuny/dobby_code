@@ -97,6 +97,45 @@ are adopted; their **accounting** is corrected.
 | ML agents need capabilities coding agents lack: experiment tracking and reproducibility, data validation and **leakage detection**, statistical rigor, benchmarking against a real baseline | `mlops.py` four gates | `OpenJobsAI/awesome-ai-agents-for-ml` (category survey); MLE-Bench / MLAgentBench framing | A curated list, not a study. The specific leak patterns encoded (fit-before-split, group spillover, temporal shuffle, holdout reuse) are standard practice knowledge. |
 | Hyperparameter search is a multiple-comparison procedure and is almost never treated as one | `mlops.multiple_comparison_note` | standard statistics | The family-wise figure assumes independent configurations, which a search over a structured space violates — so it is an upper bound, reported as such. |
 
+## 8b. ML-agent ecosystem survey (52 projects)
+
+Surveyed the full `awesome-ai-agents-for-ml` inventory — 52 projects across 11
+categories. Most are frameworks or benchmarks whose *mechanisms* do not transfer
+to a stdlib harness. Four did.
+
+| claim adopted | where | source | limit |
+|---|---|---|---|
+| **Trial-and-error framed as a TREE search over candidate solutions beats a linear improve-the-current-thing agent.** Node = a solution; a hard-coded policy drafts until there are enough initial candidates, debugs while a buggy node is within a bounded depth, then improves the best non-buggy node. A summarization operator keeps only metrics, hyperparameters, and debug hints so the context does not saturate | `dobby/search.py` | **AIDE** — *AI-Driven Exploration in the Space of Code* (arXiv 2502.13138), WecoAI. MLE-Bench: AIDE+o1-preview **16.9%** medal rate, AIDE+GPT-4o **8.7%**, vs OpenHands+GPT-4o **4.4%**. Splits a holdout **before** the agent runs | Those medal rates are AIDE's, with a real LLM on Kaggle tasks. This implementation is the *policy and its bounds*, driven by an injected callable; it has been tested for correctness and has never been run against a model. No performance claim is made or implied. |
+| **Compose inference-time layers** — generate → rank → fuse → critique → verify — rather than making one call. A composed stack of open-weight models can beat a single frontier call | `dobby/search.Layer`, `validate_pipeline`, `suggest_pipeline` | **Archon** (arXiv; ScalingIntelligence), Inference-Time Architecture Search. Reports 11–15% over GPT-4o for searched configurations | Archon *searches* the configuration space; this module validates and suggests, and does not search. The static validator is this repository's addition — it catches paid no-ops (ranking one candidate, fusing after a collapse, revising with no critique) that a running pipeline hides. |
+| **Case-based reasoning over past tasks**: retrieve a similar prior case, adapt its approach, retain the outcome | `dobby/search.Case`, `retrieve_cases`, `retain_case` | **DS-Agent** (ICML 2024, arXiv 2402.17453) — case bank built from curated Kaggle human-insight cases | DS-Agent's bank is human-curated; this one accumulates from the harness's own runs, so it starts empty and is only as good as what has been retained. Storing the *approach* rather than the answer, and separating failed cases into an `avoid` list, are this repository's additions. |
+| **Report the yield of an autonomous improvement loop.** Roughly 20 genuine improvements from about 700 experiments | `dobby/search.yield_report` | **autoresearch** (karpathy) — 5-minute training windows, keep-or-discard on validation bits-per-byte | **The README does not document how it separates a genuine improvement from run-to-run noise** — no statistical test, confidence interval, or false-positive control is described. That gap is why `mlops.compare_runs` refuses to call a single-run delta an improvement. The ~2.9% figure is used only as a *calibration expectation*, never as a target. |
+
+**The most valuable finding was a benchmark's own honesty.** MLE-bench's "Known
+Issues" catalogues leakage *in its own task set*: a dog-breed task drawn from a
+publicly labelled dataset an agent can look up, a task whose public test-span
+files leak the answer, and one containing a field that permits trivially perfect
+prediction. It ships a **rule-violation detector** and a **plagiarism detector**
+alongside the tasks. That is the evidence for `LEAKAGE_EXTERNAL_SOURCE` and
+`RULE_VIOLATIONS` in `dobby/mlops.py`: a benchmark maintained by a frontier lab
+found that clean-looking pipelines were not the binding constraint on trustworthy
+results, and said so in public.
+
+Categories surveyed and **not** adopted, with the reason: agent frameworks
+(OpenHands, MetaGPT, AutoGen, CrewAI, LangGraph, CAMEL) are runtimes this harness
+sits above rather than inside; RL training stacks (rllm, RLinf, Agent-R1,
+AgentGym-RL, MARTI) require a training loop the kit does not have; MLOps
+platforms (MLflow, Weave, Opik, Metaflow, ZenML) are services, and their
+*reproducibility fields* were already covered by `check_reproducibility`;
+AI-for-science agents (virtual-lab, ChemCrow, SciToolAgent) are domain tool
+integrations.
+
+## 8c. Design systems for agents
+
+| claim adopted | where | source | limit |
+|---|---|---|---|
+| **Tokens alone produce generic output.** An explicit *aesthetic* — density, contrast strategy, what to avoid — is the missing half; two products with identical tokens still diverge without it. Named layout-section variants stop an agent inventing a structure per screen | `dobby/design.AESTHETICS`, `LAYOUT_SECTIONS`, and the `aesthetic` frontmatter check | `bergside/typeui` — 80+ design systems in DESIGN.md/SKILL.md form, 20+ layout categories, served over MCP | typeui serves a curated registry; this is six presets and eight section families, chosen to cover the range rather than to be exhaustive. No registry is fetched — the kit makes no network calls. |
+| Generated palettes must meet WCAG contrast floors | `dobby/design.check_contrast` | WCAG 2.x (4.5:1 body, 3:1 large/UI) | Only text-on-surface pairs are checked. Testing every colour against every other produces a wall of irrelevant failures, and a report nobody reads is the same as no report. |
+
 ## 9. What is NOT established
 
 The load-bearing negative section. Each item is a claim this repository is
@@ -129,15 +168,22 @@ The load-bearing negative section. Each item is a claim this repository is
 
 Recorded so they are not mistaken for oversights.
 
-- **Team patterns**: pipeline, supervisor, and hierarchical delegation from §7.
 - **Sandboxed execution** (context-mode's largest lever): raw payloads still enter
   context when a caller reads them directly.
 - **AST-level call graph**: `blast_radius` consumes an edge list; there is no
   Tree-sitter parser, so import/call edges must be supplied.
 - **Embedding retrieval**: deliberate (ADR-2), and it is the main ceiling on §9.4.
 - **A model-judge adapter**: every `model_judgment` criterion is `NOT RUN`.
-- **API-kind provider transport**: `kimi` / `dashscope` are declared in the
-  catalog; `run_provider` refuses them, and no HTTP client exists yet.
+- **Inference-time architecture *search***: `suggest_pipeline` proposes and
+  `validate_pipeline` checks, but nothing searches the configuration space the
+  way Archon does. Searching requires an objective and a budget to spend on it.
+- **A driver that runs `search.search` against real providers.** The policy,
+  bounds, and honesty checks are implemented and tested; wiring the `expand`
+  callable to `providers/fanout.py` is not done, so the tree search has never
+  executed a model call.
+
+Closed since 0.1.0: team topologies (`swarm/topologies.py`) and API-kind provider
+transport (`providers/api.py`).
 
 ---
 

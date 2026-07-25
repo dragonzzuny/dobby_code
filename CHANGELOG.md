@@ -9,17 +9,86 @@ though it were proven.
 
 ## [Unreleased]
 
+### Added — solution search (`dobby/search.py`)
+
+- Tree search over candidate solutions with a hard-coded DRAFT → DEBUG → IMPROVE
+  policy. Published MLE-Bench results put a tree-search agent at 16.9% medals
+  against 4.4% for the strongest linear agent at the same model tier.
+- Inference-time layer composition (generate / rank / fuse / critique / revise /
+  verify) with a **static validator** that catches paid no-ops before any
+  inference is spent — ranking one candidate, fusing after a collapse, revising
+  with no preceding critique. Each produces a pipeline that runs and returns a
+  plausible answer, so nothing else surfaces them.
+- Case-based reasoning that stores the **approach**, never the answer. Failed
+  cases are retrievable but returned in a separate `avoid` list.
+- `yield_report`, because published autonomous-research loops report
+  single-digit-percent hit rates and a loop that reports only its successes
+  implies a rate it does not have.
+
+### Added — team topologies (`dobby/swarm/topologies.py`)
+
+- Six shapes: independent, pipeline, fan-out-in, supervisor, hierarchical, mesh.
+  `mesh` is selectable but never recommended — omitting it would not stop anyone
+  wiring one, only stop them being told what it does.
+- **`framing_depth` replaced connectivity as the diversity metric.** At six
+  agents a pipeline and a fan-out-in have identical connectivity (0.167) and
+  opposite diversity properties: the pipeline chains one framing through five
+  reinterpretations (depth 5, 1 independent agent) while the fan-out keeps five
+  agents reading the raw task (depth 1, 5 independent). Connectivity cannot see
+  that difference; the documented claim that it tracked diversity was wrong and
+  a test caught it.
+- Plans are data. `waves()` schedules them, `cost()` separates wall-clock
+  (waves) from token cost (agents), and a cyclic plan raises instead of looping.
+
+### Added — API provider transport (`dobby/providers/api.py`)
+
+- OpenAI-compatible transport for `kimi` and `dashscope`, stdlib `urllib` only.
+- `allow_network` is a **required keyword with no default**, so egress cannot be
+  enabled by a refactor nobody reviewed as a security change. Missing keys and
+  disallowed calls raise rather than degrading into a failed result.
+- Prompts are redacted **before** transmission; redacting a response is theatre.
+- A 512 KB request ceiling, and an audit record of bytes actually sent.
+
+### Added — ML leakage classes that pipeline checks cannot see
+
+- **External-source leakage**: the labels exist somewhere public, so an agent can
+  look them up. The split is clean and the score is still meaningless.
+- **Rule violations** (read test labels, trained on test, leaderboard probing,
+  copied solution, modified metric) — CONFIRMED and explicitly unfixable by
+  caveat.
+- **Holdout ordering**: a holdout carved out after the run has already been seen
+  by whatever produced the candidates.
+
+### Added — design (`dobby/design.py`)
+
+- Six **aesthetic** presets, each committing to a density and a contrast
+  strategy. Tokens say what values exist; an aesthetic says what the interface is
+  trying to be, and without it two products with identical tokens still diverge.
+- Named layout-section variants, so an agent stops inventing a structure per
+  screen.
+- WCAG contrast checking on text-on-surface pairs. Only those pairs — testing
+  every colour against every other produces a report nobody reads.
+
+### Fixed
+
+- `search`: bounding debug **depth** did not bound debug **work**. A shallow
+  buggy node stayed eligible forever, so the policy kept returning to it and
+  drained the whole budget into retries of one broken draft. One repair attempt
+  per node plus the depth cap makes the broken region finite — an all-buggy run
+  now stops after 3 nodes instead of consuming a 20-node budget.
+- `search`: `higher_is_better` was applied to final selection but not to the
+  IMPROVE policy, so a loss-metric search spent every remaining call refining
+  the worst candidate while still reporting the right answer.
+- `search`: patience fired on runs with zero viable nodes, reporting "converged"
+  for a search that never started climbing.
+
 ### Planned
 
-- Deep survey of the ML/data-science agent ecosystem, feeding concrete gates
-  into `dobby/mlops.py` (experiment tracking, notebook handling, AutoML search
-  hygiene, RL-specific evaluation traps).
-- Team-architecture patterns not yet implemented: pipeline, supervisor,
-  hierarchical delegation (`docs/RESEARCH_EVIDENCE_MATRIX.md` §10).
-- API-kind provider transport for `kimi` / `dashscope` — currently declared in
-  the catalog and refused by `run_provider`.
+- A driver wiring `search.search` to real providers — the policy is tested, but
+  it has never executed a model call.
 - A model-judge adapter so `model_judgment` criteria stop reporting `NOT RUN`.
 - Sandboxed execution so large tool payloads never enter context at all.
+- An AST call graph so `blast_radius` builds its own edges.
 
 ## [0.1.0] — 2026-07-26
 

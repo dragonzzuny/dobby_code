@@ -1,4 +1,5 @@
 ---
+aesthetic: utilitarian
 colors:
   background: "#0e1116"
   surface: "#161b22"

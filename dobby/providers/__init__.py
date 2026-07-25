@@ -5,6 +5,7 @@ from .base import (CAPABILITIES, COST_TIERS, ProviderError, ProviderRegistry,
 from .catalog import CATALOG, ROLE_ROUTING, registry, role_preference
 from .detect import ABSENT, AVAILABLE, BLOCKED, report, resolve_panel, resolve_role, survey
 from .fanout import AgentTask, FanoutRound, broadcast, run_round
+from .api import NetworkNotAllowed, call_api
 from .run import probe, run_by_id, run_provider
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "role_preference", "AVAILABLE", "ABSENT", "BLOCKED", "survey", "report",
     "resolve_role", "resolve_panel", "AgentTask", "FanoutRound", "run_round",
     "broadcast", "run_provider", "run_by_id", "probe",
+    "call_api", "NetworkNotAllowed",
 ]

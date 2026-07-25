@@ -54,6 +54,150 @@ TYPOGRAPHY_PROPS: tuple[str, ...] = ("fontFamily", "fontSize", "fontWeight",
 _HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.DOTALL)
 
+# --------------------------------------------------------------------------
+# Aesthetic frameworks
+#
+# Tokens say WHAT values exist. An aesthetic says what the interface is TRYING
+# to be, and it is the missing half: two products can share an identical palette
+# and spacing scale and still look nothing alike, because one is dense and
+# utilitarian and the other is airy and editorial. An agent given only tokens
+# reproduces the values and invents the character, which is why AI-generated UI
+# converges on the same generic look regardless of the token file it was handed.
+#
+# Each entry is a commitment with consequences, not a mood word. `density` and
+# `contrast_strategy` are the two properties that actually change layout code.
+# --------------------------------------------------------------------------
+
+AESTHETICS: dict[str, dict] = {
+    "utilitarian": {
+        "intent": "the reader is here to make a decision, not to be impressed",
+        "density": "high",
+        "contrast_strategy": "semantic colour only; hue carries state",
+        "signature": "tabular data, monospace values, minimal chrome",
+        "avoid": "decorative gradients, hero sections, animated transitions",
+    },
+    "editorial": {
+        "intent": "the reader is being led through an argument",
+        "density": "low",
+        "contrast_strategy": "typographic scale carries hierarchy",
+        "signature": "generous line height, wide margins, few colours",
+        "avoid": "dense tables, competing accent colours",
+    },
+    "minimal": {
+        "intent": "nothing is present that does not earn its place",
+        "density": "medium",
+        "contrast_strategy": "space and weight, not colour",
+        "signature": "one accent, flat surfaces, restrained radius",
+        "avoid": "shadows used for emphasis, more than two type weights",
+    },
+    "brutalist": {
+        "intent": "the structure of the system is the visual language",
+        "density": "high",
+        "contrast_strategy": "hard borders and raw contrast",
+        "signature": "visible grid, monospace, zero radius, no shadow",
+        "avoid": "soft shadows, rounded corners, muted palettes",
+    },
+    "glass": {
+        "intent": "layers imply depth and focus",
+        "density": "medium",
+        "contrast_strategy": "blur and translucency separate planes",
+        "signature": "backdrop blur, translucent surfaces, soft borders",
+        "avoid": "small text over translucency — it fails contrast checks",
+    },
+    "enterprise": {
+        "intent": "consistency across hundreds of screens beats local optimality",
+        "density": "high",
+        "contrast_strategy": "strict token adherence; no per-screen decisions",
+        "signature": "predictable component slots, dense forms, clear affordances",
+        "avoid": "bespoke layouts, one-off components",
+    },
+}
+
+#: Layout sections an agent is repeatedly asked to produce. Naming them is what
+#: lets a DESIGN.md say "our pricing table is comparison-first with 3 tiers"
+#: instead of leaving the agent to invent a structure each time — which is where
+#: inconsistency between screens actually originates.
+LAYOUT_SECTIONS: dict[str, tuple[str, ...]] = {
+    "hero": ("centred-statement", "split-media", "minimal-headline"),
+    "pricing": ("tier-columns", "comparison-table", "single-plan"),
+    "features": ("icon-grid", "alternating-rows", "bento"),
+    "nav": ("top-bar", "sidebar", "command-palette"),
+    "data_table": ("dense-rows", "grouped", "expandable-detail"),
+    "form": ("single-column", "stepped", "inline-validation"),
+    "empty_state": ("illustrated", "instructional", "silent"),
+    "report": ("verdict-first", "evidence-table", "narrative"),
+}
+
+#: Contrast floors from WCAG. Included because a generated palette that fails
+#: them is not a style choice — a design system that ships unreadable text is
+#: broken in the same way a wrong colour token is broken, and neither is caught
+#: by any of the structural checks above.
+CONTRAST_MINIMUMS: dict[str, float] = {
+    "body_text": 4.5,
+    "large_text": 3.0,
+    "ui_component": 3.0,
+}
+
+
+def _srgb_channel(value: float) -> float:
+    return value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
+
+
+def relative_luminance(hex_colour: str) -> float | None:
+    """WCAG relative luminance, or None when the value is not a plain hex."""
+    text = hex_colour.strip()
+    if not _HEX_RE.match(text):
+        return None
+    body = text[1:]
+    if len(body) == 3:
+        body = "".join(c * 2 for c in body)
+    body = body[:6]
+    r, g, b = (int(body[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+    return (0.2126 * _srgb_channel(r) + 0.7152 * _srgb_channel(g)
+            + 0.0722 * _srgb_channel(b))
+
+
+def contrast_ratio(a: str, b: str) -> float | None:
+    """WCAG contrast ratio between two hex colours, or None if unparseable."""
+    la, lb = relative_luminance(a), relative_luminance(b)
+    if la is None or lb is None:
+        return None
+    lighter, darker = max(la, lb), min(la, lb)
+    return round((lighter + 0.05) / (darker + 0.05), 2)
+
+
+def check_contrast(colors: dict) -> list[dict]:
+    """Check text-on-background pairs against the WCAG floors.
+
+    Only pairs that are actually named as text-on-surface are checked. Testing
+    every colour against every other would produce a wall of irrelevant failures
+    — an accent is not required to contrast with a border — and a report nobody
+    reads is the same as no report.
+    """
+    problems: list[dict] = []
+    if not isinstance(colors, dict):
+        return problems
+    surfaces = [k for k in colors
+                if any(s in k.lower() for s in ("background", "surface"))]
+    texts = [k for k in colors if "text" in k.lower()]
+    for text_key in texts:
+        for surface_key in surfaces:
+            ratio = contrast_ratio(str(colors[text_key]),
+                                   str(colors[surface_key]))
+            if ratio is None:
+                continue
+            floor = (CONTRAST_MINIMUMS["large_text"]
+                     if "muted" in text_key.lower()
+                     else CONTRAST_MINIMUMS["body_text"])
+            if ratio < floor:
+                problems.append({
+                    "severity": "error",
+                    "where": f"contrast:{text_key}/{surface_key}",
+                    "detail": (f"{ratio}:1 is below the {floor}:1 floor — this "
+                               "pair is unreadable for a meaningful share of "
+                               "users, which is a defect, not a style choice")})
+    return problems
+
 
 def split_frontmatter(text: str) -> tuple[str | None, str]:
     """Return (yaml_source, markdown_body). yaml_source is None when absent."""
@@ -218,6 +362,25 @@ def validate_design_md(path: str) -> dict:
     tokens = parsed["tokens"]
     if "colors" in tokens:
         problems.extend(_check_colors(tokens["colors"]))
+        problems.extend(check_contrast(tokens["colors"]))
+
+    # An unnamed aesthetic is the gap that makes token-only files produce
+    # generic output: the agent reproduces the values and invents the character.
+    aesthetic = tokens.get("aesthetic")
+    if aesthetic is None:
+        problems.append({
+            "severity": "warning", "where": "frontmatter.aesthetic",
+            "detail": ("no aesthetic declared. Tokens say what values exist; an "
+                       "aesthetic says what the interface is trying to BE. "
+                       "Without it two products with identical tokens still "
+                       f"diverge. Choose one of {sorted(AESTHETICS)} or "
+                       "describe your own in the Overview section")})
+    elif isinstance(aesthetic, str) and aesthetic not in AESTHETICS:
+        problems.append({
+            "severity": "info", "where": "frontmatter.aesthetic",
+            "detail": (f"'{aesthetic}' is not a known preset "
+                       f"({sorted(AESTHETICS)}); make sure the Overview section "
+                       "defines its density and contrast strategy")})
     if "typography" in tokens:
         problems.extend(_check_typography(tokens["typography"]))
     if "spacing" in tokens:
