@@ -1,0 +1,77 @@
+{
+  "canonical_source": "AGENTS.md + docs/OPERATING_MANUAL.md (prose canonical for humans; this file is the machine-readable mirror; on conflict fix prose first, then here)",
+  "policies": [
+    {
+      "id": "P-DECOMPOSE", "severity": "high", "always_on": true,
+      "trigger_keywords": [],
+      "required_actions": ["split the request into numbered requirements", "map each requirement to a concrete file/command/artifact", "write reports/LEDGER_<slug>.md when >1 requirement or >~10 tool calls are expected"],
+      "forbidden": ["starting changes while any requirement is unmapped or ambiguous"],
+      "evidence_of_completion": "ledger file, or the numbered restatement in the first reply",
+      "escalation_required": false
+    },
+    {
+      "id": "P-EVIDENCE", "severity": "high", "always_on": true,
+      "trigger_keywords": ["count", "how many", "status", "check", "verify", "why", "몇", "확인", "검증", "왜"],
+      "required_actions": ["run a command/test/script before stating any fact about the system", "name exact files/lines, never bare percentages", "when two measurements disagree, reconcile before proceeding"],
+      "forbidden": ["quoting numbers from docs/memory/prior sessions as current facts"],
+      "evidence_of_completion": "command output or report file produced this session",
+      "escalation_required": false
+    },
+    {
+      "id": "P-CONFIG-VS-REALITY", "severity": "high",
+      "trigger_keywords": ["config", "yaml", "json", "settings", "env", "path", "url", "endpoint", "version", "설정", "경로"],
+      "required_actions": ["treat every config/doc value as a claim; verify it against the running system or disk before wiring it"],
+      "forbidden": ["passing a configured path/value downstream without an existence/behavior check"],
+      "evidence_of_completion": "the per-key verification result shown in the reply or report",
+      "escalation_required": false
+    },
+    {
+      "id": "P-PRESERVE", "severity": "critical", "always_on": true,
+      "trigger_keywords": ["delete", "remove", "rm", "move", "rename", "clean", "overwrite", "reset", "정리", "삭제", "이동", "덮어"],
+      "required_actions": ["never modify/move/delete anything you did not create this session without explicit user approval AND a named restore path", "all produced artifacts go to new files/dirs; prefer reversible operations"],
+      "forbidden": ["in-place edits of generated files (regenerate instead)", "rm on pre-existing content", "silent overwrites"],
+      "evidence_of_completion": "operation log: every write/delete listed with its location",
+      "escalation_required": true
+    },
+    {
+      "id": "P-MINIMAL", "severity": "medium", "always_on": true,
+      "trigger_keywords": [],
+      "required_actions": ["touch exactly what the ledger scopes", "report out-of-scope defects as findings, never fix inline"],
+      "forbidden": ["while-I-was-at-it changes", "repository reorganization without a request"],
+      "evidence_of_completion": "files-touched list stays inside ledger scope",
+      "escalation_required": false
+    },
+    {
+      "id": "P-CONTRACT", "severity": "high",
+      "trigger_keywords": ["produce", "convert", "generate", "export", "format", "schema", "api", "생성", "변환", "출력"],
+      "required_actions": ["observe the exact format the consumer expects (existing examples, schema, tests) and match it byte-level where relevant"],
+      "forbidden": ["inventing fields/columns/conventions", "silent format or encoding changes"],
+      "evidence_of_completion": "a consumer-side check passes on the produced artifact",
+      "escalation_required": false
+    },
+    {
+      "id": "P-VALIDATE-OUTPUT", "severity": "high", "always_on": true,
+      "trigger_keywords": [],
+      "required_actions": ["validate OUTPUTS with an independent check after producing; a check passing on inputs says nothing about outputs"],
+      "forbidden": ["declaring success because the producing command exited 0", "softening a FAIL to 'mostly fine'"],
+      "evidence_of_completion": "the output-side check result quoted in the report",
+      "escalation_required": false
+    },
+    {
+      "id": "P-REPORT", "severity": "high", "always_on": true,
+      "trigger_keywords": [],
+      "required_actions": ["outcome first (Done/Partially complete/Blocked)", "requirement table with evidence paths", "commands run with pass/fail", "assumptions with levels", "explicit not-done / not-verifiable list"],
+      "forbidden": ["'should work' claims", "success claims about anything unverifiable in this environment", "numbers without a same-session command"],
+      "evidence_of_completion": "the final message structure itself",
+      "escalation_required": false
+    },
+    {
+      "id": "P-ESCALATE", "severity": "critical",
+      "trigger_keywords": ["deploy", "publish", "release", "upload", "install", "production", "license", "credentials", "secret", "payment", "배포", "설치", "업로드", "운영"],
+      "required_actions": ["stop and ask with the fixed format (Decision required / Evidence / Option A / Option B / Recommendation / Reason / Safe default) before: irreversible or destructive actions, external publication, package installs, licensed-content handling, >30min operations, or when two valid readings change the outcome"],
+      "forbidden": ["asking what a command can measure (that is Level 0 — measure it)", "proceeding silently on the destructive reading of an ambiguous request"],
+      "evidence_of_completion": "the escalation message, or the recorded Level-0/1 resolution",
+      "escalation_required": true
+    }
+  ]
+}

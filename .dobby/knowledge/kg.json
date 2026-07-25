@@ -1,0 +1,1182 @@
+{
+ "nodes": [
+  {
+   "id": "tool:cli-context",
+   "type": "Tool",
+   "name": "harness context",
+   "summary": "routed context pack for a task: fired policies, skills, knowledge summaries, budgets — call at task start",
+   "keywords": [
+    "context",
+    "start",
+    "task",
+    "pack",
+    "시작"
+   ],
+   "path": "harness/cli.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "tool:cli-init",
+   "type": "Tool",
+   "name": "harness init",
+   "summary": "bootstrap scan of the host repository into a knowledge graph",
+   "keywords": [
+    "init",
+    "bootstrap",
+    "scan",
+    "setup",
+    "new repository",
+    "설정"
+   ],
+   "path": "harness/bootstrap.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "tool:cli-route",
+   "type": "Tool",
+   "name": "harness route",
+   "summary": "agency-ladder routing: level 1-7, model tier, budgets",
+   "keywords": [
+    "route",
+    "workflow",
+    "level",
+    "budget"
+   ],
+   "path": "harness/router.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "tool:cli-slice",
+   "type": "Tool",
+   "name": "harness slice",
+   "summary": "end-to-end runner: route→execute→evaluate→trajectory→handoff→improvement",
+   "keywords": [
+    "slice",
+    "end to end",
+    "self-check",
+    "health"
+   ],
+   "path": "harness/cli.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "tool:cli-optimize",
+   "type": "Tool",
+   "name": "harness optimize",
+   "summary": "retrieval-config search (GOA + random + hill-climb) on gold labels",
+   "keywords": [
+    "optimize",
+    "weights",
+    "search",
+    "tune"
+   ],
+   "path": "harness/optimizer.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "tool:cli-improve",
+   "type": "Tool",
+   "name": "harness improve-auto",
+   "summary": "one bounded improvement candidate: propose→validate→promote/reject with rollback",
+   "keywords": [
+    "improve",
+    "candidate",
+    "promote",
+    "rollback"
+   ],
+   "path": "harness/improve.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "tool:cli-handoff",
+   "type": "Tool",
+   "name": "harness handoff-latest",
+   "summary": "locate the newest session handoff to resume from",
+   "keywords": [
+    "handoff",
+    "resume",
+    "continue",
+    "previous session",
+    "이어서"
+   ],
+   "path": "harness/trajectory.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "tool:run-tests",
+   "type": "Tool",
+   "name": "engine test suite",
+   "summary": "{python} -m unittest discover -s tests — deterministic health check",
+   "keywords": [
+    "tests",
+    "pass",
+    "suite",
+    "health"
+   ],
+   "path": "tests/",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "tool:mcp-gateway",
+   "type": "MCPServer",
+   "name": "harness MCP gateway",
+   "summary": "stdio JSON-RPC capability gateway; 4 meta-tools, allowlisted execs, audit log",
+   "keywords": [
+    "mcp",
+    "gateway",
+    "tools",
+    "server"
+   ],
+   "path": "mcp/harness_mcp_server.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "policy:P-DECOMPOSE",
+   "type": "Policy",
+   "name": "P-DECOMPOSE",
+   "summary": "split request into mapped, numbered requirements; ledger for multi-step work",
+   "keywords": [
+    "decompose"
+   ],
+   "path": ".dobby/policies/policies.json",
+   "authority": 0.9,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "policy:P-EVIDENCE",
+   "type": "Policy",
+   "name": "P-EVIDENCE",
+   "summary": "measure before claiming; numbers only from same-session commands; name exact files",
+   "keywords": [
+    "evidence"
+   ],
+   "path": ".dobby/policies/policies.json",
+   "authority": 0.9,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "policy:P-CONFIG-VS-REALITY",
+   "type": "Policy",
+   "name": "P-CONFIG-VS-REALITY",
+   "summary": "config/docs are claims — verify each value against the running system before wiring",
+   "keywords": [
+    "config vs reality"
+   ],
+   "path": ".dobby/policies/policies.json",
+   "authority": 0.9,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "policy:P-PRESERVE",
+   "type": "Policy",
+   "name": "P-PRESERVE",
+   "summary": "never modify/delete what you did not create without approval + restore path; outputs to new locations",
+   "keywords": [
+    "clean",
+    "delete",
+    "preserve",
+    "repo",
+    "this"
+   ],
+   "path": ".dobby/policies/policies.json",
+   "authority": 0.9,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "policy:P-MINIMAL",
+   "type": "Policy",
+   "name": "P-MINIMAL",
+   "summary": "touch only what the ledger scopes; out-of-scope defects are findings",
+   "keywords": [
+    "minimal"
+   ],
+   "path": ".dobby/policies/policies.json",
+   "authority": 0.9,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "policy:P-CONTRACT",
+   "type": "Policy",
+   "name": "P-CONTRACT",
+   "summary": "match the consumer's exact format/interface; no invented fields",
+   "keywords": [
+    "contract"
+   ],
+   "path": ".dobby/policies/policies.json",
+   "authority": 0.9,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "policy:P-VALIDATE-OUTPUT",
+   "type": "Policy",
+   "name": "P-VALIDATE-OUTPUT",
+   "summary": "validate outputs independently; producing exit 0 is not validation",
+   "keywords": [
+    "validate output"
+   ],
+   "path": ".dobby/policies/policies.json",
+   "authority": 0.9,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "policy:P-REPORT",
+   "type": "Policy",
+   "name": "P-REPORT",
+   "summary": "outcome first; requirement table with evidence; explicit not-done list",
+   "keywords": [
+    "report"
+   ],
+   "path": ".dobby/policies/policies.json",
+   "authority": 0.9,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "policy:P-ESCALATE",
+   "type": "Policy",
+   "name": "P-ESCALATE",
+   "summary": "irreversible/external/licensed/costly/ambiguous actions: ask first with the fixed format",
+   "keywords": [
+    "clean",
+    "delete",
+    "escalate",
+    "repo",
+    "this"
+   ],
+   "path": ".dobby/policies/policies.json",
+   "authority": 0.9,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "skill:bootstrap-project",
+   "type": "Skill",
+   "name": "bootstrap-project",
+   "summary": "first-run archaeology: scan, curate KG, protected paths, capabilities, root pointers",
+   "keywords": [
+    "bootstrap",
+    "first run",
+    "setup",
+    "new repository",
+    "install"
+   ],
+   "path": ".claude/skills/bootstrap-project/SKILL.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "skill:ledgered-task",
+   "type": "Skill",
+   "name": "ledgered-task",
+   "summary": "multi-step task protocol: ledger, evidence-first execution, validation, honest report, handoff",
+   "keywords": [
+    "task",
+    "ledger",
+    "multi-step",
+    "plan",
+    "start",
+    "resume",
+    "작업"
+   ],
+   "path": ".claude/skills/ledgered-task/SKILL.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "skill:author-evals",
+   "type": "Skill",
+   "name": "author-evals",
+   "summary": "build project evals: scenarios, retrieval gold (dev/val/holdout), criteria",
+   "keywords": [
+    "evals",
+    "evaluation",
+    "scenarios",
+    "gold",
+    "measure",
+    "평가"
+   ],
+   "path": ".claude/skills/author-evals/SKILL.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "doc:AGENTS.md",
+   "type": "Convention",
+   "name": "AGENTS.md",
+   "summary": "model-agnostic operating contract — read first",
+   "keywords": [],
+   "path": "AGENTS.md",
+   "authority": 0.95,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "doc:CLAUDE.md",
+   "type": "Convention",
+   "name": "CLAUDE.md",
+   "summary": "Claude adapter pointing to AGENTS.md",
+   "keywords": [],
+   "path": "CLAUDE.md",
+   "authority": 0.9,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "doc:README",
+   "type": "Convention",
+   "name": "README",
+   "summary": "human quickstart: drop-in installation into a host project",
+   "keywords": [],
+   "path": "README.md",
+   "authority": 0.85,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "doc:OPERATING_MANUAL",
+   "type": "Convention",
+   "name": "OPERATING_MANUAL",
+   "summary": "full policy schema, task lifecycle, escalation ladder, recovery, quality-gate template",
+   "keywords": [],
+   "path": "docs/OPERATING_MANUAL.md",
+   "authority": 0.9,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "doc:FAILURE_CATALOG",
+   "type": "Convention",
+   "name": "FAILURE_CATALOG",
+   "summary": "weak-model failure taxonomy with the kit artifact that defends each",
+   "keywords": [],
+   "path": "docs/FAILURE_CATALOG.md",
+   "authority": 0.85,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "doc:ARCHITECTURE",
+   "type": "Convention",
+   "name": "ARCHITECTURE",
+   "summary": "harness v2 layers, data flow, ADRs",
+   "keywords": [],
+   "path": "docs/HARNESS_V2_ARCHITECTURE.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "doc:THREAT_MODEL",
+   "type": "Convention",
+   "name": "THREAT_MODEL",
+   "summary": "threats and implemented mitigations",
+   "keywords": [],
+   "path": "docs/THREAT_MODEL.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "risk:one-shot-collapse",
+   "type": "Risk",
+   "name": "One-Shot Collapse",
+   "summary": "One-Shot Collapse — implementing everything in one pass without checkpoints",
+   "keywords": [],
+   "path": "docs/FAILURE_CATALOG.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "risk:premature-completion",
+   "type": "Risk",
+   "name": "Premature Completion",
+   "summary": "Premature Completion — claiming done while a required verification is missing or failing",
+   "keywords": [],
+   "path": "docs/FAILURE_CATALOG.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "risk:doc-as-truth",
+   "type": "Risk",
+   "name": "Documentation-as-Truth",
+   "summary": "Documentation-as-Truth — trusting docs/config over the running system",
+   "keywords": [],
+   "path": "docs/FAILURE_CATALOG.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "risk:context-flooding",
+   "type": "Risk",
+   "name": "Context Flooding",
+   "summary": "Context Flooding — loading whole files/catalogs instead of summaries on demand",
+   "keywords": [],
+   "path": "docs/FAILURE_CATALOG.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "risk:unverified-patch",
+   "type": "Risk",
+   "name": "Unverified Patch",
+   "summary": "Unverified Patch — a change never exercised end-to-end",
+   "keywords": [],
+   "path": "docs/FAILURE_CATALOG.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "risk:scope-creep",
+   "type": "Risk",
+   "name": "Scope Creep",
+   "summary": "Scope Creep — unrelated 'tidying' expanding the change surface",
+   "keywords": [],
+   "path": "docs/FAILURE_CATALOG.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "risk:handoff-amnesia",
+   "type": "Risk",
+   "name": "Handoff Amnesia",
+   "summary": "Handoff Amnesia — restarting from scratch after a session/context loss",
+   "keywords": [],
+   "path": "docs/FAILURE_CATALOG.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "risk:skill-pollution",
+   "type": "Risk",
+   "name": "Skill Pollution",
+   "summary": "Skill Pollution — promoting procedures from a single lucky example or self-judgment",
+   "keywords": [],
+   "path": "docs/FAILURE_CATALOG.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "risk:evaluation-gaming",
+   "type": "Risk",
+   "name": "Evaluation Gaming",
+   "summary": "Evaluation Gaming — editing criteria/gold after seeing failures",
+   "keywords": [],
+   "path": "docs/FAILURE_CATALOG.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "risk:stale-memory-override",
+   "type": "Risk",
+   "name": "Stale-Memory Override",
+   "summary": "Stale-Memory Override — newer unverified assertions displacing older verified facts",
+   "keywords": [],
+   "path": "docs/FAILURE_CATALOG.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "risk:orchestrator-overkill",
+   "type": "Risk",
+   "name": "Orchestrator Overkill",
+   "summary": "Orchestrator Overkill — multi-agent workflows where a script suffices",
+   "keywords": [],
+   "path": "docs/FAILURE_CATALOG.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  },
+  {
+   "id": "risk:tool-roulette",
+   "type": "Risk",
+   "name": "Tool Roulette",
+   "summary": "Tool Roulette — guessing tools instead of searching capabilities",
+   "keywords": [],
+   "path": "docs/FAILURE_CATALOG.md",
+   "authority": 0.8,
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   },
+   "created": "2026-07-12"
+  }
+ ],
+ "edges": [
+  {
+   "src": "policy:P-DECOMPOSE",
+   "rel": "prevents",
+   "dst": "risk:one-shot-collapse",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-VALIDATE-OUTPUT",
+   "rel": "prevents",
+   "dst": "risk:premature-completion",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-CONFIG-VS-REALITY",
+   "rel": "prevents",
+   "dst": "risk:doc-as-truth",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-EVIDENCE",
+   "rel": "prevents",
+   "dst": "risk:unverified-patch",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-MINIMAL",
+   "rel": "prevents",
+   "dst": "risk:scope-creep",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-PRESERVE",
+   "rel": "prevents",
+   "dst": "risk:scope-creep",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-REPORT",
+   "rel": "prevents",
+   "dst": "risk:premature-completion",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "skill:ledgered-task",
+   "rel": "implements",
+   "dst": "policy:P-DECOMPOSE",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "skill:ledgered-task",
+   "rel": "implements",
+   "dst": "policy:P-REPORT",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "skill:ledgered-task",
+   "rel": "prevents",
+   "dst": "risk:handoff-amnesia",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "skill:bootstrap-project",
+   "rel": "invokes",
+   "dst": "tool:cli-init",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "skill:author-evals",
+   "rel": "prevents",
+   "dst": "risk:evaluation-gaming",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "tool:cli-context",
+   "rel": "prevents",
+   "dst": "risk:context-flooding",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "tool:mcp-gateway",
+   "rel": "prevents",
+   "dst": "risk:tool-roulette",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "tool:cli-route",
+   "rel": "prevents",
+   "dst": "risk:orchestrator-overkill",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "tool:cli-handoff",
+   "rel": "prevents",
+   "dst": "risk:handoff-amnesia",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "tool:cli-improve",
+   "rel": "prevents",
+   "dst": "risk:skill-pollution",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "tool:cli-slice",
+   "rel": "invokes",
+   "dst": "tool:run-tests",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-DECOMPOSE",
+   "rel": "documented_in",
+   "dst": "doc:OPERATING_MANUAL",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-EVIDENCE",
+   "rel": "documented_in",
+   "dst": "doc:OPERATING_MANUAL",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-CONFIG-VS-REALITY",
+   "rel": "documented_in",
+   "dst": "doc:OPERATING_MANUAL",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-PRESERVE",
+   "rel": "documented_in",
+   "dst": "doc:OPERATING_MANUAL",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-MINIMAL",
+   "rel": "documented_in",
+   "dst": "doc:OPERATING_MANUAL",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-CONTRACT",
+   "rel": "documented_in",
+   "dst": "doc:OPERATING_MANUAL",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-VALIDATE-OUTPUT",
+   "rel": "documented_in",
+   "dst": "doc:OPERATING_MANUAL",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-REPORT",
+   "rel": "documented_in",
+   "dst": "doc:OPERATING_MANUAL",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "policy:P-ESCALATE",
+   "rel": "documented_in",
+   "dst": "doc:OPERATING_MANUAL",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "risk:one-shot-collapse",
+   "rel": "documented_in",
+   "dst": "doc:FAILURE_CATALOG",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "risk:premature-completion",
+   "rel": "documented_in",
+   "dst": "doc:FAILURE_CATALOG",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "risk:doc-as-truth",
+   "rel": "documented_in",
+   "dst": "doc:FAILURE_CATALOG",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "risk:context-flooding",
+   "rel": "documented_in",
+   "dst": "doc:FAILURE_CATALOG",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "risk:unverified-patch",
+   "rel": "documented_in",
+   "dst": "doc:FAILURE_CATALOG",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "risk:scope-creep",
+   "rel": "documented_in",
+   "dst": "doc:FAILURE_CATALOG",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "risk:handoff-amnesia",
+   "rel": "documented_in",
+   "dst": "doc:FAILURE_CATALOG",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "risk:skill-pollution",
+   "rel": "documented_in",
+   "dst": "doc:FAILURE_CATALOG",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "risk:evaluation-gaming",
+   "rel": "documented_in",
+   "dst": "doc:FAILURE_CATALOG",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "risk:stale-memory-override",
+   "rel": "documented_in",
+   "dst": "doc:FAILURE_CATALOG",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "risk:orchestrator-overkill",
+   "rel": "documented_in",
+   "dst": "doc:FAILURE_CATALOG",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "risk:tool-roulette",
+   "rel": "documented_in",
+   "dst": "doc:FAILURE_CATALOG",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "doc:CLAUDE.md",
+   "rel": "derived_from",
+   "dst": "doc:AGENTS.md",
+   "provenance": {
+    "source": "kit v2.1 generic self-knowledge",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  }
+ ]
+}

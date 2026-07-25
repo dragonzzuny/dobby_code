@@ -1,0 +1,26 @@
+# Runtime state: regenerated, machine-specific, may embed absolute paths
+.dobby/state/
+.dobby/knowledge/kg.bootstrap.json
+.dobby/inventory.json
+.dobby/memory/
+.dobby/compression_guideline.json
+.dobby/specialization.json
+reports/LEDGER_*.md
+
+# Never commit credentials
+*.env
+.api-keys*
+*.pem
+*.key
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+Thumbs.db
+*.tmp
+
+# OMC / agent-runtime session state (not part of the product)
+.omc/
+.claude/settings.local.json

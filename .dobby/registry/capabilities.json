@@ -1,0 +1,128 @@
+{
+ "note": "Capability gateway allowlist. exec entries are fixed command templates (least privilege); the model never composes raw shell through the gateway. ADD HOST-PROJECT CAPABILITIES DURING BOOTSTRAP (build, lint, test, domain scripts).",
+ "capabilities": [
+  {
+   "id": "run_tests",
+   "kind": "exec",
+   "summary": "run the kit's engine test suite",
+   "command_template": "{python} -m unittest discover -s tests -q",
+   "keywords": [
+    "test",
+    "suite",
+    "verify",
+    "health",
+    "self-check"
+   ],
+   "writes": [],
+   "read_only_data": true
+  },
+  {
+   "id": "bootstrap_scan",
+   "kind": "exec",
+   "summary": "scan the host repository root and (re)generate the bootstrap knowledge graph into the kit's .dobby/",
+   "command_template": "{python} -m dobby.cli init --scan {scan_root} --overwrite",
+   "keywords": [
+    "bootstrap",
+    "scan",
+    "init",
+    "setup",
+    "archaeology"
+   ],
+   "writes": [
+    ".dobby/inventory.json",
+    ".dobby/knowledge/kg.bootstrap.json"
+   ],
+   "read_only_data": true
+  },
+  {
+   "id": "env_probe",
+   "kind": "exec",
+   "summary": "probe the runtime environment (python version)",
+   "command_template": "{python} --version",
+   "keywords": [
+    "environment",
+    "python",
+    "version",
+    "probe",
+    "capability"
+   ],
+   "writes": [],
+   "read_only_data": true
+  },
+  {
+   "id": "kg_query",
+   "kind": "builtin",
+   "summary": "hybrid retrieval over the project knowledge graph",
+   "keywords": [
+    "knowledge",
+    "context",
+    "what is",
+    "where",
+    "find"
+   ],
+   "writes": []
+  },
+  {
+   "id": "skill_index",
+   "kind": "builtin",
+   "summary": "list skill names+descriptions (disclosure level 1)",
+   "keywords": [
+    "skill",
+    "procedure",
+    "how to"
+   ],
+   "writes": []
+  },
+  {
+   "id": "skill_signature",
+   "kind": "builtin",
+   "summary": "one skill's applicability + IO contract (level 2)",
+   "keywords": [
+    "skill detail"
+   ],
+   "writes": []
+  },
+  {
+   "id": "route_task",
+   "kind": "builtin",
+   "summary": "route a task: agency level, model tier, policies, skills, budgets, context pack",
+   "keywords": [
+    "route",
+    "plan",
+    "which workflow",
+    "budget"
+   ],
+   "writes": []
+  },
+  {
+   "id": "record_evidence",
+   "kind": "builtin",
+   "summary": "append an evidence/decision/failure event to the current trajectory",
+   "keywords": [
+    "evidence",
+    "record",
+    "decision",
+    "failure",
+    "log"
+   ],
+   "writes": [
+    ".dobby/state/trajectories/"
+   ]
+  },
+  {
+   "id": "handoff",
+   "kind": "builtin",
+   "summary": "write the structured session handoff document",
+   "keywords": [
+    "handoff",
+    "checkpoint",
+    "resume",
+    "continue",
+    "session"
+   ],
+   "writes": [
+    ".dobby/state/trajectories/"
+   ]
+  }
+ ]
+}

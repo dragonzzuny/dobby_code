@@ -1,0 +1,176 @@
+{
+ "skills": [
+  {
+   "name": "bootstrap-project",
+   "description": "First-run repository archaeology: scan the host repo, build the knowledge graph, fill protected paths, register capabilities, wire root pointers",
+   "applicable_when": [
+    "first run in a new repository",
+    "set up|install|initialize the harness",
+    "부트스트랩|초기 설정"
+   ],
+   "not_applicable_when": [
+    "already bootstrapped (.dobby/knowledge/kg.bootstrap.json exists) — refresh with init --overwrite instead"
+   ],
+   "inputs": [
+    "host repo root"
+   ],
+   "outputs": [
+    ".dobby/inventory.json",
+    ".dobby/knowledge/kg.bootstrap.json",
+    "curated kg.json additions",
+    "filled config protected_paths",
+    "host-root AGENTS.md/CLAUDE.md pointer"
+   ],
+   "validation_commands": [
+    "{python} -m dobby.cli init --scan <host-root>",
+    "{python} -m unittest discover -s tests -q",
+    "{python} -m dobby.cli context \"smoke query\""
+   ],
+   "version": "1.0",
+   "path": ".claude/skills/bootstrap-project/SKILL.md",
+   "provenance": {
+    "source": "kit v2.1 factory default",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "strongly_supported"
+   },
+   "state": "active",
+   "proposed_by": "kit-author",
+   "approved_by": "kit-release",
+   "eval_passes": [],
+   "created": "2026-07-12",
+   "history": [
+    {
+     "to": "active",
+     "by": "kit-release",
+     "date": "2026-07-12"
+    }
+   ],
+   "requires": {
+    "any_bins": [
+     "python3",
+     "python",
+     "py"
+    ]
+   },
+   "origin": {
+    "pinned_sha256": "13336a690f14c50714a6a1e9b0c6c2aea103cdbfe25676d1a93dc3d1651e94c6",
+    "path": ".claude/skills/bootstrap-project/SKILL.md",
+    "date": "2026-07-25"
+   }
+  },
+  {
+   "name": "ledgered-task",
+   "description": "Protocol for any multi-step task: requirement ledger, evidence-first execution, output validation, honest report, handoff",
+   "applicable_when": [
+    ">1 requirement",
+    ">~10 expected tool calls",
+    "resume|continue a previous session",
+    "작업 시작|이어서"
+   ],
+   "not_applicable_when": [
+    "single-question lookups a command answers directly"
+   ],
+   "inputs": [
+    "verbatim user request"
+   ],
+   "outputs": [
+    "reports/LEDGER_<slug>.md",
+    "trajectory events",
+    "handoff document",
+    "final report per P-REPORT"
+   ],
+   "validation_commands": [
+    "ledger exists before first change",
+    "every ledger row done-with-evidence or reported not-done"
+   ],
+   "version": "1.0",
+   "path": ".claude/skills/ledgered-task/SKILL.md",
+   "provenance": {
+    "source": "kit v2.1 factory default",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "strongly_supported"
+   },
+   "state": "active",
+   "proposed_by": "kit-author",
+   "approved_by": "kit-release",
+   "eval_passes": [],
+   "created": "2026-07-12",
+   "history": [
+    {
+     "to": "active",
+     "by": "kit-release",
+     "date": "2026-07-12"
+    }
+   ],
+   "requires": {
+    "any_bins": [
+     "python3",
+     "python",
+     "py"
+    ]
+   },
+   "origin": {
+    "pinned_sha256": "87fedc2d15b1b4c1e169c702b9ac0029a46105468a99615f346d3b61f7150ef4",
+    "path": ".claude/skills/ledgered-task/SKILL.md",
+    "date": "2026-07-25"
+   }
+  },
+  {
+   "name": "author-evals",
+   "description": "Build this project's evaluation assets: scenarios with objective verification, retrieval gold labels (dev/val/holdout), evaluator criteria",
+   "applicable_when": [
+    "create|build evals",
+    "measure the harness",
+    "평가 만들|측정"
+   ],
+   "not_applicable_when": [
+    "running existing evals (use cli optimize / slice)"
+   ],
+   "inputs": [
+    "real task history, incidents, and risks of the host project"
+   ],
+   "outputs": [
+    "evals/scenarios.yaml",
+    "evals/retrieval_gold.yaml",
+    ".dobby/criteria/*.json"
+   ],
+   "validation_commands": [
+    "{python} -m dobby.cli optimize --seeds 0 --iters 5 --pop 6 (runs without error on the new gold)"
+   ],
+   "version": "1.0",
+   "path": ".claude/skills/author-evals/SKILL.md",
+   "provenance": {
+    "source": "kit v2.1 factory default",
+    "method": "curated",
+    "date": "2026-07-12",
+    "confidence": "strongly_supported"
+   },
+   "state": "active",
+   "proposed_by": "kit-author",
+   "approved_by": "kit-release",
+   "eval_passes": [],
+   "created": "2026-07-12",
+   "history": [
+    {
+     "to": "active",
+     "by": "kit-release",
+     "date": "2026-07-12"
+    }
+   ],
+   "requires": {
+    "any_bins": [
+     "python3",
+     "python",
+     "py"
+    ]
+   },
+   "origin": {
+    "pinned_sha256": "4afb87dd86eb03ee0a892170fb97368584f3781f0e93ddbcd04b6ff55d014082",
+    "path": ".claude/skills/author-evals/SKILL.md",
+    "date": "2026-07-25"
+   }
+  }
+ ]
+}

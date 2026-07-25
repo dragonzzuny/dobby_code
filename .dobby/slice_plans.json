@@ -1,0 +1,11 @@
+{
+  "note": "Deterministic executors for the vertical-slice runner ({python} -m dobby.cli slice --scenario <id>). These are DATA, not engine code. SELF-CHECK ships with the kit and works in any host repo; add project scenarios during bootstrap.",
+  "plans": {
+    "SELF-CHECK": {
+      "task": "Verify the harness kit installation is healthy and report honestly whether it can be relied on.",
+      "capability": "run_tests",
+      "command": "{python} -m unittest discover -s tests -q",
+      "criteria": ".dobby/criteria/selfcheck_criteria.json"
+    }
+  }
+}

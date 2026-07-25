@@ -1,0 +1,14 @@
+{
+  "name": "dobby",
+  "owner": {
+    "name": "dragonzzuny",
+    "url": "https://github.com/dragonzzuny/dobby_code"
+  },
+  "plugins": [
+    {
+      "name": "dobby",
+      "source": "./",
+      "description": "Portable agent harness. Install, then run `python -m dobby.cli doctor`."
+    }
+  ]
+}

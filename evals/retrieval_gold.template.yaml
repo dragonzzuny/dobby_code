@@ -1,0 +1,20 @@
+# TEMPLATE — retrieval gold labels for YOUR project (author-evals skill).
+#
+# For each realistic task: list the KG node ids a weak model MUST have in
+# context to avoid this project's traps. Rules:
+#   * derive tasks from real history: incidents, recurring requests, past
+#     regressions, ambiguous asks, adversarial shortcuts users actually try;
+#   * required_nodes reference ids in .dobby/knowledge/kg.json — curate the
+#     node (with provenance) first, then the gold row;
+#   * split dev / val / holdout ≈ 40/30/30; holdout is NEVER optimized on;
+#   * keep this file out of reach of the improvement loop (it already is:
+#     FORBIDDEN_TARGETS) — edits are manual, with a changelog row.
+#
+# dev:
+#   - id: PROJ-1
+#     task: "<verbatim realistic request>"
+#     required_nodes: [ds:<entity>, policy:<policy>, tool:<check>, risk:<trap>]
+# val:
+#   - ...
+# holdout:
+#   - ...

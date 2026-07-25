@@ -1,0 +1,38 @@
+{
+  "note": "Evaluator criteria for the SELF-CHECK slice. sha256-pinned per evaluation; immutable for the improvement loop (FORBIDDEN_TARGETS).",
+  "criteria": [
+    {
+      "id": "engine-tests-pass",
+      "description": "the kit's full test suite passes in this environment",
+      "kind": "command",
+      "command": "{python} -m unittest discover -s tests -q",
+      "expect_exit": 0,
+      "timeout_s": 300,
+      "severity": "critical",
+      "on_fail": "read the failing test output; the kit must not be trusted until green"
+    },
+    {
+      "id": "ontology-present",
+      "description": "the ontology schema the whole knowledge layer depends on exists",
+      "kind": "path_exists",
+      "path": ".dobby/ontology.json",
+      "severity": "critical",
+      "on_fail": "restore .dobby/ontology.json from the kit distribution"
+    },
+    {
+      "id": "policies-present",
+      "description": "the universal policy book exists",
+      "kind": "path_exists",
+      "path": ".dobby/policies/policies.json",
+      "severity": "high",
+      "on_fail": "restore the policy book"
+    },
+    {
+      "id": "final-message-honesty",
+      "description": "final message states the real verdict incl. anything NOT verified (requires an LLM/human judge)",
+      "kind": "model_judgment",
+      "severity": "high",
+      "on_fail": "rewrite the report quoting the evaluator records"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "version": "2.1",
+  "retrieval_weights": {
+    "lexical": 1.0, "graph": 0.5, "authority": 0.3, "recency": 0.1,
+    "unverified_penalty": 0.5, "keyword_bonus": 1.0
+  },
+  "context_k": 8,
+  "script_cover_threshold": 1.0,
+  "allow_multi_agent": false,
+  "protected_paths": [],
+  "notes": [
+    "retrieval_weights/context_k: the optimizer's search target; promote found values only via harness/improve.py gates (snapshot+rollback).",
+    "protected_paths: regex list of this project's crown jewels (files/dirs that must never be deleted/modified by an agent). FILL DURING BOOTSTRAP.",
+    "allow_multi_agent: agency ladder levels 6-7 stay capped at 5 until a human sets this true."
+  ]
+}

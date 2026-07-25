@@ -1,0 +1,39 @@
+# Gold labels for context-retrieval evaluation — KIT SELF-GOLD.
+# These cases query the kit's own knowledge (valid in any host repo) so that
+# `optimize` and `improve-auto` run out of the box. REPLACE/EXTEND with
+# host-project cases during bootstrap (see evals/retrieval_gold.template.yaml
+# and the author-evals skill).
+#
+# IMMUTABLE for the optimizer/improvement loop (FORBIDDEN_TARGETS): edit only
+# by hand, with a changelog row. dev is optimized on; val gates promotion;
+# holdout is measured once at promotion and never optimized.
+
+dev:
+  - id: G-START
+    task: "I have a new multi-step task in this project — how should I start working on it?"
+    required_nodes: [skill:ledgered-task, policy:P-DECOMPOSE, doc:OPERATING_MANUAL]
+  - id: G-SETUP
+    task: "Set up the harness for this new repository (first run bootstrap install)"
+    required_nodes: [skill:bootstrap-project, tool:cli-init, doc:README]
+  - id: G-DONE
+    task: "Can I tell the user the work is done now?"
+    required_nodes: [policy:P-VALIDATE-OUTPUT, policy:P-REPORT, risk:premature-completion]
+  - id: G-DELETE
+    task: "Clean up this repo and delete the old files / 오래된 파일 정리해서 삭제해줘"
+    required_nodes: [policy:P-PRESERVE, policy:P-ESCALATE]
+
+val:
+  - id: G-CONFIG
+    task: "The app reads its endpoint from config settings yaml — wire the new path into the deploy script"
+    required_nodes: [policy:P-CONFIG-VS-REALITY, risk:doc-as-truth]
+  - id: G-RESUME
+    task: "Continue the task from the previous session where we left off"
+    required_nodes: [tool:cli-handoff, skill:ledgered-task, risk:handoff-amnesia]
+
+holdout:
+  - id: G-EVAL
+    task: "Build evaluation scenarios and gold labels to measure the harness in this project"
+    required_nodes: [skill:author-evals, doc:OPERATING_MANUAL]
+  - id: G-COUNT
+    task: "How many tests does this project have and do they all pass? Verify and check."
+    required_nodes: [policy:P-EVIDENCE, tool:run-tests]

@@ -1,0 +1,28 @@
+{
+  "version": "2.0",
+  "description": "Ontology for the harness knowledge graph. Node/edge instances are validated against this schema by harness/kg.py. Repo-specific instances live in .dobby/knowledge/kg.json.",
+  "node_types": [
+    "RepositoryArea", "Component", "File", "Symbol",
+    "Requirement", "Constraint", "Convention",
+    "Task", "Subtask", "Artifact", "Decision", "Assumption", "Evidence",
+    "Test", "Failure", "Risk",
+    "Agent", "Model", "Tool", "MCPServer", "Skill", "Workflow",
+    "Evaluation", "Trajectory", "MemoryItem", "Policy", "Dataset", "QualityGate"
+  ],
+  "edge_types": [
+    "depends_on", "implements", "requires", "constrained_by", "validated_by",
+    "contradicts", "supersedes", "produces", "consumes", "scoped_to", "owned_by",
+    "invokes", "available_to", "learned_from", "failed_because", "applicable_when",
+    "incompatible_with", "derived_from", "evaluated_by", "prevents", "instance_of",
+    "documented_in"
+  ],
+  "confidence_levels": ["verified", "strongly_supported", "weakly_inferred", "unresolved"],
+  "provenance_required_fields": ["source", "method", "date", "confidence"],
+  "provenance_methods": [
+    "scan", "command", "curated", "user_statement", "model_assertion", "eval_result"
+  ],
+  "notes": [
+    "model_assertion provenance is NEVER confidence=verified; verification requires a command/scan/eval_result source.",
+    "contradicts edges are kept, not silently merged; resolution is a Decision node superseding one side."
+  ]
+}

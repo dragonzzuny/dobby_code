@@ -1,0 +1,19 @@
+{
+  "name": "dobby",
+  "version": "0.1.0",
+  "description": "Portable agent harness: evidence-first discipline, multi-provider decorrelated panels, six-tier memory, PBR code review, ML leakage gates, honest token accounting.",
+  "author": {
+    "name": "dragonzzuny"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/dragonzzuny/dobby_code",
+  "keywords": [
+    "harness",
+    "multi-agent",
+    "memory",
+    "code-review",
+    "mlops",
+    "token-efficiency",
+    "evidence"
+  ]
+}
