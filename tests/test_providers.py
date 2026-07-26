@@ -397,8 +397,6 @@ class TestFanout(unittest.TestCase):
         self.assertGreater(round_.speedup(), 1.2, round_.summary())
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestResolvedPathIsWhatGetsLaunched(unittest.TestCase):
@@ -568,3 +566,7 @@ class TestPanelTimeoutReachesEveryTask(unittest.TestCase):
 
 class _StopPanel(Exception):
     """Ends cmd_panel once the tasks have been captured."""
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -208,13 +208,25 @@ def cmd_slice(args):
     proc = subprocess.run(command, shell=True, cwd=repo, capture_output=True,
                           text=True, encoding="utf-8", errors="replace",
                           env=child_env(), timeout=900)
-    ev = Evaluator(os.path.join(repo, spec["criteria"]), repo, config=config)
+    # The artifact a model_judgment criterion grades is the executed step's own
+    # output. Passing it only when --judge is set keeps the paid path explicit.
+    artifact = None
+    if args.judge:
+        artifact = (f"COMMAND: {command}\nEXIT: {proc.returncode}\n\n"
+                    f"--- STDOUT ---\n{proc.stdout}\n"
+                    f"--- STDERR ---\n{proc.stderr}\n")
+    ev = Evaluator(os.path.join(repo, spec["criteria"]), repo, config=config,
+                   judge=args.judge, artifact=artifact,
+                   judge_provider=args.judge_provider)
     evaluation = ev.evaluate()
     handoff = traj.handoff(
         done=[f"executed {spec['capability']} (exit {proc.returncode})",
               f"evaluator verdict: {evaluation['verdict']}"],
-        remaining=[f"model-judgment criteria not runnable here "
-                   f"({evaluation['not_evaluated']})"],
+        remaining=([f"model-judgment criteria not evaluated "
+                    f"({evaluation['not_evaluated']})"]
+                   if evaluation["not_evaluated"] else
+                   [f"advisory judgments recorded but excluded from the "
+                    f"verdict ({len(evaluation['advisory'])})"]),
         decisions=[{"what": f"routed to level {plan.level}",
                     "why": "; ".join(plan.justification),
                     "rejected": "higher agency levels (unjustified cost)"}],
@@ -855,6 +867,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("slice", parents=[common])
     p.add_argument("--scenario", required=True)
+    # Opt-in, like `fleet --probe`: judging spends money and leaves the machine.
+    # A model verdict stays ADVISORY and can never move the PASS/FAIL verdict,
+    # because .dobby/ontology.json forbids a model_assertion from counting as
+    # verification. See dobby/judge.py.
+    p.add_argument("--judge", action="store_true",
+                   help="grade model_judgment criteria with a provider "
+                        "(advisory only; costs money and calls out)")
+    p.add_argument("--judge-provider", default=None,
+                   help="force one provider as the judge instead of the "
+                        "critic-role default")
     p.set_defaults(fn=cmd_slice)
 
     p = sub.add_parser("optimize", parents=[common])

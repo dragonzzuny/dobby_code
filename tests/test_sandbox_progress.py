@@ -392,8 +392,6 @@ class TestWaveEta(unittest.TestCase):
                                    wave_durations=[])["estimable"])
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestCrossVolumeRootFailsClosed(unittest.TestCase):
@@ -445,3 +443,7 @@ class TestCrossVolumeRootFailsClosed(unittest.TestCase):
         os.makedirs(inside, exist_ok=True)
         result = run("echo hi", data_dir=root, cwd=inside, root=root)
         self.assertIsNone(result.error, result.error)
+
+
+if __name__ == "__main__":
+    unittest.main()

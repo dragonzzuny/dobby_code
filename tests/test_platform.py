@@ -13,7 +13,7 @@ import dobby.core.platform as platform_mod
 from dobby.core.platform import (PYTHON_PLACEHOLDER, child_env,
                                  describe_platform, force_utf8_io,
                                  posix_shell_available, posix_shell_path,
-                                 python_executable, resolve_command)
+                                 python_executable, resolve_command, shim_safe_argv)
 
 
 class TestResolveCommand(unittest.TestCase):
@@ -114,8 +114,6 @@ class TestDescribePlatform(unittest.TestCase):
         self.assertTrue(d["python_version"][0].isdigit())
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestPosixShellIsProbedNotJustFound(unittest.TestCase):
@@ -228,3 +226,117 @@ class TestPosixShellIsProbedNotJustFound(unittest.TestCase):
                              f'sys.exit({exit_code})\n')
             os.chmod(launcher, 0o755)
         return launcher
+
+
+class TestBatchShimTruncatesMultilineArguments(unittest.TestCase):
+    """A `.CMD` shim silently drops everything after the first newline.
+
+    Measured with one string through both routes:
+
+        via .CMD shim    ["line one"]
+        direct exe       ["line one\nline two\nline three"]
+
+    Nothing else is affected - `%`, `&&`, `^` and `|` all arrive intact - so the
+    hazard is narrow and was invisible until a multi-line prompt was sent. npm
+    installs every one of its CLIs as a `.CMD` on Windows, so this reached the
+    provider layer: a judge prompt came back "Ready to grade, but I'm missing the
+    inputs" because the provider received only the preamble line and answered it.
+    Nothing errored, and the reply read like an opinion about the work.
+
+    The first test measures the truncation rather than trusting the claim.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.echo = os.path.join(self.dir, "argecho.py")
+        with open(self.echo, "w", encoding="utf-8") as handle:
+            handle.write("import sys, json\n"
+                         "print(json.dumps(sys.argv[1:], ensure_ascii=False))\n")
+
+    def _make_shim(self, extension: str) -> str:
+        path = os.path.join(self.dir, f"tool{extension}")
+        if extension == ".ps1":
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(f'& "{sys.executable}" "{self.echo}" @args\n')
+        else:
+            with open(path, "w", encoding="utf-8", newline="\r\n") as handle:
+                handle.write("@echo off\r\n")
+                handle.write(f'"{sys.executable}" "{self.echo}" %*\r\n')
+        return path
+
+    @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
+    def test_the_truncation_is_real(self):
+        shim = self._make_shim(".cmd")
+        proc = subprocess.run([shim, "line one\nline two"], capture_output=True,
+                              text=True, encoding="utf-8", errors="replace",
+                              timeout=120)
+        self.assertIn("line one", proc.stdout)
+        self.assertNotIn("line two", proc.stdout,
+                         "if this passes, the shim no longer truncates and "
+                         "shim_safe_argv's re-routing is no longer needed")
+
+    @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
+    def test_percent_and_operators_are_not_affected(self):
+        """Scope the claim: only newlines are the problem."""
+        shim = self._make_shim(".cmd")
+        for arg in ("100% done", "a && b", "a ^ b | c"):
+            proc = subprocess.run([shim, arg], capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace", timeout=120)
+            self.assertIn(arg, proc.stdout, f"{arg!r} did not survive")
+
+    def test_a_single_line_argument_is_left_on_the_direct_route(self):
+        shim = self._make_shim(".cmd")
+        argv, note = shim_safe_argv(shim, ["one line"])
+        self.assertEqual(argv[0], shim)
+        self.assertEqual(note, "")
+
+    @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
+    def test_a_multiline_argument_is_rerouted_through_the_ps1_sibling(self):
+        self._make_shim(".cmd")
+        ps1 = self._make_shim(".ps1")
+        argv, note = shim_safe_argv(os.path.join(self.dir, "tool.cmd"),
+                                    ["line one\nline two"])
+        self.assertIsNotNone(argv, note)
+        self.assertIn("powershell", argv[0].lower())
+        self.assertIn("-File", argv)
+        self.assertIn(ps1, argv)
+        self.assertIn("truncates", note)
+
+    @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
+    def test_the_rerouted_argv_actually_delivers_the_whole_argument(self):
+        """End to end: the point is the argument arriving, not the argv shape."""
+        self._make_shim(".cmd")
+        self._make_shim(".ps1")
+        argv, _ = shim_safe_argv(os.path.join(self.dir, "tool.cmd"),
+                                 ["line one\nline two\nline three"])
+        proc = subprocess.run(argv, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", timeout=180)
+        self.assertIn("line two", proc.stdout, proc.stderr[-300:])
+        self.assertIn("line three", proc.stdout, proc.stderr[-300:])
+
+    @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
+    def test_without_a_ps1_it_refuses_rather_than_truncating(self):
+        """Silent truncation is the worst outcome available, so it is refused."""
+        shim = self._make_shim(".cmd")
+        argv, note = shim_safe_argv(shim, ["line one\nline two"])
+        self.assertIsNone(argv)
+        self.assertIn("only its first line", note)
+
+    def test_a_real_executable_is_never_rerouted(self):
+        argv, note = shim_safe_argv(sys.executable, ["-c", "print(1)\nprint(2)"])
+        self.assertEqual(argv[0], sys.executable)
+        self.assertEqual(note, "")
+
+    def test_carriage_returns_count_as_multiline(self):
+        """A CRLF prompt truncates exactly the same way."""
+        if os.name != "nt":
+            self.skipTest("batch shims are a Windows concern")
+        shim = self._make_shim(".cmd")
+        argv, note = shim_safe_argv(shim, ["line one\r\nline two"])
+        self.assertIsNone(argv)
+        self.assertTrue(note)
+
+
+if __name__ == "__main__":
+    unittest.main()

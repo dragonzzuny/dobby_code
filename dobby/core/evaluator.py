@@ -3,8 +3,11 @@
 Criteria live in a JSON file whose sha256 is pinned into every evaluation
 record; if the generator rewrites criteria mid-run, verify_criteria_integrity
 fails (anti Evaluation-Gaming / Echo-Chamber Review). Deterministic checks run
-first; model-based judgment slots exist but are stubs here (no LLM on this
-machine) and are always marked as such.
+first. Model-based judgment is available via `judge=True` (see dobby/judge.py)
+but is ADVISORY: `.dobby/ontology.json` states that a model_assertion is never
+verification, so a judged criterion is excluded from the PASS/FAIL verdict no
+matter what the model says. Judging is opt-in because it costs money and reaches
+an external service.
 """
 
 from __future__ import annotations
@@ -29,9 +32,23 @@ def _sha256_file(path: str) -> str:
 
 class Evaluator:
     def __init__(self, criteria_path: str, workdir: str,
-                 config: dict | None = None):
+                 config: dict | None = None, *,
+                 judge: bool = False, artifact: str | None = None,
+                 judge_provider: str | None = None,
+                 judge_exclude: set[str] | None = None):
+        """`judge` is opt-in and defaults off.
+
+        Model judgment costs money and reaches an external service, so it is
+        never implicit — the same rule `providers/run.py::probe` follows for the
+        only other paid path. `judge_exclude` names providers that must not grade
+        this work, which is how the author is kept from grading itself.
+        """
         self.criteria_path = criteria_path
         self.workdir = workdir
+        self.judge = judge
+        self.artifact = artifact
+        self.judge_provider = judge_provider
+        self.judge_exclude = judge_exclude or set()
         self.protected = load_protected(config)
         with open(criteria_path, encoding="utf-8") as f:
             self.criteria = json.load(f)["criteria"]
@@ -82,10 +99,31 @@ class Evaluator:
             record.update(passed=not os.path.exists(p), confidence=1.0,
                           evidence=f"absent({crit['path']})={not os.path.exists(p)}")
         elif crit["kind"] == "model_judgment":
-            record.update(
-                passed=None, confidence=0.0,
-                evidence="NOT RUN: model-based judgment unavailable on this "
-                         "machine; requires an LLM evaluator adapter")
+            # Advisory whether or not a judge runs, so no caller can mistake the
+            # answer for a measurement. See dobby/judge.py for why the ontology
+            # forbids a model verdict from producing a verified result.
+            record["advisory"] = True
+            if not self.judge:
+                record.update(
+                    passed=None, confidence=0.0,
+                    evidence="NOT RUN: model judgment is opt-in (it costs money "
+                             "and reaches an external service). Pass judge=True, "
+                             "or `dobby slice --judge`, with an artifact to grade.")
+            elif not self.artifact:
+                record.update(
+                    passed=None, confidence=0.0,
+                    evidence="NOT RUN: judging was requested but no artifact was "
+                             "supplied; there is nothing to grade.")
+            else:
+                from ..judge import judge_criterion
+                verdict = judge_criterion(
+                    crit, self.artifact, provider_id=self.judge_provider,
+                    exclude=self.judge_exclude, cwd=self.workdir)
+                record.update(
+                    passed=verdict["passed"], confidence=verdict["confidence"],
+                    evidence=verdict["evidence"])
+                record["judge_provider"] = verdict["judge_provider"]
+                record["verdict_token"] = verdict["verdict_token"]
         else:
             record.update(passed=False, confidence=1.0,
                           evidence=f"unknown criterion kind '{crit['kind']}'")
@@ -95,14 +133,33 @@ class Evaluator:
         selected = [c for c in self.criteria
                     if criteria_ids is None or c["id"] in criteria_ids]
         records = [self.run_check(c) for c in selected]
-        det = [r for r in records if r["passed"] is not None]
+
+        # The verdict is DETERMINISTIC-ONLY. Advisory records are excluded even
+        # when they carry a True/False, because `.dobby/ontology.json` states
+        # that a model_assertion is never verification. Without this filter,
+        # wiring the judge adapter would have silently let a model opinion carry
+        # the same weight as a test exit code, and the claim that this evaluator
+        # is deterministic-first would have become false without a line of it
+        # being edited.
+        det = [r for r in records
+               if r["passed"] is not None and not r.get("advisory")]
+        advisory = [r for r in records if r.get("advisory")]
         verdict = "PASS" if det and all(r["passed"] for r in det) else \
                   "FAIL" if any(r["passed"] is False for r in det) else "NO_DETERMINISTIC_CHECKS"
         return {
             "verdict": verdict,
+            "verdict_basis": f"{len(det)} deterministic check(s); "
+                             f"{len(advisory)} advisory judgment(s) excluded",
             "criteria_hash": self.criteria_hash,
             "criteria_integrity": self.verify_criteria_integrity(),
             "records": records,
-            "not_evaluated": [r["criterion"] for r in records if r["passed"] is None],
+            "advisory": [
+                {"criterion": r["criterion"], "passed": r["passed"],
+                 "verdict_token": r.get("verdict_token"),
+                 "judge_provider": r.get("judge_provider"),
+                 "confidence": r["confidence"], "evidence": r["evidence"]}
+                for r in advisory],
+            "not_evaluated": [r["criterion"] for r in records
+                              if r["passed"] is None],
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }

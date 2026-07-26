@@ -36,7 +36,7 @@ import subprocess
 import time
 from typing import Sequence
 
-from ..core.platform import child_env
+from ..core.platform import child_env, shim_safe_argv
 from ..core.security import cap_output, redact_secrets
 from .base import ProviderResult, ProviderSpec
 from .catalog import registry
@@ -86,7 +86,14 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
     # Detection already paid for this lookup and its answer was being discarded
     # one line later. Substituting it costs nothing and keeps shell=False, so
     # prompt text still cannot become shell syntax.
-    argv = [resolved] + argv[1:]
+    argv, launch_note = shim_safe_argv(resolved, argv[1:])
+    if argv is None:
+        # Refusing beats delivering a truncated prompt. A provider that receives
+        # only the first line answers that line and the reply looks like an
+        # opinion about the whole task.
+        return ProviderResult(
+            provider=spec.id, ok=False,
+            error=f"cannot deliver this prompt intact: {launch_note}")
     limit = timeout_s or spec.timeout_s
     started = time.monotonic()
     meta = {
@@ -97,6 +104,9 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
         "argv_len": len(argv),
         # Recorded because the gap between the name and the path was the bug.
         "resolved_binary": resolved,
+        # Non-empty when the launch route had to change to keep the
+        # prompt intact. Silent re-routing would be its own defect.
+        "launch_note": launch_note,
         "prompt_chars": len(prompt),
         "model": model,
         "cwd": cwd or os.getcwd(),

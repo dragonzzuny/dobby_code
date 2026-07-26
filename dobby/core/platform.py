@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
 import sys
 from functools import lru_cache
 
@@ -165,6 +166,70 @@ def posix_shell_path() -> str | None:
         if proc.returncode == 0 and _POSIX_PROBE_TOKEN in out:
             return shell
     return None
+
+
+#: Windows extensions that are interpreted by cmd.exe's batch parser rather than
+#: launched directly. npm ships its CLIs this way.
+_BATCH_EXTENSIONS = (".cmd", ".bat")
+
+
+def shim_safe_argv(resolved: str,
+                   args: "list[str]") -> "tuple[list[str] | None, str]":
+    """Build an argv that delivers `args` INTACT, or refuse and say why.
+
+    A `.CMD` shim silently truncates any argument at its first newline. Measured
+    with the same string through both routes:
+
+        via .CMD shim    ["line one"]
+        direct exe       ["line one\\nline two\\nline three"]
+
+    Everything else survives - `%`, `&&`, `^`, `|` all arrive unharmed - so the
+    hazard is narrow and specific: multi-line arguments, and npm installs every
+    one of its CLIs as a `.CMD` on Windows.
+
+    This is why a judge prompt came back with "Ready to grade, but I'm missing the
+    inputs": the provider received only the prompt's first line, which was the
+    preamble, and answered it faithfully. Nothing errored. A round of that is
+    worse than a failure, because the reply looks like an opinion about the work.
+
+    npm also installs a `.ps1` beside the `.CMD`, and PowerShell's `-File` mode
+    does preserve newlines and percent signs (measured). So a batch shim carrying
+    a multi-line argument is re-routed through the vendor's own PowerShell shim.
+
+    `-ExecutionPolicy Bypass` is required because those shims are unsigned. It is
+    scoped to this one invocation and the file is one the user installed and would
+    run themselves; stating the choice is the point, not hiding it.
+
+    When there is no `.ps1` to fall back to, this returns `(None, reason)`. A
+    truncated prompt must never be sent silently - the caller refuses instead.
+    """
+    argv = [resolved] + list(args)
+    if not is_windows():
+        return argv, ""
+    if os.path.splitext(resolved)[1].lower() not in _BATCH_EXTENSIONS:
+        return argv, ""
+    multiline = [a for a in args if isinstance(a, str) and ("\n" in a or "\r" in a)]
+    if not multiline:
+        return argv, ""
+
+    sibling = os.path.splitext(resolved)[0] + ".ps1"
+    if os.path.exists(sibling):
+        powershell = shutil.which("pwsh") or shutil.which("powershell")
+        if powershell:
+            return ([powershell, "-NoProfile", "-ExecutionPolicy", "Bypass",
+                     "-File", sibling] + list(args),
+                    f"multi-line argument re-routed through {os.path.basename(sibling)}: "
+                    f"a .cmd shim truncates it at the first newline")
+        return None, (
+            f"{os.path.basename(resolved)} is a batch shim that would truncate a "
+            f"multi-line argument at its first newline, and neither pwsh nor "
+            f"powershell is on PATH to use {os.path.basename(sibling)} instead")
+    return None, (
+        f"{os.path.basename(resolved)} is a batch shim, which truncates a "
+        f"multi-line argument at its first newline, and there is no "
+        f"{os.path.basename(sibling)} beside it to route through. Sending the "
+        f"argument would deliver only its first line, and the reply would look "
+        f"like an answer to the whole thing")
 
 
 def posix_shell_available() -> bool:
