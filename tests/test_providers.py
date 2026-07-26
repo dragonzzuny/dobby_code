@@ -306,6 +306,77 @@ class TestFanout(unittest.TestCase):
         finally:
             fanout_mod.registry = original
 
+    def test_isolation_names_the_repository_it_resolved(self):
+        """`git rev-parse` walks UP, so the repo used may not be the one meant.
+
+        On a machine whose home directory is git-tracked, every path under it
+        resolves to that repo. Before this was fixed, a fan-out in a plain
+        folder would have created detached worktrees off the user's HOME.
+        """
+        import shutil as _shutil
+        import subprocess as _sp
+        import tempfile as _tf
+        from dobby.core.platform import child_env as _env
+        from dobby.providers.fanout import WorktreeSet, _git_toplevel
+
+        if _shutil.which("git") is None:
+            self.skipTest("git not available")
+
+        repo = _tf.mkdtemp(prefix="dobby-wt-test-")
+        self.addCleanup(_shutil.rmtree, repo, True)
+        for cmd in (["git", "init", "-q", "-b", "main"],
+                    ["git", "config", "user.email", "t@example.invalid"],
+                    ["git", "config", "user.name", "t"]):
+            _sp.run(cmd, cwd=repo, capture_output=True, env=_env())
+        with open(os.path.join(repo, "f.txt"), "w", encoding="utf-8") as f:
+            f.write("base\n")
+        _sp.run(["git", "add", "-A"], cwd=repo, capture_output=True, env=_env())
+        _sp.run(["git", "commit", "-qm", "init"], cwd=repo,
+                capture_output=True, env=_env())
+
+        with WorktreeSet(repo, 2) as trees:
+            self.assertTrue(trees.available, trees.reason)
+            self.assertIsNotNone(trees.toplevel)
+            self.assertEqual(os.path.normpath(trees.toplevel),
+                             os.path.normpath(os.path.realpath(repo)))
+            # The reason must NAME the repository, so an audit shows which one.
+            self.assertIn("from repository", trees.reason)
+            self.assertEqual(len(trees.paths), 2)
+            self.assertEqual(len(set(trees.paths)), 2)
+
+            # Each agent edits the same file; the main tree must be untouched.
+            for i, path in enumerate(trees.paths):
+                with open(os.path.join(path, "f.txt"), "w",
+                          encoding="utf-8") as f:
+                    f.write(f"agent {i}\n")
+            diffs = trees.diffs()
+            self.assertEqual(len(diffs), 2)
+            self.assertTrue(all(d["diff_bytes"] > 0 for d in diffs))
+            with open(os.path.join(repo, "f.txt"), encoding="utf-8") as f:
+                self.assertEqual(f.read(), "base\n",
+                                 "the main worktree must not be modified")
+
+    def test_unborn_head_is_refused_with_one_sentence(self):
+        """A repo with no commits cannot have worktrees; say so, not git's hint."""
+        import shutil as _shutil
+        import subprocess as _sp
+        import tempfile as _tf
+        from dobby.core.platform import child_env as _env
+        from dobby.providers.fanout import WorktreeSet
+
+        if _shutil.which("git") is None:
+            self.skipTest("git not available")
+        repo = _tf.mkdtemp(prefix="dobby-wt-empty-")
+        self.addCleanup(_shutil.rmtree, repo, True)
+        _sp.run(["git", "init", "-q", "-b", "main"], cwd=repo,
+                capture_output=True, env=_env())
+
+        with WorktreeSet(repo, 2) as trees:
+            self.assertFalse(trees.available)
+            self.assertIn("no commits yet", trees.reason)
+            self.assertNotIn("hint:", trees.reason,
+                             "git's multi-line hint must not be the message")
+
     def test_speedup_recorded(self):
         import dobby.providers.fanout as fanout_mod
         fakes = ProviderRegistry([

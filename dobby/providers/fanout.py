@@ -120,8 +120,38 @@ class FanoutRound:
 # git worktree isolation
 # --------------------------------------------------------------------------
 
-def _is_git_repo(path: str) -> bool:
-    proc = subprocess.run(["git", "-C", path, "rev-parse", "--git-dir"],
+def _git_toplevel(path: str) -> str | None:
+    """The root of the repository containing `path`, or None.
+
+    Returns the TOPLEVEL rather than a boolean, because `git rev-parse` walks
+    *upward*: a directory that is not a repository still answers "yes" whenever
+    any ancestor is one. On a machine where the user's home directory is
+    git-tracked — which is common, and was true on the authoring machine — every
+    path under it reports as a repository, and the repository reported is the
+    home directory.
+
+    That turns worktree isolation into a hazard: a fan-out running in a plain
+    project folder would create detached worktrees off the user's HOME repo.
+    Returning the path makes which repository is in play visible instead of
+    implied, and callers record it.
+    """
+    proc = subprocess.run(["git", "-C", path, "rev-parse", "--show-toplevel"],
+                          capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", env=child_env())
+    if proc.returncode != 0:
+        return None
+    top = (proc.stdout or "").strip()
+    return os.path.normpath(top) if top else None
+
+
+def _has_commits(repo: str) -> bool:
+    """Whether HEAD points at a commit.
+
+    A repository with no commits has an unborn HEAD, and `git worktree add`
+    cannot check anything out of it. Detecting this up front replaces git's
+    multi-line `--orphan` hint with one sentence the caller can act on.
+    """
+    proc = subprocess.run(["git", "-C", repo, "rev-parse", "--verify", "HEAD"],
                           capture_output=True, text=True, env=child_env())
     return proc.returncode == 0
 
@@ -147,6 +177,8 @@ class WorktreeSet:
         self.root: str | None = None
         self.available = False
         self.reason = ""
+        #: The repository git actually resolved. May be an ANCESTOR of `repo`.
+        self.toplevel: str | None = None
 
     def __enter__(self) -> "WorktreeSet":
         if self.count <= 0:
@@ -155,33 +187,51 @@ class WorktreeSet:
         if shutil.which("git") is None:
             self.reason = "git not on PATH"
             return self
-        if not _is_git_repo(self.repo):
-            self.reason = f"{self.repo} is not a git repository"
+
+        toplevel = _git_toplevel(self.repo)
+        if toplevel is None:
+            self.reason = f"{self.repo} is not inside a git repository"
             return self
+        # Name the repository that will actually be used. `rev-parse` walks up,
+        # so this can be an ancestor the caller did not have in mind — a home
+        # directory, or a monorepo root. Recording it makes that visible in the
+        # round's audit rather than discovered afterwards.
+        self.toplevel = toplevel
+        if not _has_commits(toplevel):
+            self.reason = (f"{toplevel} has no commits yet; git cannot check "
+                           "anything out into a worktree. Make one commit, or "
+                           "run this round without isolation")
+            return self
+
         self.root = tempfile.mkdtemp(prefix="dobby-wt-")
         for i in range(self.count):
             path = os.path.join(self.root, f"agent{i}")
             proc = subprocess.run(
-                ["git", "-C", self.repo, "worktree", "add", "--detach", path],
+                ["git", "-C", toplevel, "worktree", "add", "--detach", path],
                 capture_output=True, text=True, encoding="utf-8",
                 errors="replace", env=child_env())
             if proc.returncode != 0:
                 # Partial success is worse than none: agents 0..i-1 would be
                 # isolated while i..n share the main tree, which is exactly the
                 # corruption case. Unwind and report.
-                self.reason = (f"git worktree add failed: "
-                               f"{(proc.stderr or '').strip()[:200]}")
+                first = (proc.stderr or "").strip().splitlines()
+                headline = next((l for l in first
+                                 if l and not l.startswith("hint:")), "")
+                self.reason = (f"git worktree add failed in {toplevel}: "
+                               f"{headline[:200] or 'see git output'}")
                 self._cleanup()
                 return self
             self.paths.append(path)
         self.available = True
-        self.reason = f"{self.count} detached worktrees under {self.root}"
+        self.reason = (f"{self.count} detached worktrees under {self.root}, "
+                       f"from repository {toplevel}")
         return self
 
     def _cleanup(self) -> None:
         for path in self.paths:
             subprocess.run(
-                ["git", "-C", self.repo, "worktree", "remove", "--force", path],
+                ["git", "-C", self.toplevel or self.repo,
+                 "worktree", "remove", "--force", path],
                 capture_output=True, text=True, env=child_env())
         self.paths = []
         if self.root and os.path.isdir(self.root):

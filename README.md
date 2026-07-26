@@ -1,7 +1,7 @@
 # dobby
 
 [![ci](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml/badge.svg)](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-597-3fb950)](tests/)
+[![tests](https://img.shields.io/badge/tests-619-3fb950)](tests/)
 [![python](https://img.shields.io/badge/python-3.10%2B-4c8eda)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/dependencies-PyYAML%20only-4c8eda)](#install)
 [![platforms](https://img.shields.io/badge/platforms-linux%20%7C%20macos%20%7C%20windows-4c8eda)](.github/workflows/ci.yml)
@@ -404,7 +404,7 @@ dobby/style.py     the generated-prose signature (English + Korean)
 .claude/skills/    procedures
 mcp/               optional MCP gateway: 4 meta-tools, allowlisted, no network
 evals/             retrieval gold (dev / val / holdout)
-tests/             597 tests
+tests/             619 tests
 docs/              architecture, operating manual, failure catalog, threat
                    model, research evidence matrix
 ```
@@ -412,7 +412,7 @@ docs/              architecture, operating manual, failure catalog, threat
 ## Verify it yourself
 
 ```bash
-python -m unittest discover -s tests -q      # 597 tests
+python -m unittest discover -s tests -q      # 619 tests
 python -m dobby.cli slice --scenario SELF-CHECK
 python -m dobby.cli doctor
 ```

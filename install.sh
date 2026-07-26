@@ -36,17 +36,36 @@ run() { if [ "$DRY" = "--dry" ]; then say "  would: $*"; else "$@"; fi; }
 TARGET="$(cd "$TARGET" && pwd)"
 [ "$TARGET" != "$SRC" ] || die "target is the dobby repo itself; pick a host project"
 
-# Preconditions verified against the system, not assumed (invariant 3).
+# Preconditions are MEASURED, not assumed (invariant 3) — and existence is not
+# a measurement.
+#
+# On Windows, `python3` usually resolves to the Microsoft Store App Installer
+# redirector: a stub that prints the word "Python", executes nothing, and is
+# found by `command -v` like any real binary. An installer that trusts name
+# resolution therefore selects a non-functional interpreter and refuses to
+# install on a machine with a perfectly good Python 3.11 — observed on the
+# authoring machine, where this script failed at the front door.
+#
+# So each candidate is asked to COMPUTE something. A stub can echo its own name;
+# it cannot return 311.
 PY=""
-for cand in python3 python py; do
-  if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
+for cand in python3 python py python3.13 python3.12 python3.11 python3.10; do
+  command -v "$cand" >/dev/null 2>&1 || continue
+  ver="$("$cand" -c 'import sys;print(sys.version_info[0]*100+sys.version_info[1])' 2>/dev/null || true)"
+  case "$ver" in
+    ''|*[!0-9]*) continue ;;          # no answer, or not a number: not a Python
+  esac
+  [ "$ver" -ge 310 ] 2>/dev/null || continue
+  PY="$cand"
+  break
 done
-[ -n "$PY" ] || die "no python interpreter on PATH (need 3.10+)"
 
-"$PY" - <<'PYCHECK' || die "python 3.10+ required"
-import sys
-raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
-PYCHECK
+if [ -z "$PY" ]; then
+  say "no working Python 3.10+ found. Candidates tried: python3 python py"
+  say "Names that resolve but do not execute (e.g. the Windows Store stub at"
+  say "  ~/AppData/Local/Microsoft/WindowsApps/python3) are skipped on purpose."
+  die "install a real Python 3.10+ and re-run"
+fi
 
 if ! "$PY" -c "import yaml" >/dev/null 2>&1; then
   say "warning: PyYAML is not importable with $PY."
@@ -66,11 +85,47 @@ for dir in dobby mcp tests; do
 done
 
 # ---- data: copy only if absent -------------------------------------------
+# Runtime state that must NEVER travel to a host project. These are the same
+# paths `.gitignore` excludes, and `tests/test_install.py` asserts the two lists
+# agree — because they drift silently otherwise.
+#
+# This matters more than it looks. Installing from a working tree (the documented
+# path: clone, then run this script) copies whatever the source repo has
+# accumulated. Before this exclusion existed, a real install carried the source
+# machine's audit log, session trajectories, and — worst — `state/sandbox/*`,
+# which holds the captured stdout of arbitrary commands. Sandbox captures are
+# precisely the content that must not move between machines.
+RUNTIME_STATE="state knowledge/kg.bootstrap.json inventory.json memory \
+compression_guideline.json specialization.json"
+
+copy_data_excluding_state() {
+  src="$1"; dst="$2"
+  run mkdir -p "$dst"
+  (cd "$src" && find . -type f | sed 's|^\./||') | while read -r rel; do
+    skip=""
+    for pat in $RUNTIME_STATE; do
+      case "$rel" in
+        "$pat"|"$pat"/*) skip=1; break ;;
+      esac
+    done
+    [ -n "$skip" ] && continue
+    if [ "$DRY" = "--dry" ]; then
+      say "  would copy: $rel"
+    else
+      mkdir -p "$dst/$(dirname "$rel")"
+      cp "$src/$rel" "$dst/$rel"
+    fi
+  done
+}
+
 say ""
-say "project data (preserved if it already exists):"
+say "project data (preserved if it already exists; runtime state never copied):"
 for dir in .dobby evals; do
   if [ -e "$TARGET/$dir" ]; then
     say "  $dir/ EXISTS — left untouched (your curated knowledge)"
+  elif [ "$dir" = ".dobby" ]; then
+    say "  $dir/ created from the distribution defaults (state/ excluded)"
+    copy_data_excluding_state "$SRC/$dir" "$TARGET/$dir"
   else
     say "  $dir/ created from the distribution defaults"
     run cp -R "$SRC/$dir" "$TARGET/$dir"
@@ -136,12 +191,24 @@ fi
 # ---- verify the install, do not assume it (invariant 7) ------------------
 say "verifying:"
 cd "$TARGET"
-if "$PY" -m unittest discover -s tests -q >/dev/null 2>&1; then
-  say "  PASS engine tests"
+# Engine health, not the whole suite. Running 600 tests as an install step is
+# disproportionate to the question being asked — "did the engine land and does
+# it import and run here?" — and it made every install wait half a minute. These
+# six modules are the load-bearing core; a failure in any of them means the
+# install is not usable, and the full suite remains one command away.
+ENGINE_TESTS="tests.test_kg tests.test_router tests.test_skills tests.test_evaluator tests.test_security tests.test_memory tests.test_trajectory"
+if "$PY" -m unittest $ENGINE_TESTS -q >/dev/null 2>&1; then
+  say "  PASS engine health (core modules)"
+  say "       full suite: cd $TARGET && $PY -m unittest discover -s tests"
 else
-  say "  FAIL engine tests — run: $PY -m unittest discover -s tests"
+  say "  FAIL engine health — run: $PY -m unittest $ENGINE_TESTS"
 fi
-if "$PY" -m dobby.cli init --scan . >/dev/null 2>&1; then
+if [ -f ".dobby/knowledge/kg.bootstrap.json" ]; then
+  # Already instantiated. This is the normal state on an UPGRADE, and treating
+  # it as a failure taught the user to ignore the installer's own verdict.
+  say "  PASS bootstrap (already instantiated; refresh with: "
+  say "       $PY -m dobby.cli init --scan . --overwrite)"
+elif "$PY" -m dobby.cli init --scan . >/dev/null 2>&1; then
   say "  PASS bootstrap scan"
 else
   say "  FAIL bootstrap scan — run: $PY -m dobby.cli init --scan ."

@@ -44,17 +44,34 @@ if (-not (Test-Path -LiteralPath $Target -PathType Container)) {
 $Target = (Resolve-Path -LiteralPath $Target).Path
 if ($Target -eq $src) { Die "target is the dobby repo itself; pick a host project" }
 
-# Preconditions are MEASURED, not assumed. `python3` does not exist on a default
-# Windows install, so every candidate name is probed.
+# Preconditions are MEASURED, not assumed - and existence is not a measurement.
+#
+# `python3` on Windows usually resolves to the Microsoft Store App Installer
+# redirector: a stub that prints the word "Python", executes nothing, and is
+# found by Get-Command exactly like a real binary. Selecting it makes the
+# installer refuse to run on a machine with a working Python 3.11.
+#
+# So each candidate is asked to COMPUTE something. A stub can echo its own name;
+# it cannot return 311.
 $py = $null
-foreach ($cand in @('python', 'py', 'python3')) {
+foreach ($cand in @('python', 'py', 'python3', 'python3.13', 'python3.12',
+                    'python3.11', 'python3.10')) {
     $found = Get-Command $cand -ErrorAction SilentlyContinue
-    if ($null -ne $found) { $py = $found.Source; break }
+    if ($null -eq $found) { continue }
+    $probe = & $found.Source -c "import sys;print(sys.version_info[0]*100+sys.version_info[1])" 2>$null
+    if ($LASTEXITCODE -ne 0) { continue }
+    $n = 0
+    if (-not [int]::TryParse(($probe | Out-String).Trim(), [ref]$n)) { continue }
+    if ($n -lt 310) { continue }
+    $py = $found.Source
+    break
 }
-if ($null -eq $py) { Die "no python interpreter on PATH (need 3.10+)" }
-
-$verOk = & $py -c "import sys; print(1 if sys.version_info >= (3,10) else 0)"
-if ($verOk.Trim() -ne '1') { Die "python 3.10+ required (found: $(& $py --version))" }
+if ($null -eq $py) {
+    Say "no working Python 3.10+ found. Candidates tried: python, py, python3"
+    Say "Names that resolve but do not execute (the Windows Store stub at"
+    Say "  ~\AppData\Local\Microsoft\WindowsApps\python3.exe) are skipped."
+    Die "install a real Python 3.10+ and re-run"
+}
 
 & $py -c "import yaml" 2>$null
 if ($LASTEXITCODE -ne 0) {
@@ -78,12 +95,45 @@ foreach ($dir in @('dobby', 'mcp', 'tests')) {
     CopyTree (Join-Path $src $dir) (Join-Path $Target $dir)
 }
 
+# Runtime state that must NEVER travel to a host project. Mirrors .gitignore;
+# tests/test_install.py asserts the two lists agree, because they drift silently.
+#
+# Installing from a working tree copies whatever the source repo accumulated.
+# Before this exclusion, a real install carried the source machine's audit log,
+# session trajectories, and state\sandbox\* - captured stdout of arbitrary
+# commands, which is exactly the content that must not move between machines.
+$RuntimeState = @('state', 'knowledge/kg.bootstrap.json', 'inventory.json',
+                  'memory', 'compression_guideline.json', 'specialization.json')
+
+function CopyDataExcludingState($from, $to) {
+    if ($DryRun) { Say "  would copy $from -> $to (runtime state excluded)"; return }
+    New-Item -ItemType Directory -Path $to -Force | Out-Null
+    $fromFull = (Resolve-Path -LiteralPath $from).Path
+    foreach ($file in Get-ChildItem -LiteralPath $from -Recurse -File) {
+        $rel = $file.FullName.Substring($fromFull.Length).TrimStart('\', '/')
+        $relPosix = $rel -replace '\\', '/'
+        $skip = $false
+        foreach ($pat in $RuntimeState) {
+            if ($relPosix -eq $pat -or $relPosix.StartsWith("$pat/")) {
+                $skip = $true; break
+            }
+        }
+        if ($skip) { continue }
+        $destFile = Join-Path $to $rel
+        New-Item -ItemType Directory -Path (Split-Path $destFile) -Force | Out-Null
+        Copy-Item -LiteralPath $file.FullName -Destination $destFile -Force
+    }
+}
+
 Say ""
-Say "project data (preserved if it already exists):"
+Say "project data (preserved if it already exists; runtime state never copied):"
 foreach ($dir in @('.dobby', 'evals')) {
     $dest = Join-Path $Target $dir
     if (Test-Path -LiteralPath $dest) {
         Say "  $dir\ EXISTS - left untouched (your curated knowledge)"
+    } elseif ($dir -eq '.dobby') {
+        Say "  $dir\ created from the distribution defaults (state\ excluded)"
+        CopyDataExcludingState (Join-Path $src $dir) $dest
     } else {
         Say "  $dir\ created from the distribution defaults"
         CopyTree (Join-Path $src $dir) $dest
@@ -152,9 +202,15 @@ if ($DryRun) { Say "dry run complete; nothing was written."; exit 0 }
 Say "verifying:"
 Push-Location $Target
 try {
-    & $py -m unittest discover -s tests -q 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { Say "  PASS engine tests" }
-    else { Say "  FAIL engine tests - run: $py -m unittest discover -s tests" }
+    # Engine health, not the whole suite - see install.sh for the reasoning.
+    $engineTests = @('tests.test_kg', 'tests.test_router', 'tests.test_skills',
+                     'tests.test_evaluator', 'tests.test_security',
+                     'tests.test_memory', 'tests.test_trajectory')
+    & $py -m unittest @engineTests -q 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Say "  PASS engine health (core modules)"
+        Say "       full suite: cd $Target; $py -m unittest discover -s tests"
+    } else { Say "  FAIL engine health - run: $py -m unittest @engineTests" }
 
     & $py -m dobby.cli init --scan . 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { Say "  PASS bootstrap scan" }
