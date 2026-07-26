@@ -1,7 +1,7 @@
 # dobby
 
 [![ci](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml/badge.svg)](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-738-3fb950)](tests/)
+[![tests](https://img.shields.io/badge/tests-868-3fb950)](tests/)
 [![python](https://img.shields.io/badge/python-3.10%2B-4c8eda)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/dependencies-PyYAML%20only-4c8eda)](#install)
 [![platforms](https://img.shields.io/badge/platforms-linux%20%7C%20macos%20%7C%20windows-4c8eda)](.github/workflows/ci.yml)
@@ -393,6 +393,8 @@ dobby/tokens.py    output condensers, snapshots, blast radius
 dobby/research.py  search planning, claim + citation verification
 dobby/design.py    DESIGN.md validation, aesthetics, contrast
 dobby/search.py    solution-tree search, layer composition, case bank
+dobby/search_driver.py  the search, driven by real providers and a real objective
+dobby/judge.py     model judgment as ADVISORY evidence, never as verification
 dobby/sandbox.py   execution whose output never enters context
 dobby/progress.py  ETA that refuses to guess
 dobby/spend.py     where the session's agent time went
@@ -404,7 +406,7 @@ dobby/style.py     the generated-prose signature (English + Korean)
 .claude/skills/    procedures
 mcp/               optional MCP gateway: 4 meta-tools, allowlisted, no network
 evals/             retrieval gold (dev / val / holdout)
-tests/             738 tests
+tests/             868 tests
 docs/              architecture, operating manual, failure catalog, threat
                    model, research evidence matrix
 ```
@@ -412,7 +414,7 @@ docs/              architecture, operating manual, failure catalog, threat
 ## Verify it yourself
 
 ```bash
-python -m unittest discover -s tests -q      # 738 tests
+python -m unittest discover -s tests -q      # 868 tests
 python -m dobby.cli slice --scenario SELF-CHECK
 python -m dobby.cli doctor
 ```
@@ -429,16 +431,47 @@ Read these before believing anything above.
   answers saying the same thing in different words score as diverse; two
   differing only by a negation score as similar. These metrics reliably catch
   collapse and wide spread, and are weak in between.
+
+  There is now a number on how weak. A live panel ran while a bug was truncating
+  one member's prompt at its first newline, so that member answered from the
+  opening line alone. Re-running the same task on the same panel afterwards moved
+  mean pairwise distance from 0.8824 to 0.8883 and `effective_n` from 1.882 to
+  1.888 — while the answers went from a plausible causal chain that did not
+  survive checking to specific line-range citations of the relevant file.
+  `effective_n` answers *are these worded differently*. It is not evidence that
+  anything is well grounded; that is the grounding gate's job.
 - **Token numbers are estimates**, at 4 chars/token with no tokenizer. Budgeting
   aids, not bills.
 - **The ML gates read descriptions, not data.** They check whether the split
   happened before the scaler was fit *as recorded*. They cannot see a leak you
   did not describe.
-- **`qwen`, `ollama`, `kimi`, and `dashscope` are declared but unverified here** —
-  the authoring machine did not have them. `fleet` reports this per provider
-  rather than assuming it works.
-- **Model-judgment evaluator criteria are always marked NOT RUN** until a judge
-  adapter exists. No simulated model results, ever.
+- **`qwen`, `ollama`, `kimi`, and `dashscope` have never been executed** — the
+  authoring machine does not have them, and their `verified_on` is empty. `fleet`
+  reports this per provider rather than assuming it works.
+
+  `claude`, `agy` and `codex` *have* now answered a live probe with the exact
+  expected token (29.1s / 14.6s / 31.0s). Before that probe was first run, two of
+  them could not start a process at all while `fleet` called them `usable: true` —
+  the launcher used the bare binary name, and on Windows `shutil.which` consults
+  PATHEXT while `CreateProcess` does not, so every npm `.CMD` shim resolved and
+  then refused. `gemini` launches and is refused by its own service for an
+  account-tier reason, which is a condition of the account rather than of the
+  invocation.
+- **A model judgment never counts as verification.** `dobby slice --judge` and
+  `Evaluator(judge=True)` do grade `model_judgment` criteria now, but the result
+  is `advisory`: excluded from the PASS/FAIL verdict in both directions, capped at
+  confidence 0.6, and reported separately with the judging provider named.
+  `.dobby/ontology.json` forbids a `model_assertion` from being `verified`, and
+  `evaluate()` previously satisfied that rule only by accident — it counted every
+  non-`None` result as deterministic, and judgments always returned `None`.
+  Judging is opt-in because it costs money and leaves the machine. No simulated
+  model results, ever.
+- **A tree search needs a real objective, and will not invent one.**
+  `dobby search` scores candidates by running `--score-command`, never by asking a
+  model to rate its own output — that maximises self-assessment and reports steady
+  improvement while producing nothing better. With no score command every
+  candidate is uncomparable, no node is viable, and the output says so instead of
+  substituting a default number.
 
 ## License
 
