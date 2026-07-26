@@ -353,5 +353,78 @@ class TestCliSurface(unittest.TestCase):
         self.assertIn("{candidate}", proc.stderr)
 
 
+
+
+class TestCliPayloadBuildsWithoutAProvider(unittest.TestCase):
+    """The formatting step that threw away three paid provider calls.
+
+    `cmd_search` built its output with
+    `result.to_dict() if hasattr(result, "to_dict") else dict(result)`. SearchResult
+    has neither, so the first live run made its calls, produced a result, and died
+    with a TypeError while rendering it. The guard was what made the guess
+    survivable long enough to reach runtime.
+
+    Covered here with the search itself stubbed, so the payload contract is checked
+    without spending anything.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, True)
+
+    def _namespace(self, **over):
+        base = dict(repo=REPO, task="t", score_command=None, score_timeout=30,
+                    provider=None, timeout=None, max_nodes=2, min_drafts=1,
+                    debug_depth=1, patience=1, lower_is_better=False)
+        base.update(over)
+        return types.SimpleNamespace(**base)
+
+    def _fake_result(self, with_best):
+        from dobby.search import Node, SearchResult
+        best = Node(id="n1", parent=None, action="DRAFT", content="the code",
+                    score=4.0) if with_best else None
+        return SearchResult(best=best, nodes=[best] if best else [],
+                            stopped_because="budget", drafts=1, debugs=0,
+                            improves=0, buggy_count=0, holdout_score=None,
+                            holdout_note="none", history=[])
+
+    def _run(self, with_best):
+        import dobby.cli as cli
+        printed = {}
+        with mock.patch.object(cli, "_out", lambda obj: printed.update(obj)), \
+                mock.patch("dobby.search.search",
+                           return_value=self._fake_result(with_best)), \
+                mock.patch("dobby.search_driver.provider_expander") as expander:
+            expander.return_value.calls = [
+                {"action": "DRAFT", "ok": True, "score": 4.0, "duration_s": 1.0}]
+            cli.cmd_search(self._namespace())
+        return printed
+
+    def test_the_payload_renders_and_carries_the_search_summary(self):
+        payload = self._run(with_best=True)
+        for key in ("best_score", "nodes_evaluated", "stopped_because",
+                    "selection_bias_warning", "driver"):
+            self.assertIn(key, payload, sorted(payload))
+
+    def test_the_best_candidate_content_is_included(self):
+        payload = self._run(with_best=True)
+        self.assertEqual(payload["best"]["content"], "the code")
+        self.assertEqual(payload["best"]["score"], 4.0)
+
+    def test_no_best_node_omits_the_key_rather_than_faking_one(self):
+        payload = self._run(with_best=False)
+        self.assertNotIn("best", payload)
+        self.assertIsNone(payload["best_score"])
+
+    def test_the_missing_scorer_warning_is_present(self):
+        payload = self._run(with_best=False)
+        self.assertIn("no --score-command", payload["driver"]["warning"])
+
+    def test_the_selection_bias_warning_survives_into_the_payload(self):
+        """The number is optimistically biased and the output must say so."""
+        payload = self._run(with_best=True)
+        self.assertIn("optimistically biased", payload["selection_bias_warning"])
+
+
 if __name__ == "__main__":
     unittest.main()

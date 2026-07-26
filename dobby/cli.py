@@ -593,8 +593,19 @@ def cmd_search(args):
                     min_drafts=args.min_drafts, debug_depth=args.debug_depth,
                     patience=args.patience,
                     higher_is_better=not args.lower_is_better)
-    payload = result.to_dict() if hasattr(result, "to_dict") else dict(result)
+    # `result.summary()`, named directly. The first version wrote
+    # `result.to_dict() if hasattr(result, "to_dict") else dict(result)` — a guess
+    # at the API wrapped in a guard that hid the guess until runtime. SearchResult
+    # has neither method, so three real provider calls were spent and then thrown
+    # away by a TypeError while formatting the output. A defensive fallback around
+    # an API nobody checked is worse than no fallback: it converts "read the
+    # dataclass" into "lose the run".
+    payload = result.summary()
     payload["driver"] = driver_report(result, expander.calls)
+    if result.best is not None:
+        payload["best"] = {"id": result.best.id, "score": result.best.score,
+                           "action": result.best.action,
+                           "content": result.best.content}
     if scorer is None:
         payload["driver"]["warning"] = (
             "no --score-command: every candidate is uncomparable, so the search "

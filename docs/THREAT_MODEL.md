@@ -81,6 +81,69 @@ ledger, on API request bodies before transmission, and on sandbox previews.
 fine-grained PATs, npm and Stripe tokens, and JWTs. False positives are checked
 in both directions — prose containing "token" or "password" is not redacted.
 
+### 4. The command guard permitted erasing the machine
+
+**Was:** `guard_command` blocked a destructive command only when one of its
+arguments matched a **configurable** pattern. `DEFAULT_PROTECTED` covers `.git`,
+`.pem`, `.key` and `.env` — repository integrity and secrets — and a host that
+sets `protected_paths` replaces that list wholesale. Nothing protected the machine
+itself. Measured:
+
+```
+rm -rf /                  ALLOW
+rm -rf ~                  ALLOW
+rd /s /q C:/Users         ALLOW
+rm -rf C:/Windows         ALLOW
+rd /s /q C:/Program Files ALLOW
+```
+
+The `C:\`-with-a-trailing-backslash spellings *were* refused, but only because
+that backslash makes `shlex.split` raise and the unparseable branch is
+conservative. Written `C:/` the same command passed. Protection that depends on
+which slash the caller typed is luck, not a control.
+
+Found by writing a test that asserted a `rm -rf /` score command would be
+blocked. It was not blocked — it **executed**, and only GNU `rm`'s own
+`--no-preserve-root` failsafe prevented the outcome.
+
+**Now:** machine-level targets are refused in a separate check that the
+configurable list cannot switch off — filesystem and drive roots, `~`, the
+resolved home directory, `$HOME`/`%USERPROFILE%`, and the standard system
+directories. Matches are exact, so `rm -rf ./build`, `rm -rf ~/project/dist` and
+`rm -rf /home/runner/work/x/tmp` all still run: a guard that blocks routine
+cleanup gets switched off and then protects nothing.
+
+Two bugs in the first version of that fix, both found by probing it rather than
+reading it: `rstrip("/")` turned `"/"` into `""` and fell through the empty-string
+guard, so the single case the check existed for still passed; and a path
+containing a space evaded it entirely, because `shlex` splits `C:/Program Files`
+into two tokens and neither matches. The second is closed by a boundary-anchored
+scan over the whole command.
+
+### 5. `--score-command` runs model output, and the sandbox is not in that path
+
+**Status: open, and stated rather than mitigated.**
+
+`dobby search` scores each candidate by running a command against the file the
+candidate was written to. For most real objectives that command *executes
+model-generated code* — a test suite, a build, an interpreter.
+
+`dobby/sandbox.py` exists for exactly this shape of risk and **is not wired into
+this path**. `command_scorer` runs the command through `guard_command` with
+`shell=True`, which is a defence against a mis-specified command, not against
+code the harness itself just asked a model to write.
+
+What this means concretely: a score command is as privileged as the harness. The
+candidate file lands under `.dobby/state/search/`, which is gitignored and
+excluded by both installers, so model output does not *travel*; nothing stops it
+*running* if the score command runs it.
+
+Anyone wiring a real objective should assume that. The demonstration run recorded
+in the evidence matrix deliberately scores **static** properties — `compile()`
+parses without executing, and the feature checks are regex and AST — precisely so
+that the first live search did not have to take this risk. Routing the scorer
+through the sandbox is the fix and has not been done.
+
 ### Standing limits, unchanged
 
 - The sandbox's network control remains **best-effort discouragement, not a
