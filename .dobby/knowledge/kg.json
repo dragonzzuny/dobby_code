@@ -485,7 +485,12 @@
    "type": "Convention",
    "name": "OPERATING_MANUAL",
    "summary": "full policy schema, task lifecycle, escalation ladder, recovery, quality-gate template",
-   "keywords": [],
+   "keywords": [
+    "have",
+    "multi",
+    "step",
+    "task"
+   ],
    "path": "docs/OPERATING_MANUAL.md",
    "authority": 0.9,
    "provenance": {

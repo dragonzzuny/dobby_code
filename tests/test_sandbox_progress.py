@@ -87,6 +87,45 @@ class TestSandboxRun(unittest.TestCase):
         self.assertIsNone(result.stderr)
 
 
+class TestConfinementInTheExecutionPath(unittest.TestCase):
+    """Regression: the helper existed, was unit-tested, and was NEVER CALLED.
+
+    `_resolve_inside` passed its own tests while `run()` ignored it entirely, so
+    the module documented a control it did not apply. Testing a helper in
+    isolation is exactly how that stays invisible — these tests go through
+    `run()`.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = tempfile.TemporaryDirectory()
+        self.addCleanup(self.root.cleanup)
+        self.inside = os.path.join(self.root.name, "sub")
+        os.makedirs(self.inside, exist_ok=True)
+
+    def test_cwd_inside_root_is_allowed(self):
+        result = run(f'"{PY}" -c "print(1)"', data_dir=self.tmp.name,
+                     cwd=self.inside, root=self.root.name, timeout_s=60)
+        self.assertTrue(result.ok, result.error)
+
+    def test_cwd_outside_root_is_refused_before_launch(self):
+        other = tempfile.mkdtemp()
+        self.addCleanup(lambda: None)
+        with self.assertRaises(SandboxError) as ctx:
+            run(f'"{PY}" -c "print(1)"', data_dir=self.tmp.name,
+                cwd=other, root=self.root.name, timeout_s=60)
+        self.assertIn("escapes the sandbox root", str(ctx.exception))
+
+    def test_no_root_means_no_confinement_and_that_is_documented(self):
+        """The default is an absence, not an implied guarantee."""
+        other = tempfile.mkdtemp()
+        result = run(f'"{PY}" -c "print(1)"', data_dir=self.tmp.name,
+                     cwd=other, timeout_s=60)
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual(result.cwd, os.path.abspath(other))
+
+
 class TestPathConfinement(unittest.TestCase):
     def test_escape_is_refused(self):
         with tempfile.TemporaryDirectory() as root:

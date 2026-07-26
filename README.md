@@ -1,7 +1,7 @@
 # dobby
 
 [![ci](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml/badge.svg)](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-529-3fb950)](tests/)
+[![tests](https://img.shields.io/badge/tests-597-3fb950)](tests/)
 [![python](https://img.shields.io/badge/python-3.10%2B-4c8eda)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/dependencies-PyYAML%20only-4c8eda)](#install)
 [![platforms](https://img.shields.io/badge/platforms-linux%20%7C%20macos%20%7C%20windows-4c8eda)](.github/workflows/ci.yml)
@@ -292,6 +292,62 @@ To put it in Claude Code's status bar, set `statusLine` in `settings.json`:
                   "command": "python -m dobby.cli spend --line" } }
 ```
 
+### Casual request → executable prompt — `dobby/prompt.py`
+
+```bash
+dobby prompt "이거 좀 개선해줘"
+# → ask: What does '이거' refer to? Name it explicitly.  (3 rounds at risk)
+#   gaps: context, objective, acceptance, scope
+```
+
+"Efficient prompting" is used to mean two things that pull opposite ways — fewer
+tokens, and better results. A well-specified prompt is almost always **longer**.
+The cost that actually dominates is neither: it is **retries**. A prompt missing
+its acceptance criterion produces a plausible wrong answer, costing the round
+that produced it, the round that reviewed it, and the round that fixed it.
+
+So this compiles for specification, reports the token cost of doing so, and
+never claims the result is shorter. And it **does not guess**: an unresolved
+ambiguity becomes a listed question, because a compiler that picks a file has
+not specified the task, it has changed it.
+
+One question is returned, not five — ordered by retry cost, because a caller
+handed five questions answers them partially and a caller handed the expensive
+one answers it.
+
+**On translating Korean prompts to English: don't.** Translation inserts a guess
+into a system built to avoid guessing, and the real problem was never the
+language — it was that the tokenizer could not read Hangul (fixed; see below).
+Identifiers, paths, and commands stay verbatim in every language.
+
+### The generated-prose signature — `dobby/style.py`
+
+```bash
+dobby style --file draft.md
+dobby style --text "..." --rewritten edited.md   # scores the change budget
+```
+
+The obvious approach — ban a word list — fails, because the words are not the
+tell. Human writing contains "however" too. What marks generated prose is
+**uniformity**: sentences clustered at one length, a comma after every
+connective, hedges stacked until nothing is asserted, lists arriving in threes
+because three sounds complete.
+
+So the primary signals are distributional. Mean sentence length says little;
+the **standard deviation** says a great deal. Run on this session's own prose it
+returns `uniform_sentence_length` at S1, which is the correct answer.
+
+Three severities, because one occurrence is sometimes enough and sometimes not:
+**S1** deterministic (a comma after a Korean connective ending is a translation
+artifact, not a choice), **S2** at three or more, **S3** only in overlap.
+
+Rewrites are bounded: ≤30% target, **abort above 50%** — past that a
+"humanizing" pass has replaced the author's writing with the rewriter's. The
+module detects and instructs; it does not rewrite, because that needs a model
+and a heuristic paraphraser would be the lossy step the discipline exists to
+prevent. Taxonomy adapted from the MIT-licensed `im-not-ai` / Humanize-KR
+project.
+
 ### Design contract — `DESIGN.md`
 
 YAML token frontmatter plus prose rules, validated:
@@ -340,13 +396,15 @@ dobby/search.py    solution-tree search, layer composition, case bank
 dobby/sandbox.py   execution whose output never enters context
 dobby/progress.py  ETA that refuses to guess
 dobby/spend.py     where the session's agent time went
+dobby/prompt.py    casual request -> executable prompt, gaps named not guessed
+dobby/style.py     the generated-prose signature (English + Korean)
 
 .dobby/            PROJECT DATA — ontology, knowledge, policies, config
 .claude/rules/     scoped rules
 .claude/skills/    procedures
 mcp/               optional MCP gateway: 4 meta-tools, allowlisted, no network
 evals/             retrieval gold (dev / val / holdout)
-tests/             529 tests
+tests/             597 tests
 docs/              architecture, operating manual, failure catalog, threat
                    model, research evidence matrix
 ```
@@ -354,7 +412,7 @@ docs/              architecture, operating manual, failure catalog, threat
 ## Verify it yourself
 
 ```bash
-python -m unittest discover -s tests -q      # 529 tests
+python -m unittest discover -s tests -q      # 597 tests
 python -m dobby.cli slice --scenario SELF-CHECK
 python -m dobby.cli doctor
 ```

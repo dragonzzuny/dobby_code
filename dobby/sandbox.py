@@ -21,10 +21,15 @@ Isolation is real, and its limits are stated
 --------------------------------------------
 Four controls are applied, and each is honest about what it does not cover:
 
-- **Working directory** is confined to a declared root. Paths are resolved and
-  checked against it, so `../../etc` fails before the process starts. This does
-  not stop a program that is already running from using an absolute path — it is
-  a guard on what this module *launches*, not a jail.
+- **Working directory** is confined to a declared root **when one is declared**.
+  Pass `root=` and the working directory is resolved (through symlinks) and
+  refused if it lands outside; `../../etc` then fails before the process starts.
+  **With no `root`, there is no confinement** — the command runs wherever `cwd`
+  points. This is stated plainly because an earlier version of this docstring
+  claimed unconditional confinement while `run()` never called the check, and a
+  documented control that does not execute is worse than an absent one: it stops
+  people looking for the real thing. Either way it guards what this module
+  *launches*, not what a running program then does with an absolute path.
 - **Network** is disabled by clearing proxy variables and setting the
   no-network hints most runtimes honour. This is a **best-effort discouragement,
   not a block** — a determined binary can still open a socket. Real network
@@ -54,7 +59,7 @@ import subprocess
 import time
 from collections.abc import Sequence
 
-from .core.platform import child_env, resolve_command
+from .core.platform import child_env, is_windows, resolve_command
 from .core.security import cap_output, guard_command, redact_secrets
 
 #: Where captured output lives, relative to the data dir.
@@ -203,7 +208,7 @@ def _kill_tree(proc: subprocess.Popen) -> None:
     """
     if proc.poll() is not None:
         return
-    if os.name == "nt":
+    if is_windows():
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                        capture_output=True, check=False)
     else:
@@ -228,17 +233,30 @@ def sandbox_env(*, allow_network: bool) -> dict:
 
 
 def run(command: str, *, data_dir: str, cwd: str | None = None,
+        root: str | None = None,
         timeout_s: int = 300, allow_network: bool = False,
         max_capture_bytes: int = MAX_CAPTURE_BYTES,
         protected_paths: Sequence[str] = (),
         preview_lines: int = PREVIEW_LINES) -> Result:
     """Run `command` with its output captured to disk instead of returned.
 
+    `root` confines the working directory: `cwd` is resolved through symlinks and
+    refused if it lands outside. Without it there is no confinement, which is the
+    documented and intended default for a harness that legitimately operates on
+    the repository it was pointed at — but it is a real absence, not an implied
+    guarantee.
+
     The command is passed through the same destructive-command guard the
     evaluator uses, so the sandbox does not become a way to run what the rest of
     the kit refuses.
     """
     work_dir = os.path.abspath(cwd or os.getcwd())
+    if root is not None:
+        # Confinement is applied HERE, in the execution path. Having the check
+        # exist as a helper is not the same as running it, and unit-testing the
+        # helper directly is how that difference stays invisible.
+        work_dir = _resolve_inside(root, os.path.relpath(work_dir, root)
+                                   if os.path.isabs(work_dir) else work_dir)
     if not os.path.isdir(work_dir):
         raise SandboxError(f"cwd does not exist: {work_dir}")
 
@@ -273,7 +291,7 @@ def run(command: str, *, data_dir: str, cwd: str | None = None,
                 env=sandbox_env(allow_network=allow_network),
                 # POSIX: own session, so one killpg reaches every descendant.
                 # Ignored on Windows, where _kill_tree uses taskkill /T.
-                start_new_session=(os.name != "nt"))
+                start_new_session=not is_windows())
         except OSError as exc:
             return Result(command=resolved, exit_code=None,
                           duration_s=round(time.monotonic() - clock, 2),

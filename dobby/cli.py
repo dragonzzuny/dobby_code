@@ -653,6 +653,40 @@ def cmd_spend(args):
         _out(summarize(data, window_s=window))
 
 
+def cmd_style(args):
+    """Detect the generated-prose signature in a file or a string."""
+    from .style import analyze, rewrite_budget, rewrite_instruction
+    if args.file:
+        with open(os.path.abspath(args.file), encoding="utf-8",
+                  errors="replace") as f:
+            text = f.read()
+    elif args.text:
+        text = args.text
+    else:
+        sys.exit("style needs --file or --text")
+    report = analyze(text)
+    if args.rewritten:
+        with open(os.path.abspath(args.rewritten), encoding="utf-8",
+                  errors="replace") as f:
+            report["rewrite_budget"] = rewrite_budget(text, f.read())
+    report["rewrite_instruction"] = rewrite_instruction(report)
+    _out(report)
+
+
+def cmd_prompt(args):
+    """Compile a casual request into an executable prompt, naming what is unsaid."""
+    from .prompt import clarifying_question, compile_prompt
+    compiled = compile_prompt(
+        args.request,
+        objective=args.objective or "", acceptance=args.acceptance or "",
+        scope=args.scope or "", output_contract=args.contract or "",
+        role=args.role or "",
+        context=[c for c in (args.context or "").split("|") if c.strip()])
+    out = compiled.to_dict()
+    out["ask"] = clarifying_question(args.request)
+    _out(out)
+
+
 # --------------------------------------------------------------- main ----
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="dobby",
@@ -815,6 +849,26 @@ def build_parser() -> argparse.ArgumentParser:
                    help="restrict to the last N minutes")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_spend)
+
+    p = sub.add_parser("style", parents=[common],
+                       help="detect the generated-prose signature (EN + KO)")
+    p.add_argument("--file", default=None)
+    p.add_argument("--text", default=None)
+    p.add_argument("--rewritten", default=None,
+                   help="a candidate rewrite, to score against the change budget")
+    p.set_defaults(fn=cmd_style)
+
+    p = sub.add_parser("prompt", parents=[common],
+                       help="compile a casual request into an executable prompt")
+    p.add_argument("request")
+    p.add_argument("--objective", default=None)
+    p.add_argument("--acceptance", default=None)
+    p.add_argument("--scope", default=None)
+    p.add_argument("--contract", default=None)
+    p.add_argument("--role", default=None)
+    p.add_argument("--context", default=None,
+                   help="pipe-separated established facts")
+    p.set_defaults(fn=cmd_prompt)
     return ap
 
 

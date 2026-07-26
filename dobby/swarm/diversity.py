@@ -55,17 +55,103 @@ should does did doing done being been also into over under about above below
 use used using make makes made need needs needed given give gives
 """.split())
 
-_TOKEN_RE = re.compile(r"[a-z0-9_]+")
+#: Unicode word characters. `\w` is Unicode-aware in Python 3, so this matches
+#: Hangul, Han, Kana, Cyrillic, Greek, and accented Latin as well as ASCII.
+#:
+#: An earlier version of this file used `[a-z0-9_]+`, which matches NO Hangul —
+#: so three completely unrelated Korean answers tokenized to nothing, scored a
+#: mean pairwise distance of 0.0, and were reported as a COLLAPSED panel worth
+#: 1.0 opinions. Every module downstream of this function inherited that: memory
+#: routing, the grounding gate, claim verification, case retrieval. The engine's
+#: own `core/kg.py` had handled Hangul from the start; this module regressed it.
+_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
+
+#: Scripts whose words are not separated the way Latin's are. Korean attaches
+#: particles (파일 → 파일은 / 파일이 / 파일을), and Han/Kana run together with no
+#: spaces at all, so whole-token matching reports two mentions of the same word
+#: as unrelated. Character bigrams recover the shared stem without a
+#: morphological analyser, which a stdlib-only kit cannot ship.
+_CJK_RANGES = (
+    (0xAC00, 0xD7A3),    # Hangul syllables
+    (0x1100, 0x11FF),    # Hangul jamo
+    (0x3040, 0x30FF),    # Hiragana + Katakana
+    (0x4E00, 0x9FFF),    # CJK unified ideographs
+    (0x3400, 0x4DBF),    # CJK extension A
+)
+
+#: Minimum token length for scripts written with spaces. Shorter tokens are
+#: mostly function words and inflate similarity between unrelated texts.
+_MIN_TOKEN_LEN = 3
+
+#: Minimum for CJK/Hangul, where a two-character token is routinely a full
+#: content word (예산 "budget", 버그 "bug", 圧縮 "compression"). Applying the
+#: Latin minimum here would discard exactly the content-bearing words.
+_MIN_CJK_TOKEN_LEN = 2
+
+
+def _is_cjk_char(ch: str) -> bool:
+    code = ord(ch)
+    return any(lo <= code <= hi for lo, hi in _CJK_RANGES)
+
+
+def _has_cjk(token: str) -> bool:
+    return any(_is_cjk_char(ch) for ch in token)
 
 
 def tokens(text: str) -> list[str]:
     """Content tokens of `text`, lowercased, stopworded, order preserved.
 
+    For CJK and Hangul tokens, character bigrams are emitted ALONGSIDE the whole
+    token rather than instead of it. Both are needed: the whole token keeps
+    `압축률` distinct from `압축기`, and the bigrams let `파일은` and `파일이`
+    recognise each other as the same noun. Emitting only bigrams would make every
+    text sharing a common syllable look related; emitting only whole tokens is
+    the bug this replaced.
+
     Order is preserved because `distinct_ngrams` needs adjacency; set-based
     metrics discard it themselves.
     """
-    return [t for t in _TOKEN_RE.findall(text.lower())
-            if len(t) >= _MIN_TOKEN_LEN and t not in _STOPWORDS]
+    out: list[str] = []
+    for raw in _TOKEN_RE.findall(text.lower()):
+        # A token can be MIXED — `build_snapshot에서`, `py의`, `tokens.py의`.
+        # Bigramming the whole thing shreds the identifier into `bu`, `ui`,
+        # `il`, `ld`, `d_`… which is worse than useless: any two snake_case
+        # names then share bigrams and score as related. Split into script runs
+        # and apply each rule where it belongs, so the identifier survives whole
+        # and only the attached particle is bigrammed.
+        for part in _split_scripts(raw):
+            if _has_cjk(part):
+                if len(part) >= _MIN_CJK_TOKEN_LEN:
+                    out.append(part)
+                if len(part) >= 3:
+                    out.extend(part[i:i + 2] for i in range(len(part) - 1))
+            elif len(part) >= _MIN_TOKEN_LEN and part not in _STOPWORDS:
+                out.append(part)
+    return out
+
+
+def _split_scripts(token: str) -> list[str]:
+    """Split a token at CJK/non-CJK boundaries, preserving order.
+
+    `build_snapshot에서` → `['build_snapshot', '에서']`
+    `파일path` → `['파일', 'path']`
+    Pure tokens pass through as a single part, so the common case costs one
+    scan and no allocation beyond the list.
+    """
+    if not token:
+        return []
+    parts: list[str] = []
+    current = token[0]
+    current_is_cjk = _is_cjk_char(token[0])
+    for ch in token[1:]:
+        ch_is_cjk = _is_cjk_char(ch)
+        if ch_is_cjk == current_is_cjk:
+            current += ch
+        else:
+            parts.append(current)
+            current, current_is_cjk = ch, ch_is_cjk
+    parts.append(current)
+    return parts
 
 
 def token_set(text: str) -> frozenset[str]:
