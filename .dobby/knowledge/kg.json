@@ -469,7 +469,12 @@
    "type": "Convention",
    "name": "README",
    "summary": "human quickstart: drop-in installation into a host project",
-   "keywords": [],
+   "keywords": [
+    "first",
+    "harness",
+    "repository",
+    "this"
+   ],
    "path": "README.md",
    "authority": 0.85,
    "provenance": {

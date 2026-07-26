@@ -209,5 +209,97 @@ class TestSeverity(unittest.TestCase):
         self.assertIn("advisory", payload["verdict"])
 
 
+#: Every subcommand that does not need a provider or a network call.
+ALL_COMMANDS = [
+    ["doctor"], ["route", "x"], ["context", "x"], ["fleet"],
+    ["memory", "stats"], ["memory", "integrity"], ["specialize"],
+    ["research", "plan", "x"], ["design"], ["review", "--reviewers", "2"],
+    ["tokens", "policy"], ["pipeline", "--budget", "4"], ["sandbox", "sweep"],
+    ["spend"], ["spend", "--line"], ["handoff-latest"], ["friction-report"],
+    ["panel", "x", "--size", "2", "--dry-run"], ["prompt", "이거 고쳐줘"],
+    ["style", "--text", "hello world"],
+]
+
+
+def run_cli(repo: str, argv: list):
+    proc = subprocess.run(
+        [sys.executable, "-m", "dobby.cli", *argv], cwd=repo,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        env=child_env(), timeout=180)
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+class TestNoCommandEverShowsATraceback(unittest.TestCase):
+    """Damaged data must stop a command — legibly, not with a Python stack.
+
+    A command that cannot load its data SHOULD fail: running against defaults
+    nobody chose is worse than stopping. But it stopped with a raw
+    `json.decoder.JSONDecodeError`, which tells the user which line of CPython's
+    parser was unhappy and not which of their files to fix. Four commands failed
+    that way on a corrupt config.
+    """
+
+    def test_healthy_repo_runs_every_command(self):
+        d = make_repo()
+        self.addCleanup(shutil.rmtree, d, True)
+        shutil.copy(os.path.join(REPO, "DESIGN.md"), d)
+        failures = []
+        for argv in ALL_COMMANDS:
+            rc, _, err = run_cli(d, argv)
+            if "Traceback" in err:
+                failures.append(f"{' '.join(argv)}: {err.strip()[-120:]}")
+        self.assertEqual(failures, [], "\n".join(failures))
+
+    def test_damaged_data_never_produces_a_traceback(self):
+        crashed = []
+        for damaged in ("ontology.json", "config.json",
+                        os.path.join("knowledge", "kg.json"),
+                        os.path.join("registry", "skills.json")):
+            d = make_repo()
+            try:
+                shutil.copy(os.path.join(REPO, "DESIGN.md"), d)
+                with open(os.path.join(d, ".dobby", damaged), "w",
+                          encoding="utf-8") as f:
+                    f.write("{ broken")
+                for argv in ALL_COMMANDS:
+                    _, _, err = run_cli(d, argv)
+                    if "Traceback" in err:
+                        crashed.append(f"{damaged} + {' '.join(argv)}")
+            finally:
+                shutil.rmtree(d, ignore_errors=True)
+        self.assertEqual(crashed, [], f"commands that crashed: {crashed}")
+
+    def test_the_refusal_names_the_file_and_points_at_doctor(self):
+        d = make_repo()
+        self.addCleanup(shutil.rmtree, d, True)
+        with open(os.path.join(d, ".dobby", "config.json"), "w",
+                  encoding="utf-8") as f:
+            f.write("{ broken")
+        rc, _, err = run_cli(d, ["route", "x"])
+        self.assertEqual(rc, 2)
+        self.assertTrue(err.startswith("dobby:"), err[:120])
+        self.assertIn("config.json", err)
+        self.assertIn("dobby doctor", err)
+
+    def test_a_missing_file_is_named_too(self):
+        d = make_repo()
+        self.addCleanup(shutil.rmtree, d, True)
+        os.remove(os.path.join(d, ".dobby", "ontology.json"))
+        rc, _, err = run_cli(d, ["context", "x"])
+        self.assertEqual(rc, 2)
+        self.assertIn("missing", err)
+        self.assertIn("ontology.json", err)
+
+    def test_commands_that_do_not_need_the_damaged_file_still_work(self):
+        """A corrupt knowledge graph must not stop `dobby style`."""
+        d = make_repo()
+        self.addCleanup(shutil.rmtree, d, True)
+        with open(os.path.join(d, ".dobby", "knowledge", "kg.json"), "w",
+                  encoding="utf-8") as f:
+            f.write("{ broken")
+        rc, _, err = run_cli(d, ["style", "--text", "hello world"])
+        self.assertEqual(rc, 0, err[-200:])
+
+
 if __name__ == "__main__":
     unittest.main()

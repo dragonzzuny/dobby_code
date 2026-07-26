@@ -64,6 +64,28 @@ class RetrievalFitness:
         cfg = x_or_cfg if isinstance(x_or_cfg, dict) else vec_to_config(x_or_cfg)
         k = cfg.get("context_k", 8)
         weights = {kk: v for kk, v in cfg.items() if kk != "context_k"}
+
+        # Non-finite weights are refused rather than scored. A NaN weight
+        # produced 0.0 and an infinite one produced a NEGATIVE score, and both
+        # are fed straight into the improvement loop's promote/reject
+        # arithmetic, where a garbage number is indistinguishable from a
+        # measurement.
+        for name, value in weights.items():
+            if isinstance(value, (int, float)) and not math.isfinite(value):
+                raise ValueError(
+                    f"weight {name!r} is {value!r}; a non-finite weight cannot "
+                    "produce a score that means anything")
+
+        # An unknown split RAISES. It used to return 0.0, which is the most
+        # dangerous possible answer: `improve.run_once` compares a before score
+        # to an after score, so a typo in a split name yields before=0.0 and
+        # after=0.86, reads as an enormous gain, and promotes an arbitrary
+        # change. A typo must not become a data point.
+        if split not in self.gold:
+            raise KeyError(
+                f"unknown gold split {split!r}; available: "
+                f"{sorted(self.gold)}. Returning a score for a split that does "
+                "not exist would let a typo look like a measurement")
         per_case, total = {}, 0.0
         cases = self.gold.get(split, [])
         for case in cases:

@@ -10,7 +10,7 @@ adds the cross-project loop:
                                             ▼
    generic candidates re-validated against kit self-gold + EVERY archived
    project gold (federation regression) via the same ImprovementLoop gates
-                promote → kit generic data改善 · reject → shared negative memory
+                promote → kit generic data · reject → shared negative memory
 
 Guarantees:
   * Domain knowledge never enters the kit: a candidate qualifies as generic
@@ -180,6 +180,37 @@ def _retarget(candidate: dict, kit_dir: str) -> dict | None:
             "origin_failure": candidate.get("origin_failure", "harvested")}
 
 
+def _load_packet(path: str) -> tuple[dict | None, str]:
+    """Read one experience packet, or say why it cannot be used.
+
+    Returns `(packet, "")` on success and `(None, reason)` otherwise. Nothing
+    here raises: `harvest` processes a batch, and the caller needs the reason
+    attached to the offending path rather than a traceback that names only the
+    last file opened.
+
+    `project` is required because every downstream record is attributed to it —
+    negative memory, archived gold, promotion provenance. A packet without one
+    cannot be traced back to its source, and untraceable imported knowledge is
+    exactly what the genericity filter exists to prevent.
+    """
+    if not os.path.exists(path):
+        return None, f"no such packet: {path}"
+    try:
+        with open(path, encoding="utf-8") as f:
+            packet = json.load(f)
+    except json.JSONDecodeError as exc:
+        return None, f"not valid JSON: {exc}"
+    except OSError as exc:
+        return None, f"unreadable: {exc}"
+    if not isinstance(packet, dict):
+        return None, f"packet is a {type(packet).__name__}, expected an object"
+    project = packet.get("project")
+    if not isinstance(project, str) or not project.strip():
+        return None, ("packet has no 'project' name; imported knowledge must be "
+                      "attributable to its source")
+    return packet, ""
+
+
 def harvest(kit_dir: str, packet_paths: list[str], min_gain: float = 0.005,
             fitness=None) -> dict:
     """Merge experience packets into the KIT through the improvement gates."""
@@ -192,8 +223,17 @@ def harvest(kit_dir: str, packet_paths: list[str], min_gain: float = 0.005,
     memory = MemoryStore(data)
 
     for path in packet_paths:
-        with open(path, encoding="utf-8") as f:
-            packet = json.load(f)
+        # Packets arrive from OTHER projects: they are external input, and this
+        # function is the boundary. A malformed one previously crashed the whole
+        # harvest — an empty object raised KeyError, a truncated file raised
+        # JSONDecodeError, a wrong path raised FileNotFoundError — so one bad
+        # packet destroyed the batch and lost every good packet alongside it.
+        # Same principle as a provider fan-out: reject the item, keep the round.
+        packet, why = _load_packet(path)
+        if packet is None:
+            report.setdefault("unreadable", []).append(
+                {"path": path, "reason": why})
+            continue
         project = packet["project"]
         report["packets"].append(project)
 

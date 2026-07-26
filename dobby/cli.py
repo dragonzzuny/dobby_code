@@ -94,22 +94,65 @@ _REQUIRED_DATA = (
 def _allow_network(args) -> bool:
     if getattr(args, "allow_network", False):
         return True
-    return bool((_config(args).get("providers") or {}).get("allow_network"))
+    config, error = _config_tolerant(args)
+    if error:
+        # Reaching here means the caller only wanted the network flag. A damaged
+        # config must not be silently read as "network allowed", and it must not
+        # surface as a parser traceback from a command that never asked about
+        # JSON. Stop with the reason.
+        _die(error)
+    return bool((config.get("providers") or {}).get("allow_network"))
 
 
 # ---------------------------------------------------------------- core ----
+def _die(message: str) -> "NoReturn":
+    """Stop with a message a user can act on, never a traceback.
+
+    Damaged project data must stop the command — running against defaults
+    nobody chose is worse than stopping. But it stopped with a raw
+    `json.decoder.JSONDecodeError` stack, which tells the user which line of
+    CPython's parser was unhappy and not which of THEIR files to fix. Four
+    commands failed that way on a corrupt config.
+    """
+    print(f"dobby: {message}", file=sys.stderr)
+    print("       run `dobby doctor` for the full list of what is broken here.",
+          file=sys.stderr)
+    raise SystemExit(2)
+
+
 def _load_stack(repo: str):
     from .core.bootstrap import merged_graph
-    from .core.kg import Ontology
+    from .core.kg import Ontology, OntologyError
     from .core.policies import PolicyBook
     from .core.skills import SkillRegistry
     data = os.path.join(repo, ".dobby")
-    onto = Ontology.load(os.path.join(data, "ontology.json"))
-    kg = merged_graph(onto, data)
-    policies = PolicyBook(os.path.join(data, "policies", "policies.json"))
-    registry = SkillRegistry(os.path.join(data, "registry", "skills.json"))
-    with open(os.path.join(data, "config.json"), encoding="utf-8") as f:
-        config = json.load(f)
+
+    def _read(label: str, rel: str, loader):
+        path = os.path.join(data, rel)
+        if not os.path.exists(path):
+            _die(f"{label} is missing: {path}")
+        try:
+            return loader(path)
+        except json.JSONDecodeError as exc:
+            _die(f"{label} is not valid JSON ({path}): {exc}")
+        except OntologyError as exc:
+            _die(f"{label} does not satisfy the ontology ({path}): {exc}")
+        except OSError as exc:
+            _die(f"{label} is unreadable ({path}): {exc}")
+
+    onto = _read("the ontology", "ontology.json", Ontology.load)
+    try:
+        kg = merged_graph(onto, data)
+    except json.JSONDecodeError as exc:
+        _die(f"the knowledge graph is not valid JSON: {exc}")
+    except OntologyError as exc:
+        _die(f"the knowledge graph does not satisfy the ontology: {exc}")
+    policies = _read("the policy book", os.path.join("policies", "policies.json"),
+                     PolicyBook)
+    registry = _read("the skill registry",
+                     os.path.join("registry", "skills.json"), SkillRegistry)
+    config = _read("the config", "config.json",
+                   lambda p: json.load(open(p, encoding="utf-8")))
     return data, kg, policies, registry, config
 
 

@@ -1,0 +1,148 @@
+{
+ "packet_version": 1,
+ "project": "distill_fable",
+ "date": "2026-07-26",
+ "promoted": [
+  {
+   "candidate": {
+    "id": "4f21ab6534",
+    "kind": "kg_keyword_add",
+    "payload": {
+     "target_file": "C:\\Users\\dynap\\Downloads\\distill_fable\\dobby_code\\.dobby\\knowledge\\kg.json",
+     "node_id": "doc:OPERATING_MANUAL",
+     "keywords": [
+      "have",
+      "multi",
+      "step",
+      "task"
+     ]
+    },
+    "origin_failure": "retrieval miss: G-START missing doc:OPERATING_MANUAL",
+    "created": "2026-07-26T08:57:38"
+   },
+   "snapshot": "C:\\Users\\dynap\\Downloads\\distill_fable\\dobby_code\\.dobby\\state\\improvement\\snap_bc796814_kg.json",
+   "dev_before": 0.7850583333333332,
+   "dev_after": 0.8683666666666667,
+   "val_before": 0.9524999999999999,
+   "val_after": 0.9524999999999999,
+   "regressed_cases": [],
+   "date": "2026-07-26T08:57:38",
+   "decision": "promoted",
+   "holdout_after": 0.45265
+  },
+  {
+   "candidate": {
+    "id": "a4f0ba3d1c",
+    "kind": "kg_keyword_add",
+    "payload": {
+     "target_file": "C:\\Users\\dynap\\Downloads\\distill_fable\\dobby_code\\.dobby\\knowledge\\kg.json",
+     "node_id": "doc:README",
+     "keywords": [
+      "harness",
+      "this",
+      "repository",
+      "first"
+     ]
+    },
+    "origin_failure": "retrieval miss: G-SETUP missing doc:README",
+    "created": "2026-07-26T11:38:44"
+   },
+   "snapshot": "C:\\Users\\dynap\\Downloads\\distill_fable\\dobby_code\\.dobby\\state\\improvement\\snap_b913ae26_kg.json",
+   "dev_before": 0.8662416666666667,
+   "dev_after": 0.9506749999999999,
+   "val_before": 0.95255,
+   "val_after": 0.95255,
+   "regressed_cases": [],
+   "date": "2026-07-26T11:38:44",
+   "decision": "promoted",
+   "holdout_after": 0.4506
+  }
+ ],
+ "rejected": [],
+ "weights": {
+  "lexical": 1.0,
+  "graph": 0.5,
+  "authority": 0.3,
+  "recency": 0.1,
+  "unverified_penalty": 0.5,
+  "keyword_bonus": 1.0,
+  "context_k": 8
+ },
+ "failures": [],
+ "gold": {
+  "dev": [
+   {
+    "id": "G-START",
+    "task": "I have a new multi-step task in this project — how should I start working on it?",
+    "required_nodes": [
+     "skill:ledgered-task",
+     "policy:P-DECOMPOSE",
+     "doc:OPERATING_MANUAL"
+    ]
+   },
+   {
+    "id": "G-SETUP",
+    "task": "Set up the harness for this new repository (first run bootstrap install)",
+    "required_nodes": [
+     "skill:bootstrap-project",
+     "tool:cli-init",
+     "doc:README"
+    ]
+   },
+   {
+    "id": "G-DONE",
+    "task": "Can I tell the user the work is done now?",
+    "required_nodes": [
+     "policy:P-VALIDATE-OUTPUT",
+     "policy:P-REPORT",
+     "risk:premature-completion"
+    ]
+   },
+   {
+    "id": "G-DELETE",
+    "task": "Clean up this repo and delete the old files / 오래된 파일 정리해서 삭제해줘",
+    "required_nodes": [
+     "policy:P-PRESERVE",
+     "policy:P-ESCALATE"
+    ]
+   }
+  ],
+  "val": [
+   {
+    "id": "G-CONFIG",
+    "task": "The app reads its endpoint from config settings yaml — wire the new path into the deploy script",
+    "required_nodes": [
+     "policy:P-CONFIG-VS-REALITY",
+     "risk:doc-as-truth"
+    ]
+   },
+   {
+    "id": "G-RESUME",
+    "task": "Continue the task from the previous session where we left off",
+    "required_nodes": [
+     "tool:cli-handoff",
+     "skill:ledgered-task",
+     "risk:handoff-amnesia"
+    ]
+   }
+  ],
+  "holdout": [
+   {
+    "id": "G-EVAL",
+    "task": "Build evaluation scenarios and gold labels to measure the harness in this project",
+    "required_nodes": [
+     "skill:author-evals",
+     "doc:OPERATING_MANUAL"
+    ]
+   },
+   {
+    "id": "G-COUNT",
+    "task": "How many tests does this project have and do they all pass? Verify and check.",
+    "required_nodes": [
+     "policy:P-EVIDENCE",
+     "tool:run-tests"
+    ]
+   }
+  ]
+ }
+}
