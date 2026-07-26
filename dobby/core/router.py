@@ -11,6 +11,7 @@ recorded reason (anti Orchestrator-Overkill).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, asdict
 
 from .policies import PolicyBook
@@ -29,11 +30,61 @@ DEFAULT_BUDGETS = {
     7: {"context_tokens": 32000, "tool_calls": 200, "minutes": 180},
 }
 
-PRODUCING_KW = ("merge", "convert", "create", "write", "produce", "package",
-                "clean", "fix", "generate", "합치", "병합", "변환", "생성", "정리")
+#: Verbs that mean the task CHANGES something. The list previously stopped at
+#: nine mild ones and contained not a single destructive or irreversible verb —
+#: `deploy to production and notify the team` was classified as non-producing
+#: and routed to the lowest agency rung, while AGENTS.md invariant 9 requires
+#: escalation before exactly that action.
+#:
+#: Grouped by consequence so the omission is visible if it happens again.
+PRODUCING_KW = (
+    # authoring
+    "merge", "convert", "create", "write", "produce", "package", "clean",
+    "fix", "generate", "implement", "add", "build", "refactor", "rename",
+    # destructive
+    "delete", "remove", "drop", "purge", "truncate", "revert", "reset",
+    # irreversible / outward-facing
+    "deploy", "publish", "release", "upload", "push", "migrate", "install",
+    "upgrade", "rollback",
+    # Korean stems
+    "합치", "병합", "변환", "생성", "정리", "삭제", "제거", "배포", "설치",
+    "구현", "추가", "이관", "롤백", "되돌",
+)
+
 INVESTIGATE_KW = ("why", "how many", "count", "check", "verify", "inspect",
-                  "왜", "몇", "확인", "검증", "조사")
+                  "explain", "compare", "list", "find", "search", "measure",
+                  "왜", "몇", "확인", "검증", "조사", "설명", "비교", "찾")
+
 MULTI_KW = (" and ", ";", "then", "&", "그리고", "하고", "한 뒤", "다음에")
+
+#: Latin keyword matching is WHOLE-WORD. Substring matching classified
+#: `the prefix is wrong` and `inspect the fixture files` as producing (via
+#: "fix"), `read the underwriter report` as producing (via "write"), and
+#: `how many packages` — an investigative question — as producing. Each of those
+#: routes a read-only task to a higher agency rung and a larger model.
+#:
+#: Korean is matched as a SUBSTRING, and must be: it is agglutinative, so `삭제`
+#: appears inside `삭제하라` and `삭제하고`, and a word boundary would never fire.
+_LATIN_KW_CACHE: dict[tuple, "re.Pattern"] = {}
+
+
+def _mentions(text: str, keywords: tuple) -> list[str]:
+    """Keywords present in `text`, whole-word for Latin, substring for CJK."""
+    hits = []
+    latin = tuple(k for k in keywords if k.isascii())
+    cjk = [k for k in keywords if not k.isascii()]
+    if latin:
+        pattern = _LATIN_KW_CACHE.get(latin)
+        if pattern is None:
+            # Longest first so `how many` is preferred over `many`.
+            alts = "|".join(re.escape(k) for k in
+                            sorted(latin, key=len, reverse=True))
+            pattern = re.compile(rf"(?<![\w-])(?:{alts})(?![\w-])",
+                                 re.IGNORECASE)
+            _LATIN_KW_CACHE[latin] = pattern
+        hits.extend(m.group(0).lower() for m in pattern.finditer(text))
+    hits.extend(k for k in cjk if k in text)
+    return hits
 
 
 @dataclass
@@ -73,8 +124,8 @@ class Router:
         specific = [p for p in fired
                     if any(f != "always_on" for f in p.get("fired_on", []))]
         severities = {p["severity"] for p in specific}
-        producing = any(k in text for k in PRODUCING_KW)
-        investigative = any(k in text for k in INVESTIGATE_KW)
+        producing = bool(_mentions(text, PRODUCING_KW))
+        investigative = bool(_mentions(text, INVESTIGATE_KW))
         multi_req = sum(text.count(k) for k in MULTI_KW) >= 1
         why = []
 
