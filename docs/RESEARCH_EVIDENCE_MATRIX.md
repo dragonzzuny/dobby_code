@@ -287,6 +287,68 @@ without executing, and the feature checks are AST and regex — because
 not wired into that path. That is recorded as an open risk in
 `docs/THREAT_MODEL.md` §5 rather than treated as solved.
 
+### The first measurement of the harness's own effect, 2026-07-26
+
+Until this date nothing in the repository measured what the README claims. See
+`docs/EVAL_DESIGN.md` for why this is a **compliance** experiment and not a benefit
+one, and for the prior art that set its metrics (`pass^k` from τ-bench, cost
+accounting from Claw-SWE-Bench and HAL).
+
+`codex`, 2 dev tasks, 2 repetitions, paired within task. `pass^k` is the fraction
+of tasks where the behaviour held in EVERY repetition.
+
+| behaviour | bare | padded (length control) | harness |
+|---|---|---|---|
+| names what was not verified | 0.0 | **0.0** | **1.0** |
+| scopes to the named files | 0.5 / 0.0 | 0.5 | 1.0 |
+| proposes a verification step | 1.0 | 1.0 | **0.5** |
+| invents no unsupported figure | 1.0 | 1.0 | 1.0 |
+| separates done from not-done | 1.0 | 1.0 | 1.0 |
+| mean paired delta | — | +0.25, CI [0.0, 0.5] | +1.0 |
+| verdict | — | **no measurable effect** | compliance increased |
+
+**The length control did not reproduce the effect.** 6012 characters of filler,
+matched to the preamble character for character, left "names what was not verified"
+at 0.0 while the real preamble took it to 1.0. So what moved the output was the
+content of the rules, not the token count — which is the one thing this design was
+built to be able to distinguish, and it could not have been claimed without the
+control.
+
+**The harness made one behaviour worse.** "Proposes a verification step" fell from
+1.0 to 0.5 under a preamble that explicitly asks for a verification command, and
+the filler condition held it at 1.0. So the regression is caused by the rules
+rather than by prompt length — consistent with instruction dilution, where a
+preamble carrying many rules crowds out one of them. Not investigated further; the
+outputs of that cell were not retained, which is a gap in how the run was
+configured rather than in the design.
+
+What this does NOT establish, and each of these is load-bearing:
+
+- **Two tasks and two repetitions.** Both intervals are flagged `DEGENERATE` by the
+  runner itself: a bootstrap over two nearly identical deltas produces width by
+  construction, not by evidence.
+- **The baseline moved between runs.** `retry-backoff` scored 4.0 bare in the first
+  run and 3.5 bare in the second — 0.5 of run-to-run noise on a scale where the
+  claimed effect is 1.0. The effect is about twice the observed baseline variance
+  at n=2, which is suggestive and not established.
+- **Holdout untouched.** The two holdout tasks have not been run. They are for one
+  reported claim, once.
+- **One provider.** Each provider is its own experiment.
+- **Compliance is not benefit.** That a stated limitation reduces downstream
+  defects is a separate study with different subjects.
+
+Cost, reported because the standard in this literature is to report it: the harness
+prompt is 6012 characters against 172 bare, a 35× increase, for +1.0 behaviours.
+Agent time did not increase (221s harness against 225s bare over four calls each).
+
+**The eval also earned its keep before producing a valid number.** Its first run
+died in under a second on all four harness calls, because the preamble contains
+this repository's own rule text — `"3 failures" without the three names is not a
+finding` — and the double quote broke the PowerShell launch route added two commits
+earlier. That route had been tested against newlines and percent signs and never
+against a quote. Details and the corrected three-route measurement are in
+`dobby/core/platform.py::npm_shim_target`.
+
 Still open from the list above: AST call graphs and inference-time architecture
 search. `qwen`, `ollama`, `kimi` and `dashscope` remain unexecuted, and their
 `verified_on` is still empty. The model-judge adapter and the `search.search`

@@ -423,10 +423,39 @@ python -m dobby.cli doctor
 
 Read these before believing anything above.
 
-- **End-task effect is not measured.** That the harness raises a weaker model's
-  performance requires a controlled comparison across ≥2 model families with a
-  positive holdout result. That comparison has not been run. Until it has, the
-  claim is forbidden in this repository's reports, and it is not made here.
+- **End-task effect is still not measured. Compliance now is.** That the harness
+  raises a weaker model's *performance* requires a controlled comparison on an
+  established issue-resolution benchmark with the model held fixed. That has not
+  been run, the claim stays forbidden in this repository's reports, and it is not
+  made here.
+
+  What has been measured is narrower and worth stating precisely. `dobby endtask`
+  asks whether the preamble changes output in the direction it specifies —
+  compliance, not benefit. First run, `codex`, 2 tasks × 2 reps, `pass^k`:
+
+  | behaviour | bare | padded (length control) | harness |
+  |---|---|---|---|
+  | names what was not verified | 0.0 | **0.0** | **1.0** |
+  | proposes a verification step | 1.0 | 1.0 | **0.5** |
+
+  Two findings, and the second is not the flattering one. A 6012-character filler
+  block matched to the preamble character for character did **not** reproduce the
+  effect, so what moved the output was the content of the rules rather than their
+  length. And the harness made one behaviour **worse** — a preamble that explicitly
+  asks for a verification command reduced how reliably one appeared, which the
+  filler condition did not do. That is consistent with instruction dilution.
+
+  Two tasks and two repetitions. The runner flags both confidence intervals as
+  `DEGENERATE`, the baseline itself moved 0.5 between runs on a scale where the
+  effect is 1.0, and the holdout tasks are untouched. Suggestive, not established.
+  Full numbers and caveats: `docs/RESEARCH_EVIDENCE_MATRIX.md`; design and prior
+  art: `docs/EVAL_DESIGN.md`.
+
+  For scale on why the unmeasured claim matters: on a fixed backbone,
+  [Claw-SWE-Bench](https://arxiv.org/abs/2606.12344) reports 19.1% Pass@1 with a
+  minimal adapter against 73.4% with a full one. The harness is worth about as much
+  as the model, which is exactly why asserting an effect without measuring it would
+  be indefensible.
 - **Retrieval and diversity are lexical.** No embeddings — stdlib only. Two
   answers saying the same thing in different words score as diverse; two
   differing only by a negation score as similar. These metrics reliably catch
