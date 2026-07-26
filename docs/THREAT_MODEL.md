@@ -21,3 +21,73 @@ Recommended host-side hardening (outside the kit): PreToolUse-style hooks
 denying destructive commands on protected paths at the agent-product level;
 read-only allowlists for the registered capabilities; version-pinning/signing
 of the capability registry; authenticated approver identities.
+
+---
+
+## Findings from the 2026-07-26 adversarial audit
+
+Three controls were tested by attacking them rather than by re-reading them.
+All three had gaps; all three are fixed and held by `tests/test_security_hardening.py`.
+
+### 1. Argument injection through the capability gateway (highest severity)
+
+**Was:** `_exec` interpolated caller arguments after `shlex.quote`. That produces
+POSIX single-quoting, and `cmd.exe` does not treat single quotes as quoting —
+it passes them through literally. The kit runs `shell=True`, which on Windows is
+`cmd.exe`. Measured directly: `echo 'x && echo INJECTED'` printed `INJECTED`.
+
+The gateway's stated premise is that the model never composes raw shell. On
+Windows it effectively could, and the destructive-command guard was not a
+backstop for it — `&& curl <host>` matches no protected path.
+
+**Now:** arguments are **validated, not escaped**. `security.safe_arg` refuses
+any argument containing a shell metacharacter, before quoting, with the
+rejection recorded in the audit log. Escaping was rejected as the fix because
+its correctness depends on which shell is downstream, and the gateway does not
+control that.
+
+The metacharacter set deliberately excludes `\`, `(`, and `)`: a first version
+included them and rejected every Windows absolute path and every
+`C:\Program Files (x86)\...`, which would have made the control something users
+switch off. Their shell danger (`$(...)`, subshells, escaping) requires `$` or a
+backtick, both of which are refused.
+
+### 2. The destructive-command guard did not know Windows
+
+**Was:** `DESTRUCTIVE` held POSIX verbs only. On the platform the kit most often
+runs on, `del .env`, `erase .env`, `rd /s /q .git`, and
+`Remove-Item -Recurse -Force .git` were all permitted. Protected-path patterns
+were written with `/`, so `rm -rf .git\hooks` matched nothing. And `git`'s own
+destructive subcommands — `git clean -fdx`, `git reset --hard`,
+`git checkout -- .` — contain no destructive token at all and passed unexamined,
+despite destroying work that is by definition not yet recoverable from anywhere.
+
+Measured before the fix: **9 of 19** destructive commands permitted.
+
+**Now:** cmd.exe and PowerShell verbs are known, matching is case-insensitive,
+path arguments are normalized to `/` before comparison, and a second pass runs
+over the raw command because `shlex` in POSIX mode turns `.git\hooks` into
+`.githooks`. Destructive *subcommands* are blocked on sight, with flags matched
+case-sensitively so `git branch -D` is refused and the routine `git branch -d`
+is not.
+
+### 3. Secret redaction missed four credential families
+
+**Was:** Slack tokens, PEM private-key headers, Google API keys, and GitLab PATs
+survived `redact_secrets`, which runs on provider output before it reaches a
+ledger, on API request bodies before transmission, and on sandbox previews.
+
+**Now:** twelve additional shapes, including AWS temporary keys, GitHub
+fine-grained PATs, npm and Stripe tokens, and JWTs. False positives are checked
+in both directions — prose containing "token" or "password" is not redacted.
+
+### Standing limits, unchanged
+
+- The sandbox's network control remains **best-effort discouragement, not a
+  block**. `Result.network_blocked` reports `False` for exactly this reason.
+- The guard is a defence against accidents and mis-specified commands, not
+  against an adversary with arbitrary code execution. Once a capability runs, it
+  runs with the harness's own privileges.
+- Argument validation protects the gateway's own command construction. A host
+  that registers a capability template containing shell syntax has composed that
+  shell itself, and no validation here can un-compose it.

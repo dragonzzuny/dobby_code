@@ -41,7 +41,7 @@ from dobby.core.policies import PolicyBook              # noqa: E402
 from dobby.core.skills import SkillRegistry             # noqa: E402
 from dobby.core.router import Router                    # noqa: E402
 from dobby.core.trajectory import Trajectory            # noqa: E402
-from dobby.core.security import (guard_command, cap_output,          # noqa: E402
+from dobby.core.security import (guard_command, cap_output, safe_arg,  # noqa: E402
                               redact_secrets, envelope_untrusted,
                               load_protected)
 
@@ -165,6 +165,21 @@ class Gateway:
         if missing:
             return {"error": f"missing args {missing}",
                     "signature": cap["command_template"]}
+        # VALIDATE before quoting. Quoting alone does not neutralize an argument
+        # here: `shell=True` is `cmd.exe` on Windows, which ignores the POSIX
+        # single quotes `shlex.quote` produces, so `x && whoami` executed
+        # `whoami` despite being "quoted". Arguments are data; an argument
+        # carrying shell syntax is refused rather than escaped.
+        for k in keys:
+            values = args[k] if isinstance(args[k], list) else [args[k]]
+            for part in values:
+                for piece in str(part).split("\x00"):
+                    ok, why = safe_arg(piece)
+                    if not ok:
+                        self.audit("rejected_arg", {"id": cap["id"], "arg": k,
+                                                    "reason": why})
+                        return {"error": f"argument {k!r} rejected: {why}"}
+
         quoted = {k: " ".join(shlex.quote(p) for p in str(args[k]).split("\x00")) if "\x00" in str(args[k])
                   else shlex.quote(str(args[k])) for k in keys}
         # allow multi-path args passed as list
