@@ -23,6 +23,13 @@ import unittest
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
+# `kitonly` sits beside this file. The suite runs both as `tests.test_x`
+# and as a bare script; only REPO was on sys.path, so the package form
+# raised ModuleNotFoundError.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from kitonly import IS_THE_KIT, SKIP_REASON  # noqa: E402
+
 from dobby.core.kg import KnowledgeGraph, Ontology
 from pathlib import Path
 
@@ -62,6 +69,7 @@ def load_graph() -> KnowledgeGraph:
     return KnowledgeGraph(onto, raw["nodes"], raw["edges"])
 
 
+@unittest.skipUnless(IS_THE_KIT, SKIP_REASON)
 class TestPathsAreReal(unittest.TestCase):
     def test_every_recorded_path_exists(self):
         """A path that does not resolve is a wrong retrieval signal."""
@@ -85,6 +93,7 @@ class TestPathsAreReal(unittest.TestCase):
         self.assertEqual(offenders, [])
 
 
+@unittest.skipUnless(IS_THE_KIT, SKIP_REASON)
 class TestGraphIsValid(unittest.TestCase):
     def test_loads_through_the_ontology(self):
         graph = load_graph()
@@ -113,6 +122,7 @@ class TestGraphIsValid(unittest.TestCase):
         self.assertEqual(offenders, [])
 
 
+@unittest.skipUnless(IS_THE_KIT, SKIP_REASON)
 class TestTheHarnessCanFindItself(unittest.TestCase):
     """Before the refresh every one of these returned zero items."""
 
@@ -153,6 +163,7 @@ class TestTheHarnessCanFindItself(unittest.TestCase):
                           f"containing {expect!r}")
 
 
+@unittest.skipUnless(IS_THE_KIT, SKIP_REASON)
 class TestRefreshScript(unittest.TestCase):
     def test_the_script_exists_and_is_idempotent_in_shape(self):
         """Re-running must be safe: the fix has to survive the next rename."""

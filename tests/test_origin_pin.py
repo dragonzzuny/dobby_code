@@ -30,6 +30,13 @@ import unittest
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
+# `kitonly` sits beside this file. The suite runs both as `tests.test_x`
+# and as a bare script; only REPO was on sys.path, so the package form
+# raised ModuleNotFoundError.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from kitonly import kit_only  # noqa: E402
+
 from dobby.core.platform import child_env
 from dobby.core.skills import SkillRegistry, _content_digest
 
@@ -93,6 +100,7 @@ class TestShippedPinsVerify(unittest.TestCase):
         self.assertEqual(failures, [], "\n".join(failures))
 
 
+@kit_only
 class TestGitattributesExists(unittest.TestCase):
     """Defence in depth: make the checkout deterministic too."""
 

@@ -21,6 +21,9 @@ from unittest import mock
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
+# `kitonly` sits beside this file.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 SKIP_DIRS = frozenset({
     "__pycache__", ".git", ".venv", "venv", "node_modules", "build", "dist",
     ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox", ".eggs",
@@ -166,6 +169,106 @@ class TestCrossVolumeLabelling(unittest.TestCase):
     def test_a_label_inside_the_repo_is_still_short(self):
         label = _label(os.path.join(REPO, "dobby", "cli.py"))
         self.assertEqual(label, "dobby/cli.py")
+
+
+
+
+class TestKitOnlyTestsAreGuarded(unittest.TestCase):
+    """A test that describes the DISTRIBUTION must not run inside a host.
+
+    The installer copies `tests/` into every project and its closing message tells
+    the user to run `python -m unittest discover -s tests`. So anything asserting
+    on `install.sh`, `.gitattributes`, `.gitignore`, `tools/` or the kit's own
+    knowledge graph runs where those do not exist.
+
+    Measured in a freshly installed host: 3 failures and 3 errors across six tests,
+    none of them a defect in the installed harness. `test_install.py` had a guard
+    from the start and it was never applied anywhere else, which is how six more
+    accumulated. This check is what stops the seventh: the guard existing is not
+    the same as the guard being used, and only a scan can tell the difference.
+    """
+
+    #: Names that exist in the distribution and not in an installed host.
+    KIT_ONLY_MARKERS = ("install.sh", "install.ps1", ".gitattributes",
+                        ".gitignore", ".github", "refresh_self_kg", chr(34) + "tools" + chr(34))
+
+    #: Either the shared guard or the older local predicate counts as guarded.
+    GUARDS = ("from kitonly import", "_IS_THE_KIT")
+
+    def _test_modules(self):
+        directory = os.path.join(REPO, "tests")
+        for name in sorted(os.listdir(directory)):
+            if name.startswith("test_") and name.endswith(".py"):
+                yield name, os.path.join(directory, name)
+
+    def _kit_dependent_lines(self, text):
+        """Lines that bind a kit-only name to REPO.
+
+        Mentioning a name is not depending on it, and a first version of this check
+        could not tell the difference. It flagged `test_bootstrap.py`, which builds
+        a `.github/` fixture inside a TEMP directory, and `test_platform.py`, which
+        names `install.sh` in a docstring. Both pass inside a host - verified by
+        actually installing and running the suite there - so both were false
+        alarms, and a check that cries wolf gets switched off.
+
+        Binding to `REPO` is what means "this file must exist in the distribution",
+        which is the property the guard is for.
+        """
+        hits = []
+        for line in text.splitlines():
+            if "REPO" not in line:
+                continue
+            if any(marker in line for marker in self.KIT_ONLY_MARKERS):
+                hits.append(line.strip())
+        return hits
+
+    def test_every_module_depending_on_kit_only_paths_is_guarded(self):
+        offenders = []
+        for name, path in self._test_modules():
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            depends = self._kit_dependent_lines(text)
+            if not depends:
+                continue
+            if not any(guard in text for guard in self.GUARDS):
+                offenders.append(name + ": " + depends[0][:80])
+        self.assertEqual(
+            offenders, [],
+            "these would fail inside an installed host:" + chr(10)
+            + chr(10).join(offenders))
+
+    def test_the_check_does_not_fire_on_a_mere_mention(self):
+        """The two false alarms, pinned so the rule cannot loosen back."""
+        self.assertEqual(
+            self._kit_dependent_lines('    """See install.sh line 24."""'), [])
+        self.assertEqual(
+            self._kit_dependent_lines(
+                'os.makedirs(os.path.join(root, ".github", "workflows"))'), [])
+
+    def test_the_check_does_fire_on_a_real_dependency(self):
+        self.assertTrue(self._kit_dependent_lines(
+            'path = os.path.join(REPO, ".gitattributes")'))
+
+    def test_the_shared_guard_module_exists_and_is_importable(self):
+        import kitonly
+        self.assertTrue(hasattr(kitonly, "IS_THE_KIT"))
+        self.assertTrue(hasattr(kitonly, "kit_only"))
+
+    def test_the_guard_is_true_in_the_distribution(self):
+        """Otherwise every guarded test silently skips here too."""
+        import kitonly
+        self.assertTrue(kitonly.IS_THE_KIT,
+                        "the kit markers are missing from this checkout")
+
+    def test_the_marker_files_are_not_installed_into_a_host(self):
+        """The predicate only works if the installer really excludes them."""
+        with open(os.path.join(REPO, "install.sh"), encoding="utf-8") as handle:
+            installer = handle.read()
+        # The installer copies named trees; it never copies itself or .gitignore.
+        for marker in ("install.sh", ".gitignore"):
+            self.assertNotIn(f'cp "$SRC/{marker}"', installer,
+                             f"the installer copies {marker} into the host, "
+                             f"which would break the kit-only predicate")
 
 
 if __name__ == "__main__":

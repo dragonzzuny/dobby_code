@@ -28,6 +28,18 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.join(REPO, "tools"))
 
+# `kitonly` sits beside this file. The suite runs both as `tests.test_x`
+# and as a bare script; only REPO was on sys.path, so the package form
+# raised ModuleNotFoundError.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from kitonly import IS_THE_KIT, SKIP_REASON  # noqa: E402
+
+if not IS_THE_KIT:
+    # `tools/` is not installed into a host, so the imports below would
+    # raise ImportError and the module would fail to load at all.
+    raise unittest.SkipTest(SKIP_REASON)
+
 from ci_annotate import (BLOCK_START, chunk, emit, escape, extract_blocks,  # noqa: E402
                          fallback_tail)
 

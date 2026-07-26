@@ -31,6 +31,13 @@ from unittest import mock
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
+# `kitonly` sits beside this file. The suite runs both as `tests.test_x`
+# and as a bare script; only REPO was on sys.path, so the package form
+# raised ModuleNotFoundError.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from kitonly import kit_only  # noqa: E402
+
 from dobby.search import search
 from dobby.search_driver import (CANDIDATE_PLACEHOLDER, command_scorer,
                                  driver_report, provider_expander,
@@ -79,6 +86,7 @@ class TestCandidateFiles(_Base):
         with open(path, encoding="utf-8") as handle:
             self.assertEqual(handle.read(), "hello")
 
+    @kit_only
     def test_state_is_the_right_home_because_output_is_untrusted(self):
         """Both installers exclude .dobby/state; model text must not travel."""
         with open(os.path.join(REPO, ".gitignore"), encoding="utf-8") as handle:
