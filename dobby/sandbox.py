@@ -255,8 +255,25 @@ def run(command: str, *, data_dir: str, cwd: str | None = None,
         # Confinement is applied HERE, in the execution path. Having the check
         # exist as a helper is not the same as running it, and unit-testing the
         # helper directly is how that difference stays invisible.
-        work_dir = _resolve_inside(root, os.path.relpath(work_dir, root)
-                                   if os.path.isabs(work_dir) else work_dir)
+        if os.path.isabs(work_dir):
+            try:
+                relative = os.path.relpath(work_dir, root)
+            except ValueError as exc:
+                # Windows only: relpath raises when the two paths are on
+                # different volumes, and a runner puts the workspace on D: while
+                # TEMP is on C:. A confinement check must fail CLOSED and with
+                # its own exception type - a bare ValueError escaping here would
+                # slip past every `except SandboxError` in the codebase, so the
+                # guard would look like a crash rather than a refusal. And a cwd
+                # on another volume than the root cannot be inside it, which is
+                # exactly what this check is for.
+                raise SandboxError(
+                    f"cwd {work_dir!r} is on a different volume than the "
+                    f"sandbox root {root!r}, so it cannot be inside it "
+                    f"({exc})") from None
+        else:
+            relative = work_dir
+        work_dir = _resolve_inside(root, relative)
     if not os.path.isdir(work_dir):
         raise SandboxError(f"cwd does not exist: {work_dir}")
 

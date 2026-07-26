@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -393,3 +394,54 @@ class TestWaveEta(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCrossVolumeRootFailsClosed(unittest.TestCase):
+    """A confinement guard must refuse in its own currency.
+
+    Found by this project's own first real `dobby panel` round. One panel member
+    claimed the crossing was live in production via fanout.py's mkdtemp; that part
+    did not survive checking - no production call site passes `root=` at all, and
+    the worktree root and the sandbox root are unrelated. What did survive is the
+    exception TYPE: `os.path.relpath` raises ValueError across volumes on Windows,
+    and a runner puts the workspace on D: while TEMP is on C:. A bare ValueError
+    escaping a confinement check slips past every `except SandboxError`, so a
+    refusal would present as a crash.
+
+    A cwd on a different volume than the root cannot be inside it, which is the
+    question this check exists to answer.
+    """
+
+    def test_relpath_really_does_raise_across_volumes(self):
+        """Establish the hazard before asserting the guard."""
+        if os.name != "nt":
+            self.skipTest("POSIX relpath has no volumes to cross")
+        with self.assertRaises(ValueError):
+            os.path.relpath(r"D:\a\repo", r"C:\Temp\root")
+
+    def test_a_cross_volume_cwd_raises_sandbox_error_not_value_error(self):
+        if os.name != "nt":
+            self.skipTest("cross-volume paths are a Windows condition")
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        other_volume = "Q:\work" if not root.upper().startswith("Q:") else "R:\work"
+        with self.assertRaises(SandboxError) as caught:
+            run("echo hi", data_dir=root, cwd=other_volume, root=root)
+        self.assertIn("different volume", str(caught.exception))
+
+    def test_a_same_volume_escape_still_refuses(self):
+        """The pre-existing behaviour must be unchanged."""
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        outside = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, outside, True)
+        with self.assertRaises(SandboxError):
+            run("echo hi", data_dir=root, cwd=outside, root=root)
+
+    def test_a_cwd_inside_the_root_is_still_accepted(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        inside = os.path.join(root, "work")
+        os.makedirs(inside, exist_ok=True)
+        result = run("echo hi", data_dir=root, cwd=inside, root=root)
+        self.assertIsNone(result.error, result.error)

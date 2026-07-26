@@ -497,6 +497,8 @@ def cmd_panel(args):
                             shared_context=context)
     tasks = [AgentTask(provider_id=members[p["index"] % len(members)],
                        prompt=p["prompt"],
+                       # None keeps the catalog's own per-provider default.
+                       timeout_s=args.timeout,
                        label=f"{members[p['index'] % len(members)]}:{p['lens'] or protocol.id}")
              for p in prompts]
 
@@ -890,6 +892,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--protocol", default=None,
                    help="ngt | double_diamond | six_hats | dialectic | adversarial")
     p.add_argument("--concurrency", type=int, default=None)
+    # `fleet --probe` had this and `panel` did not, so the only way to bound a
+    # round was the catalog's per-provider default of 900s. A round finishes when
+    # its slowest member does, so one stalled provider held the whole panel for
+    # fifteen minutes with nothing the caller could do about it.
+    p.add_argument("--timeout", type=int, default=None,
+                   help="per-provider seconds; overrides the catalog default "
+                        "(a round is only as fast as its slowest member)")
     p.add_argument("--with-context", action="store_true",
                    help="include the routed knowledge pack in each prompt")
     p.add_argument("--dry-run", action="store_true",

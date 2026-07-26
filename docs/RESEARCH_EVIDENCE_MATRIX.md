@@ -184,6 +184,53 @@ Closed since 0.1.0: team topologies (`swarm/topologies.py`), API-kind provider
 transport (`providers/api.py`), and sandboxed execution (`dobby/sandbox.py`,
 measured at 99.6% of a 5001-line output withheld from context).
 
+### Closed on 2026-07-26 by running the thing instead of describing it
+
+**Live provider execution.** Until this date no provider had ever been invoked.
+The gap was not documentation debt — it was hiding a defect that made most of the
+fleet unusable. `run_provider` launched the bare binary name with `shell=False`,
+and on Windows `shutil.which` consults PATHEXT while `CreateProcess` does not, so
+every npm-installed `.CMD` shim resolved and then refused to start. First
+`dobby fleet --probe` run, native Windows 11:
+
+| provider | before the fix | after |
+|---|---|---|
+| claude | ok, replied `DOBBY_OK`, 34.9s | ok, 29.1s |
+| agy | ok, replied `DOBBY_OK`, 61.8s | ok, 14.6s |
+| codex | `cannot execute 'codex'`, 0.14s | **ok, replied `DOBBY_OK`, 31.0s** |
+| gemini | `cannot execute 'gemini'`, 0.14s | launches, 22.2s → `IneligibleTierError` |
+
+`gemini`'s remaining failure is an account condition, not an invocation defect.
+Three providers are now verified end-to-end. Before this date, zero were, while
+`verified_on=(WIN,)` claimed otherwise for all four.
+
+**A real multi-agent round.** `dobby panel` had only ever run `--dry-run`. First
+live round, NGT protocol, 3 members: 2 succeeded, wall 194.9s against 313.3s of
+agent time (parallelism 1.61, slowest member 184.4s), diversity computed on real
+text rather than fixtures — mean pairwise distance 0.8824, `effective_n` 1.882,
+verdict `scattered` with the advice to tighten the task statement before adding
+voters.
+
+The round also earned its keep as a review. One member identified an unguarded
+`os.path.relpath` in the sandbox confinement path — correct — and attributed it to
+a live crossing between `providers/fanout.py`'s worktree root and
+`sandbox.run`'s `root=`. **That attribution did not survive checking:** no
+production call site passes `root=` at all, and the two roots are unrelated. The
+exception type was the real defect and is now fixed (`SandboxError`, not a bare
+`ValueError` that every `except SandboxError` would miss). Another member
+prescribed setting `PYTHONUTF8: "1"` in the workflow, which is the one change
+`.github/workflows/ci.yml` documents as forbidden because it masks the entire
+class of encoding failure the matrix exists to surface.
+
+Both outcomes are the argument for the grounding gate stated in
+`swarm/grounding.py`: a specific, well-cited, confident answer from a strong model
+was partly wrong, and the disagreement between members was what the diversity
+metric flagged. Panel output is a hypothesis set, never a finding.
+
+Still open from the list above: the model-judge adapter, the `search.search`
+driver, AST call graphs, and inference-time architecture search. `qwen`, `ollama`,
+`kimi` and `dashscope` remain unexecuted, and their `verified_on` is still empty.
+
 ---
 
 ## How to extend this file

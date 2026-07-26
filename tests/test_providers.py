@@ -490,3 +490,81 @@ class TestResolvedPathIsWhatGetsLaunched(unittest.TestCase):
             result = run_provider(spec, "hello")
         self.assertFalse(result.ok)
         self.assertIn("not on PATH", result.error)
+
+
+class TestPanelTimeoutReachesEveryTask(unittest.TestCase):
+    """`panel --timeout` must actually bind, not merely parse.
+
+    An accepted flag that changes nothing is worse than a missing one: it reads
+    as control the caller does not have. AgentTask.timeout_s already flowed
+    through to run_provider, so the whole defect was that cmd_panel never set it.
+    """
+
+    def test_the_flag_lands_on_each_task(self):
+        import dobby.providers as providers_pkg
+        from dobby.cli import cmd_panel
+
+        captured = []
+
+        def spy(tasks, **kwargs):
+            captured.extend(t.timeout_s for t in tasks)
+            raise _StopPanel()
+
+        namespace = types.SimpleNamespace(
+            repo=".", task="x", size=2, role="draft", protocol="ngt",
+            concurrency=None, timeout=45, with_context=False, dry_run=False,
+            progress=False, allow_network=False)
+        original = providers_pkg.run_round
+        providers_pkg.run_round = spy
+        try:
+            cmd_panel(namespace)
+        except _StopPanel:
+            pass
+        except SystemExit:
+            self.skipTest("no usable provider on this machine")
+        finally:
+            providers_pkg.run_round = original
+
+        if not captured:
+            self.skipTest("no usable provider on this machine")
+        self.assertTrue(all(t == 45 for t in captured), captured)
+
+    def test_omitting_it_leaves_the_catalog_default_in_place(self):
+        """None must mean 'the provider decides', not 'no timeout'."""
+        import dobby.providers as providers_pkg
+        from dobby.cli import cmd_panel
+
+        captured = []
+
+        def spy(tasks, **kwargs):
+            captured.extend(t.timeout_s for t in tasks)
+            raise _StopPanel()
+
+        namespace = types.SimpleNamespace(
+            repo=".", task="x", size=2, role="draft", protocol="ngt",
+            concurrency=None, timeout=None, with_context=False, dry_run=False,
+            progress=False, allow_network=False)
+        original = providers_pkg.run_round
+        providers_pkg.run_round = spy
+        try:
+            cmd_panel(namespace)
+        except _StopPanel:
+            pass
+        except SystemExit:
+            self.skipTest("no usable provider on this machine")
+        finally:
+            providers_pkg.run_round = original
+
+        if not captured:
+            self.skipTest("no usable provider on this machine")
+        self.assertTrue(all(t is None for t in captured), captured)
+        # And a None task timeout must not become an unbounded run.
+        for pid in registry().ids():
+            spec = registry().get(pid)
+            if spec.kind == "cli":
+                self.assertGreater(spec.timeout_s, 0,
+                                   f"{pid} has no default timeout to fall back on")
+
+
+class _StopPanel(Exception):
+    """Ends cmd_panel once the tasks have been captured."""

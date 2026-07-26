@@ -234,6 +234,11 @@ CLI_SMOKE = [
     ["handoff-latest"],
     ["friction-report"],
     ["panel", "test task", "--size", "3", "--dry-run"],
+    # `panel` accepted no timeout, so the only bound on a round was the
+    # catalog's 900s per-provider default. A round ends when its slowest member
+    # does, so one stalled provider held the panel for fifteen minutes with
+    # nothing the caller could do. `fleet --probe` had the flag all along.
+    ["panel", "test task", "--size", "2", "--timeout", "45", "--dry-run"],
 ]
 
 
