@@ -48,11 +48,47 @@ def _data(args) -> str:
 
 
 def _config(args) -> dict:
+    """Strict read: a command that needs config must fail if it is unreadable."""
     path = os.path.join(_data(args), "config.json")
     if not os.path.exists(path):
         return {}
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
+def _config_tolerant(args) -> tuple[dict, str | None]:
+    """(config, error). For `doctor`, whose job is to REPORT damage.
+
+    `doctor` crashed with a JSONDecodeError on a corrupt `config.json` — the one
+    command whose entire purpose is to say what is broken here, failing to say
+    it. Every other command keeps the strict read, because a command that cannot
+    load its configuration should stop rather than run against defaults it did
+    not choose.
+    """
+    path = os.path.join(_data(args), "config.json")
+    if not os.path.exists(path):
+        return {}, None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f), None
+    except json.JSONDecodeError as exc:
+        return {}, f"{path} is not valid JSON: {exc}"
+    except OSError as exc:
+        return {}, f"{path} is unreadable: {exc}"
+
+
+#: Data files that must be present AND parseable. Existence alone was the
+#: original check, and it reported "all checks pass" with a corrupt knowledge
+#: graph, a corrupt policy book, and a corrupt skill registry — the same
+#: existence-is-not-a-measurement mistake this kit keeps finding elsewhere.
+_REQUIRED_DATA = (
+    ("ontology.json", "the schema the whole knowledge layer depends on"),
+    ("config.json", "retrieval weights, budgets, protected paths"),
+    (os.path.join("knowledge", "kg.json"), "the curated knowledge graph"),
+    (os.path.join("policies", "policies.json"), "the policy book"),
+    (os.path.join("registry", "skills.json"), "the skill registry"),
+    (os.path.join("registry", "capabilities.json"), "the capability allowlist"),
+)
 
 
 def _allow_network(args) -> bool:
@@ -263,23 +299,57 @@ def cmd_doctor(args):
     data = _data(args)
     checks = []
 
-    def check(name: str, ok: bool, detail: str, fix: str = "") -> None:
-        checks.append({"check": name, "ok": ok, "detail": detail, "fix": fix})
+    def check(name: str, ok: bool, detail: str, fix: str = "",
+              blocking: bool = True) -> None:
+        """`blocking` distinguishes a BROKEN installation from a THIN one.
+
+        Missing or corrupt data is broken: nothing works and the exit code must
+        say so. No agent CLI installed is thin but legitimate — a CI runner has
+        none by design, and failing there would make every pipeline red for a
+        condition that is not a defect. Advisory checks are still reported; they
+        just do not set the exit code.
+        """
+        checks.append({"check": name, "ok": ok, "detail": detail, "fix": fix,
+                       "blocking": blocking})
 
     check("data_dir", os.path.isdir(data), data,
           "run: dobby init --scan .")
-    for rel in ("ontology.json", "config.json",
-                os.path.join("knowledge", "kg.json"),
-                os.path.join("policies", "policies.json"),
-                os.path.join("registry", "skills.json")):
+
+    # PARSE each data file, do not merely stat it. Existence-only checking
+    # reported "all checks pass" against a corrupt knowledge graph, a corrupt
+    # policy book, and a corrupt skill registry — the user is then told the
+    # project is healthy and meets the real failure several commands later,
+    # with nothing connecting the two.
+    for rel, purpose in _REQUIRED_DATA:
         p = os.path.join(data, rel)
-        check(f"data:{rel}", os.path.exists(p), p, "restore from distribution")
+        if not os.path.exists(p):
+            check(f"data:{rel}", False, f"missing: {p} ({purpose})",
+                  "restore from the distribution, or run: dobby init --scan .")
+            continue
+        try:
+            with open(p, encoding="utf-8") as f:
+                parsed = json.load(f)
+        except json.JSONDecodeError as exc:
+            check(f"data:{rel}", False, f"present but NOT valid JSON: {exc}",
+                  "restore the file; the engine cannot read it")
+            continue
+        except OSError as exc:
+            check(f"data:{rel}", False, f"unreadable: {exc}", "check permissions")
+            continue
+        if not isinstance(parsed, dict) or not parsed:
+            check(f"data:{rel}", False,
+                  f"parses but is empty or not an object ({purpose})",
+                  "restore from the distribution")
+            continue
+        check(f"data:{rel}", True, f"{len(parsed)} top-level key(s)")
+
     boot = os.path.join(data, "knowledge", "kg.bootstrap.json")
     check("bootstrapped", os.path.exists(boot), boot,
-          "run: dobby init --scan <host-root> (the project is not instantiated)")
+          "run: dobby init --scan <host-root> (the project is not instantiated)",
+          blocking=False)
     gold = os.path.join(repo, "evals", "retrieval_gold.yaml")
     check("retrieval_gold", os.path.exists(gold), gold,
-          "author project gold with the author-evals skill")
+          "author project gold with the author-evals skill", blocking=False)
 
     try:
         import yaml  # noqa: F401
@@ -287,27 +357,52 @@ def cmd_doctor(args):
     except ImportError:
         check("pyyaml", False, "not importable", "pip install PyYAML")
 
-    fleet = fleet_report(allow_network=_allow_network(args))
+    config, config_error = _config_tolerant(args)
+    if config_error:
+        check("config_readable", False, config_error,
+              "restore .dobby/config.json; every command that needs it will "
+              "fail until then")
+    allow_network = (bool(getattr(args, "allow_network", False))
+                     or bool((config.get("providers") or {}).get("allow_network")))
+    fleet = fleet_report(allow_network=allow_network)
     check("providers", fleet["usable_count"] > 0,
           f"{fleet['usable_count']} usable: {fleet['usable_ids']}",
-          "install at least one agent CLI (claude / codex / gemini / agy)")
+          "install at least one agent CLI (claude / codex / gemini / agy)",
+          blocking=False)
     check("multi_agent", fleet["multi_agent_ready"],
           f"panel size {fleet['max_panel_size']} "
           f"({'>=2 providers' if fleet['multi_agent_ready'] else 'need >=2'})",
-          "install a second provider so a panel has independent members")
+          "install a second provider so a panel has independent members",
+          blocking=False)
 
     failed = [c for c in checks if not c["ok"]]
+    blocking_failures = [c for c in failed if c.get("blocking", True)]
+    advisory = [c for c in failed if not c.get("blocking", True)]
     _out({
         "platform": describe_platform(),
         "version": __import__("dobby").__version__,
         "repo": repo,
         "checks": checks,
         "failed": [c["check"] for c in failed],
+        "blocking_failures": [c["check"] for c in blocking_failures],
+        "advisory_gaps": [c["check"] for c in advisory],
         "fleet": fleet,
-        "verdict": ("all checks pass" if not failed
-                    else f"{len(failed)} check(s) failed: "
-                         + ", ".join(c["check"] for c in failed)),
+        "verdict": (
+            "all checks pass" if not failed else
+            f"{len(blocking_failures)} BLOCKING failure(s): "
+            + ", ".join(c["check"] for c in blocking_failures)
+            + (f"; {len(advisory)} advisory gap(s): "
+               + ", ".join(c["check"] for c in advisory) if advisory else "")
+            if blocking_failures else
+            f"usable, with {len(advisory)} advisory gap(s): "
+            + ", ".join(c["check"] for c in advisory)),
     })
+    # Exit non-zero when a check fails. `doctor` previously exited 0 while
+    # reporting "1 check(s) failed", so a script or CI step could not detect the
+    # failure it had just been told about — the diagnosis was printed and
+    # simultaneously denied.
+    if blocking_failures:
+        sys.exit(1)
 
 
 # -------------------------------------------------------------- fleet ----
