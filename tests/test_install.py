@@ -14,6 +14,7 @@ Both are the same mistake in different clothes: trusting a declaration instead
 of measuring, and keeping two lists in sync by hand.
 """
 
+import json
 import os
 import re
 import shutil
@@ -309,6 +310,109 @@ class TestShellInstallEndToEnd(_KitOnly):
             env=child_env(), timeout=120)
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("dobby repo itself", proc.stdout + proc.stderr)
+
+
+
+
+@unittest.skipUnless(
+    bash_path(),
+    "install.sh declares #!/usr/bin/env bash and uses `set -o pipefail`")
+class TestLaunchersLandAndRun(_KitOnly):
+    r"""`dobby doctor` instead of `python -m dobby.cli doctor`.
+
+    Two names, one collision, and one measured limit.
+
+    The POSIX launcher is `dobby.sh`, NOT `dobby`. The installer copies the engine
+    package to `<host>/dobby/`, so a file named `dobby` beside it is the same name
+    in the same directory - the first attempt failed on its first run with
+    "line 202: .../dobby: Is a directory". On Windows there is no collision:
+    `dobby.cmd` differs from the directory and cmd.exe resolves a bare `dobby`
+    through PATHEXT, which is what makes the short form work at all.
+
+    Both launchers hard-code the interpreter the installer PROBED. Writing
+    `python3` would reintroduce the Store-redirector defect the probe exists to
+    avoid - a name that resolves and executes nothing.
+
+    The .cmd truncates an argument at its first newline. Measured here rather than
+    asserted in a comment, because a limit nobody checks is a limit that quietly
+    becomes false in both directions.
+    """
+
+    def setUp(self):
+        self.host = tempfile.mkdtemp(prefix="dobby-launcher-")
+        self.addCleanup(shutil.rmtree, self.host, True)
+        proc = subprocess.run([bash_path(), INSTALL_SH, self.host], cwd=REPO,
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", env=child_env(), timeout=900)
+        self.assertEqual(proc.returncode, 0,
+                         f"install failed:\n{proc.stdout}\n{proc.stderr}")
+
+    def test_both_launchers_land(self):
+        for name in ("dobby.cmd", "dobby.sh"):
+            self.assertTrue(os.path.exists(os.path.join(self.host, name)), name)
+
+    def test_the_posix_launcher_is_not_named_dobby(self):
+        """It would collide with the engine package directory."""
+        self.assertTrue(os.path.isdir(os.path.join(self.host, "dobby")))
+        self.assertFalse(os.path.isfile(os.path.join(self.host, "dobby")))
+
+    def test_neither_launcher_hardcodes_a_bare_interpreter_name(self):
+        """`python3` resolves to a Store stub on Windows and executes nothing."""
+        for name in ("dobby.cmd", "dobby.sh"):
+            body = Path(os.path.join(self.host, name)).read_text(encoding="utf-8")
+            self.assertIn("-m dobby.cli", body, name)
+            first = [w for w in body.split() if "dobby.cli" in body][0]
+            self.assertNotRegex(
+                body, r'(?m)^\s*(?:exec\s+)?python3?\s+-m dobby\.cli',
+                f"{name} trusts a bare interpreter name")
+
+    @unittest.skipUnless(os.name == "nt", "the .cmd launcher is for Windows")
+    def test_the_cmd_launcher_runs_and_agrees_with_the_module_form(self):
+        launcher = os.path.join(self.host, "dobby.cmd")
+        via_launcher = subprocess.run([launcher, "doctor"], cwd=self.host,
+                                      capture_output=True, text=True,
+                                      encoding="utf-8", errors="replace",
+                                      env=child_env(), timeout=600)
+        via_module = subprocess.run(
+            [sys.executable, "-m", "dobby.cli", "doctor"], cwd=self.host,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            env=child_env(), timeout=600)
+        self.assertEqual(via_launcher.returncode, 0, via_launcher.stderr[-300:])
+        self.assertEqual(json.loads(via_launcher.stdout)["verdict"],
+                         json.loads(via_module.stdout)["verdict"])
+
+    @unittest.skipUnless(os.name == "nt", "the .cmd launcher is for Windows")
+    def test_the_cmd_launcher_truncates_a_multiline_argument(self):
+        """The documented limit, as a measurement.
+
+        If this ever starts passing, cmd.exe stopped truncating and the note in
+        install.sh should be removed rather than left to mislead.
+        """
+        launcher = os.path.join(self.host, "dobby.cmd")
+        proc = subprocess.run([launcher, "route", "line one\nline two"],
+                              cwd=self.host, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace",
+                              env=child_env(), timeout=600)
+        self.assertEqual(proc.returncode, 0, proc.stderr[-200:])
+        self.assertEqual(json.loads(proc.stdout)["task"], "line one")
+
+    @unittest.skipUnless(os.name == "nt", "the .cmd launcher is for Windows")
+    def test_a_single_line_argument_survives_the_launcher(self):
+        """The case that matters for ordinary use."""
+        launcher = os.path.join(self.host, "dobby.cmd")
+        task = "add rate limiting to the upload endpoint 100% now"
+        proc = subprocess.run([launcher, "route", task], cwd=self.host,
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", env=child_env(), timeout=600)
+        self.assertEqual(json.loads(proc.stdout)["task"], task)
+
+    def test_both_installers_write_the_same_launcher_names(self):
+        """They drift silently otherwise; the suite already asserts this pattern."""
+        sh = Path(INSTALL_SH).read_text(encoding="utf-8")
+        ps1 = Path(INSTALL_PS1).read_text(encoding="utf-8")
+        for name in ("dobby.cmd", "dobby.sh"):
+            self.assertIn(name, sh, f"install.sh does not write {name}")
+            self.assertIn(name, ps1, f"install.ps1 does not write {name}")
 
 
 if __name__ == "__main__":
