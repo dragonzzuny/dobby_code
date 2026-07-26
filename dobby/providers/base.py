@@ -80,6 +80,17 @@ class ProviderSpec:
     #: Platforms where an invocation of this exact argv was OBSERVED to work.
     #: Empty means "not yet observed anywhere" — the honest default.
     verified_on: tuple[str, ...] = ()
+    #: Extra argv that puts this CLI into a state where it may EDIT FILES, or ()
+    #: when nobody has verified how to do that for this provider.
+    #:
+    #: Empty is the honest default and callers must treat it as a refusal, not as
+    #: "no flag needed". `dobby/swebench.py` hardcoded codex's `-s workspace-write`
+    #: and appended it to every provider, which for `claude` meant an unknown flag
+    #: on top of the catalog's own `--permission-mode plan` - a READ-ONLY mode. A
+    #: SWE-bench run with `--provider claude` would then report zero edits and read
+    #: as a harness failure when the provider had simply never been allowed to
+    #: write.
+    write_extra: tuple[str, ...] = ()
     notes: str = ""
 
     def __post_init__(self) -> None:

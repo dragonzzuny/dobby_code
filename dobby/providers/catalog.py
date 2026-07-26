@@ -140,6 +140,9 @@ CATALOG: tuple[ProviderSpec, ...] = (
     ProviderSpec(
         id="claude", kind="cli", display="Claude Code", binary="claude",
         argv=_claude, cost_tier="premium",
+        # The catalog's own argv ends with `--permission-mode plan`, which is
+        # read-only. Extras are appended last and therefore override it.
+        write_extra=("--permission-mode", "acceptEdits"),
         capabilities=("files", "shell", "web", "vision", "long_context"),
         timeout_s=900, mutates_worktree=True, verified_on=(WIN,),
         notes="Deepest tool use and longest context of the CLI set; default "
@@ -148,6 +151,11 @@ CATALOG: tuple[ProviderSpec, ...] = (
     ProviderSpec(
         id="codex", kind="cli", display="OpenAI Codex CLI", binary="codex",
         argv=_codex, cost_tier="premium",
+        # Verified 2026-07-26: `codex exec -s workspace-write` edits inside the
+        # working directory and refuses outside it. `danger-full-access` also
+        # exists and is deliberately not used - an agent that can write anywhere
+        # is a liability, not a measurement.
+        write_extra=("-s", "workspace-write"),
         capabilities=("files", "shell", "long_context"),
         timeout_s=900, mutates_worktree=True, verified_on=(WIN,),
         notes="Strong at focused code edits and repo-scoped review "

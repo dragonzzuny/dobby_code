@@ -16,6 +16,7 @@
     dobby search "task" --score-command tree search, scored by a command
     dobby graph --changed FILE...       who depends on what changed
     dobby endtask --split dev --yes     does the preamble change behaviour?
+    dobby swebench --limit 2 --yes      real SWE-bench instances, harness varied
     dobby memory <stats|route|expire|integrity>
     dobby compress --file F             compression with a leakage audit
     dobby specialize [--status]         mastery level and its evidence
@@ -717,6 +718,94 @@ def cmd_endtask(args):
     _out(report)
 
 
+def cmd_swebench(args):
+    """Real SWE-bench instances, model fixed, harness as the variable.
+
+    NOT a SWE-bench score. `resolved` needs the instance's pinned environment to
+    run FAIL_TO_PASS/PASS_TO_PASS, which in practice needs the official Docker
+    images, and Docker is absent here. What is measured is localization against the
+    gold patch and how many files outside it were touched - both necessary for
+    resolution, neither sufficient.
+    """
+    import sys as _sys
+
+    from .endtask import append_trials, deduplicate, read_trials
+    from .swebench import (SweBenchError, fetch_instances, find_instances,
+                          run_instance, summarize, write_extra_for)
+
+    repo_root = _repo(args)
+    if args.from_trials:
+        pooled, problems = read_trials(args.from_trials)
+        pooled = [t for t in pooled if "instance_id" in t]
+        # Keyed on (instance, condition) here, not (task, condition, rep).
+        seen, kept = set(), []
+        for trial in pooled:
+            key = (trial["instance_id"], trial["condition"])
+            if key in seen and trial.get("ok"):
+                kept = [t for t in kept
+                        if not ((t["instance_id"], t["condition"]) == key
+                                and not t.get("ok"))]
+            if key in seen:
+                continue
+            seen.add(key)
+            kept.append(trial)
+        conditions = tuple(dict.fromkeys(t["condition"] for t in kept))
+        report = summarize(kept, conditions=conditions)
+        report["malformed_lines"] = problems
+        report["trials_read"] = len(kept)
+        _out(report)
+        return
+
+    if args.instances:
+        # Scan the split rather than making the caller know which 100-row page an
+        # instance sits on. Telling a user about pagination is not an answer.
+        instances, missing = find_instances(args.instances, dataset=args.dataset,
+                                            split=args.split)
+        if missing:
+            _die(f"not in {args.dataset} split {args.split!r}: {missing}")
+    else:
+        instances = fetch_instances(dataset=args.dataset, split=args.split,
+                                    limit=args.pool, offset=args.offset)
+        instances = instances[:args.limit]
+    if not instances:
+        _die("no instances selected")
+
+    try:
+        write_extra_for(args.provider)
+    except SweBenchError as exc:
+        _die(str(exc))
+
+    calls = len(instances) * len(args.conditions)
+    print(f"{calls} agent run(s): {len(instances)} instance(s) x "
+          f"{len(args.conditions)} condition(s), provider {args.provider}, "
+          f"sandbox workspace-write", file=_sys.stderr)
+    if not args.yes:
+        _die(f"this spends {calls} real agent runs and clones {calls} "
+             f"repositories; pass --yes to run")
+
+    workdir = args.workdir or os.path.join(_data(args), "state", "swebench")
+    os.makedirs(workdir, exist_ok=True)
+    trials = []
+    for index, instance in enumerate(instances, 1):
+        for condition in args.conditions:
+            print(f"  [{len(trials)+1}/{calls}] {instance['instance_id']}/"
+                  f"{condition} ...", file=_sys.stderr, flush=True)
+            record = run_instance(instance, condition, workdir=workdir,
+                                 provider_id=args.provider, repo_root=repo_root,
+                                 timeout_s=args.timeout,
+                                 keep_clone=args.keep_clones)
+            trials.append(record)
+            if args.trials_out:
+                append_trials(args.trials_out, [record])
+            print(f"      ok={record.get('ok')} "
+                  f"edited={record.get('made_any_edit')} "
+                  f"localized={record.get('localized_all_gold_files')} "
+                  f"extra={record.get('extra_file_count')} "
+                  f"{record.get('duration_s')}s", file=_sys.stderr, flush=True)
+
+    _out(summarize(trials, conditions=tuple(args.conditions)))
+
+
 # ------------------------------------------------------------- memory ----
 def _memory(args):
     from .memory import HierarchicalMemory
@@ -1143,6 +1232,29 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--yes", action="store_true",
                    help="confirm the provider spend")
     p.set_defaults(fn=cmd_endtask)
+
+    p = sub.add_parser("swebench", parents=[common])
+    p.add_argument("--dataset", default="princeton-nlp/SWE-bench_Verified")
+    p.add_argument("--split", default="test")
+    p.add_argument("--pool", type=int, default=100,
+                   help="rows to fetch before selecting")
+    p.add_argument("--offset", type=int, default=0)
+    p.add_argument("--instances", nargs="+", default=None,
+                   help="explicit instance_ids")
+    p.add_argument("--limit", type=int, default=2,
+                   help="instances to run when none are named")
+    p.add_argument("--provider", default="codex",
+                   help="held fixed; the harness is the variable")
+    p.add_argument("--conditions", nargs="+", default=["bare", "harness"])
+    p.add_argument("--timeout", type=int, default=900)
+    p.add_argument("--workdir", default=None)
+    p.add_argument("--keep-clones", action="store_true")
+    p.add_argument("--trials-out", default=None,
+                   help="append each trial as it completes")
+    p.add_argument("--from-trials", nargs="+", default=None,
+                   help="summarize saved trials, clone and call nothing")
+    p.add_argument("--yes", action="store_true")
+    p.set_defaults(fn=cmd_swebench)
 
     p = sub.add_parser("memory", parents=[common])
     p.add_argument("action", choices=["stats", "route", "expire", "integrity"])

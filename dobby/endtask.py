@@ -471,6 +471,10 @@ def summarize(trials: Sequence[dict], tasks: Sequence[dict], *,
         "preregistered": preregistered,
         "declared_threshold": declared_threshold,
         "per_task": per_task,
+        # Named, because a bare "+1.5" does not say which way. `summarize`
+        # compares conditions[0] to conditions[-1], so passing them reversed
+        # flips the sign with nothing in the output to notice it by.
+        "comparison": f"{conditions[0]} -> {conditions[-1]}",
         "mean_paired_delta": (round(statistics.fmean(deltas), 3)
                               if deltas else None),
         "bootstrap_ci_95": list(ci),
@@ -550,7 +554,13 @@ def read_trials(paths: "Sequence[str]") -> "tuple[list[dict], list[str]]":
                 except ValueError as exc:
                     problems.append(f"{path}:{number}: {exc}")
                     continue
-                if not isinstance(record, dict) or "task" not in record:
+                # Validated on `condition`, which every trial in this repository
+                # has. Requiring `task` rejected every SWE-bench trial as
+                # malformed — those are keyed by `instance_id` — and the summary
+                # then reported 0 trials read from a file holding 18 of them. A
+                # validator that knows only one caller's schema silently discards
+                # the other's.
+                if not isinstance(record, dict) or "condition" not in record:
                     problems.append(f"{path}:{number}: not a trial record")
                     continue
                 trials.append(record)
