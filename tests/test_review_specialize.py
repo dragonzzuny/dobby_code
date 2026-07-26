@@ -530,5 +530,74 @@ class TestCitations(unittest.TestCase):
             "Someone. Title. arXiv:2510.00615").identifier)
 
 
+
+
+class TestQueryScriptFollowsTheNeed(unittest.TestCase):
+    """English intent words were being appended to Korean subjects.
+
+    Found by installing dobby into two Korean-language projects. Measured on a
+    real need:
+
+        need   산업단지 추락 끼임 사고 예방 제도 개선 선행사례와 현행 법령
+        query  산업단지 안전규칙 how it works implementation
+
+    Nothing errored. Every shape was present and every rationale sensible - and
+    that query retrieves badly from the sources such a need actually has (국가법령
+    정보센터, KOSHA, Korean academic databases), because the operative words were
+    in the wrong language. Only thin results would have revealed it, much later.
+    """
+
+    KOREAN = "산업단지 추락 끼임 사고 예방 제도 개선 선행사례와 현행 법령"
+    ENGLISH = "industrial complex fall and entrapment accident prevention"
+    ENGLISH_WITH_KOREAN_NOUN = "KOSHA guideline for fall prevention 산업단지"
+
+    def _by_shape(self, need):
+        return {q["shape"]: q["query"] for q in plan_queries(need).queries}
+
+    def test_a_korean_need_gets_korean_intent_words(self):
+        queries = self._by_shape(self.KOREAN)
+        self.assertIn("작동", queries["mechanism"])
+        self.assertIn("실패", queries["refutation"])
+        self.assertIn("한계", queries["limitation"])
+        self.assertIn("대안", queries["alternative"])
+
+    def test_a_korean_need_gets_no_english_intent_words(self):
+        """The exact defect: Korean subject, English search intent."""
+        for shape, query in self._by_shape(self.KOREAN).items():
+            for english in ("how it works", "does not work", "limitations",
+                            "alternative compared"):
+                self.assertNotIn(english, query, f"{shape}: {query}")
+
+    def test_an_english_need_is_unchanged(self):
+        queries = self._by_shape(self.ENGLISH)
+        self.assertIn("how it works", queries["mechanism"])
+        self.assertIn("does not work", queries["refutation"])
+
+    def test_one_korean_noun_does_not_flip_an_english_need(self):
+        """Decided by character counts, so a cited proper noun does not swing it."""
+        self.assertIn("how it works",
+                      self._by_shape(self.ENGLISH_WITH_KOREAN_NOUN)["mechanism"])
+
+    def test_the_canonical_query_never_gains_intent_words(self):
+        for need in (self.KOREAN, self.ENGLISH):
+            shapes = self._by_shape(need)
+            for shape, query in shapes.items():
+                if shape != "canonical":
+                    self.assertLess(len(shapes["canonical"]), len(query), shape)
+
+    def test_every_shape_is_present_in_both_scripts(self):
+        for need in (self.KOREAN, self.ENGLISH):
+            self.assertEqual(
+                set(self._by_shape(need)),
+                {"canonical", "mechanism", "refutation", "limitation",
+                 "alternative"}, need[:24])
+
+    def test_the_script_detector_is_explicit_about_its_default(self):
+        from dobby.research import _script_of
+        self.assertEqual(_script_of(self.KOREAN), "ko")
+        self.assertEqual(_script_of(self.ENGLISH), "en")
+        self.assertEqual(_script_of(""), "en")
+
+
 if __name__ == "__main__":
     unittest.main()

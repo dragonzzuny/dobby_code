@@ -23,10 +23,16 @@
     dobby research plan "need"          decomposed search plan
     dobby design validate               DESIGN.md token check
 
-Every command prints JSON on stdout so the output is consumable by another
-process without parsing prose. UTF-8 is pinned first (see core/platform.py):
-without it, any non-ASCII knowledge-graph summary crashes the process on a
-non-UTF-8 Windows locale.
+Almost every command prints JSON on stdout so the output is consumable by another
+process without parsing prose. The exceptions are deliberate and are named here,
+because a blanket promise that two commands break is worse than an accurate one —
+a consumer piping `spend` into `json.loads` crashed on `no agent calls recorded`:
+
+- `spend` renders a human-readable breakdown; pass `--json` for the machine form,
+  or `--line` for a one-line status bar.
+
+UTF-8 is pinned first (see core/platform.py): without it, any non-ASCII
+knowledge-graph summary crashes the process on a non-UTF-8 Windows locale.
 """
 
 from __future__ import annotations

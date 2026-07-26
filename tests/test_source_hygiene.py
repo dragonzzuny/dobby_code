@@ -12,6 +12,7 @@ from the compiler, not from any linter this project depends on — and this proj
 depends on PyYAML and nothing else.
 """
 
+import ast
 import os
 import sys
 import unittest
@@ -338,6 +339,67 @@ class TestNothingWritesIntoTheRepositoryRoot(unittest.TestCase):
                                  "and the containment may be unnecessary")
         self.assertEqual(sorted(set(os.listdir(REPO)) - before), [],
                          "a probed writer reached the repository root")
+
+
+
+
+class TestNoLeakedFileHandles(unittest.TestCase):
+    r"""`open(...).read()` without a context manager, found by AST not regex.
+
+    An earlier sweep used `open\([^)]*\)\.(read|write)` and closed 13 sites. It
+    missed 11 more, because `[^)]*` cannot span a nested call - so every
+    `open(os.path.join(...), "w").write(...)` was invisible to it. The pattern
+    looked thorough and was structurally incapable of seeing the common case.
+
+    On Windows an unclosed handle makes `shutil.rmtree` fail with PermissionError,
+    and garbage-collection timing differs between machines, so each of these is a
+    flaky failure waiting for a slower runner.
+    """
+
+    def _leaks(self, path):
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            text = handle.read()
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            return []
+        found = []
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in ("read", "write", "readlines",
+                                           "writelines")
+                    and isinstance(node.func.value, ast.Call)
+                    and isinstance(node.func.value.func, ast.Name)
+                    and node.func.value.func.id == "open"):
+                found.append(f"{_label(path)}:{node.lineno}")
+        return found
+
+    def test_no_source_file_leaks_a_handle(self):
+        leaked = [site for path in _sources() for site in self._leaks(path)]
+        self.assertEqual(
+            leaked, [],
+            "use `with open(...)` or `pathlib.Path(...).read_text()`:\n"
+            + "\n".join(leaked))
+
+    def test_the_detector_sees_through_a_nested_call(self):
+        """The exact blind spot of the regex it replaces."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            planted = os.path.join(directory, "planted.py")
+            with open(planted, "w", encoding="utf-8") as handle:
+                handle.write("import os\n"
+                             'open(os.path.join("a", "b"), "w").write("x")\n')
+            found = self._leaks(planted)
+        self.assertTrue(found, "a nested-call leak went undetected")
+
+    def test_a_with_statement_is_not_flagged(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            clean = os.path.join(directory, "clean.py")
+            with open(clean, "w", encoding="utf-8") as handle:
+                handle.write('with open("a") as h:\n    x = h.read()\n')
+            self.assertEqual(self._leaks(clean), [])
 
 
 if __name__ == "__main__":

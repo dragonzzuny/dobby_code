@@ -1,5 +1,6 @@
 import json
 import os
+import pathlib
 import shutil
 import sys
 import tempfile
@@ -121,12 +122,11 @@ class TestEvolve(unittest.TestCase):
 
     def test_harvest_rejects_without_gain_and_rolls_back(self):
         packet = export_experience(self.instance)
-        before = open(os.path.join(self.kit, ".dobby", "knowledge",
-                                   "kg.json"), encoding="utf-8").read()
+        kg_path = os.path.join(self.kit, ".dobby", "knowledge", "kg.json")
+        before = pathlib.Path(kg_path).read_text(encoding="utf-8")
         report = harvest(self.kit, [packet], fitness=self._stub_fitness(False))
         self.assertEqual(report["promoted"], [])
-        after = open(os.path.join(self.kit, ".dobby", "knowledge",
-                                  "kg.json"), encoding="utf-8").read()
+        after = pathlib.Path(kg_path).read_text(encoding="utf-8")
         self.assertEqual(before, after, "rejected harvest must not change the kit KG")
 
     def test_harvest_idempotent_negative_memory(self):

@@ -81,10 +81,20 @@ def module_name(path: str, root: str) -> str:
 
 
 def discover(root: str) -> list[str]:
-    """Every .py file under `root`, skipping the directories above."""
+    """Every .py file under `root`, skipping build output and vendored tooling.
+
+    In a HOST the installed engine is not the project. Graphing it reported 94
+    modules and 190 edges of dobby's own code for a project whose entire content
+    was one JPEG — technically true, since those files are in the tree, and useless
+    as an answer to "who depends on what I changed". In the KIT they are the
+    product and are included. `core.scan_exclusions` is the single predicate.
+    """
+    from .core import scan_exclusions
+
+    skips = set(SKIP_DIRS) | set(scan_exclusions(root))
     found: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = [d for d in dirnames if d not in skips]
         for name in filenames:
             if name.endswith(".py"):
                 found.append(os.path.join(dirpath, name))

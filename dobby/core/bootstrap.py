@@ -41,11 +41,26 @@ def scan_repo(repo: str, max_files: int = 20000) -> dict:
     inv = {"languages": {}, "build": [], "ci": [], "instructions": [],
            "tests": [], "scripts": [], "skills": [], "rules": [],
            "top_dirs": [], "file_count": 0, "generated_hint": []}
+    # In a HOST the installed engine is vendored tooling, not the work. Scanning
+    # it buries the project: a fresh install into a folder containing ONE JPEG
+    # inventoried 114 files and reported `languages: ['python', 'markdown']`, and
+    # the knowledge graph came back describing `area:dobby`, `area:mcp` and
+    # `area:tests`. `dobby context "<task>"` then returned `"items": []` — step one
+    # of the README walkthrough answering nothing, because everything retrievable
+    # was about the harness while the task was about the project.
+    #
+    # In the KIT those same directories ARE the product, so nothing is excluded
+    # there. `core.scan_exclusions` is the single predicate; getting this right in
+    # one scanner and wrong in another is how the two disagreed in the first place.
+    from . import scan_exclusions
+
+    skips = set(SKIP_DIRS) | set(scan_exclusions(repo))
+    inv["excluded_as_harness"] = sorted(skips - set(SKIP_DIRS))
     root_entries = sorted(os.listdir(repo))
     inv["top_dirs"] = [d for d in root_entries
-                       if os.path.isdir(os.path.join(repo, d)) and d not in SKIP_DIRS]
+                       if os.path.isdir(os.path.join(repo, d)) and d not in skips]
     for dirpath, dirnames, filenames in os.walk(repo):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = [d for d in dirnames if d not in skips]
         rel_dir = os.path.relpath(dirpath, repo)
         # Inventory paths are recorded in POSIX form on every OS. Two reasons:
         # (a) the hint tables below are written with "/" separators, and a

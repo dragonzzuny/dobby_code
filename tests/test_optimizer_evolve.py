@@ -19,6 +19,7 @@ whole batch and lost every good packet with it.
 
 import json
 import os
+import pathlib
 import shutil
 import sys
 import tempfile
@@ -208,8 +209,9 @@ class TestBootstrapBoundaries(unittest.TestCase):
         import inspect
         self.assertIs(inspect.signature(os.walk).parameters["followlinks"].default,
                       False)
-        source = open(os.path.join(REPO, "dobby", "core", "bootstrap.py"),
-                      encoding="utf-8").read()
+        source = pathlib.Path(
+            os.path.join(REPO, "dobby", "core", "bootstrap.py")
+        ).read_text(encoding="utf-8")
         self.assertNotIn("followlinks=True", source)
 
     def test_max_files_cap_is_honoured(self):

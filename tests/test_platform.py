@@ -1,5 +1,6 @@
 import hashlib
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -420,7 +421,7 @@ class TestBashProbeAsksForWhatTheScriptNeeds(unittest.TestCase):
             launcher = os.path.join(self.dir, "stub")
             with open(launcher, "w", encoding="utf-8") as handle:
                 handle.write("#!" + sys.executable + "\n"
-                             + open(body, encoding="utf-8").read())
+                             + pathlib.Path(body).read_text(encoding="utf-8"))
             os.chmod(launcher, 0o755)
         return launcher
 

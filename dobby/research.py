@@ -75,6 +75,48 @@ class QueryPlan:
         return dataclasses.asdict(self)
 
 
+#: Search vocabulary per shape, per script of the need.
+#:
+#: The English terms were the only ones for a long time, and they were appended to
+#: the subject whatever language it was in. Measured on a real Korean need:
+#:
+#:     need   산업단지 추락 끼임 사고 예방 제도 개선 선행사례와 현행 법령
+#:     query  산업단지 안전규칙 how it works implementation
+#:
+#: That query retrieves badly from the sources such a need actually has - 국가법령
+#: 정보센터, KOSHA, Korean academic databases - because the operative words are in
+#: the wrong language. The subject was Korean and the search intent was English.
+#:
+#: This is not a translation feature. Each list is the vocabulary a searcher in
+#: that language would actually type, which is why the Korean refutation terms are
+#: 실패·부작용·반대 rather than a literal rendering of "failed replication".
+_SHAPE_TERMS = {
+    "en": {
+        "mechanism": "how it works implementation",
+        "refutation": "does not work failed replication negative result criticism",
+        "limitation": "limitations assumptions scope",
+        "alternative": "alternative compared baseline",
+    },
+    "ko": {
+        "mechanism": "작동 원리 구현 방식 절차",
+        "refutation": "실패 사례 부작용 문제점 반대 비판 한계",
+        "limitation": "한계 전제 적용 범위 예외",
+        "alternative": "대안 비교 기존 방식 차이",
+    },
+}
+
+
+def _script_of(text: str) -> str:
+    """`ko` when the need is predominantly Hangul, else `en`.
+
+    Counted over characters rather than guessed from the presence of one Korean
+    word, so an English need citing a Korean proper noun still searches in English.
+    """
+    hangul = sum(1 for c in text if 0xAC00 <= ord(c) <= 0xD7A3)
+    latin = sum(1 for c in text if c.isascii() and c.isalpha())
+    return "ko" if hangul > latin else "en"
+
+
 def plan_queries(need: str, *, year_hint: str | None = None) -> QueryPlan:
     """Decompose one information need into complementary queries.
 
@@ -83,21 +125,26 @@ def plan_queries(need: str, *, year_hint: str | None = None) -> QueryPlan:
     refutation query is built by ADDING negative-result vocabulary to the same
     terms, so it searches the same topic from the opposite direction instead of
     searching a different topic.
+
+    The added vocabulary follows the SCRIPT of the need. Appending English intent
+    words to a Korean subject produced queries no Korean source answers well, and
+    the shape of the plan looked correct the whole time — every query was present,
+    every rationale sensible, and only the retrieved results would have been thin.
     """
     terms = [t for t in tokens(need) if len(t) > 3][:6]
     core = " ".join(terms)
+    script = _script_of(need)
+    words = _SHAPE_TERMS[script]
     queries = [
         {"shape": "canonical", "query": core,
          "rationale": QUERY_SHAPES["canonical"]},
-        {"shape": "mechanism", "query": f"{core} how it works implementation",
+        {"shape": "mechanism", "query": f"{core} {words['mechanism']}",
          "rationale": QUERY_SHAPES["mechanism"]},
-        {"shape": "refutation",
-         "query": f"{core} does not work failed replication negative result "
-                  f"criticism",
+        {"shape": "refutation", "query": f"{core} {words['refutation']}",
          "rationale": QUERY_SHAPES["refutation"]},
-        {"shape": "limitation", "query": f"{core} limitations assumptions scope",
+        {"shape": "limitation", "query": f"{core} {words['limitation']}",
          "rationale": QUERY_SHAPES["limitation"]},
-        {"shape": "alternative", "query": f"{core} alternative compared baseline",
+        {"shape": "alternative", "query": f"{core} {words['alternative']}",
          "rationale": QUERY_SHAPES["alternative"]},
     ]
     if year_hint:
