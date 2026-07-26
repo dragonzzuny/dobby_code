@@ -1,3 +1,4 @@
+import hashlib
 import os
 import shutil
 import subprocess
@@ -13,7 +14,7 @@ import dobby.core.platform as platform_mod
 from dobby.core.platform import (PYTHON_PLACEHOLDER, child_env,
                                  describe_platform, force_utf8_io,
                                  posix_shell_available, posix_shell_path,
-                                 python_executable, resolve_command, shim_safe_argv)
+                                 python_executable, resolve_command, shim_safe_argv, npm_shim_target)
 
 
 class TestResolveCommand(unittest.TestCase):
@@ -228,22 +229,29 @@ class TestPosixShellIsProbedNotJustFound(unittest.TestCase):
         return launcher
 
 
-class TestBatchShimTruncatesMultilineArguments(unittest.TestCase):
-    """A `.CMD` shim silently drops everything after the first newline.
+class TestWindowsLaunchRouteCarriesTheArgument(unittest.TestCase):
+    r"""Only one of three Windows launch routes carries an arbitrary string.
 
-    Measured with one string through both routes:
+    Measured by comparing sha256 of each argument's UTF-8 bytes, so a console code
+    page cannot be mistaken for a transport failure:
 
-        via .CMD shim    ["line one"]
-        direct exe       ["line one\nline two\nline three"]
+                              .cmd    powershell -File    node directly
+        newline               BROKEN  ok                  ok
+        double quote          ok      BROKEN              ok
+        quote + newline       BROKEN  BROKEN              ok
+        Korean, em dash       ok      ok                  ok
 
-    Nothing else is affected - `%`, `&&`, `^` and `|` all arrive intact - so the
-    hazard is narrow and was invisible until a multi-line prompt was sent. npm
-    installs every one of its CLIs as a `.CMD` on Windows, so this reached the
-    provider layer: a judge prompt came back "Ready to grade, but I'm missing the
-    inputs" because the provider received only the preamble line and answered it.
-    Nothing errored, and the reply read like an opinion about the work.
+    Two mistakes of mine are encoded here as tests.
 
-    The first test measures the truncation rather than trusting the claim.
+    The PowerShell reroute was added after measuring newlines and percent signs and
+    was never tested with a double quote. The first real prompt containing one -
+    the rules text `"3 failures" without the three names is not a finding` - killed
+    every call with `error: unexpected argument`. Four provider calls, an eval run
+    that measured nothing, and the same class of defect the reroute was meant to fix.
+
+    The first version of the measurement itself reported Korean and an em dash
+    broken on all three routes. They were never broken: the echo script printed
+    non-ASCII to a cp949 stdout, so it measured the instrument. Hashes fixed that.
     """
 
     def setUp(self):
@@ -251,91 +259,124 @@ class TestBatchShimTruncatesMultilineArguments(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.dir, True)
         self.echo = os.path.join(self.dir, "argecho.py")
         with open(self.echo, "w", encoding="utf-8") as handle:
-            handle.write("import sys, json\n"
-                         "print(json.dumps(sys.argv[1:], ensure_ascii=False))\n")
+            handle.write(
+                "import hashlib, json, sys\n"
+                "print(json.dumps([hashlib.sha256(a.encode('utf-8')).hexdigest()\n"
+                "                  for a in sys.argv[1:]], ensure_ascii=True))\n")
 
-    def _make_shim(self, extension: str) -> str:
-        path = os.path.join(self.dir, f"tool{extension}")
-        if extension == ".ps1":
-            with open(path, "w", encoding="utf-8") as handle:
-                handle.write(f'& "{sys.executable}" "{self.echo}" @args\n')
-        else:
-            with open(path, "w", encoding="utf-8", newline="\r\n") as handle:
-                handle.write("@echo off\r\n")
-                handle.write(f'"{sys.executable}" "{self.echo}" %*\r\n')
+    def _plain_shim(self) -> str:
+        """A .cmd that forwards to python, with no npm entry point to find."""
+        path = os.path.join(self.dir, "plain.cmd")
+        with open(path, "w", encoding="utf-8", newline="\r\n") as handle:
+            handle.write("@echo off\r\n")
+            handle.write('"' + sys.executable + '" "' + self.echo + '" %*\r\n')
         return path
 
-    @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
-    def test_the_truncation_is_real(self):
-        shim = self._make_shim(".cmd")
-        proc = subprocess.run([shim, "line one\nline two"], capture_output=True,
-                              text=True, encoding="utf-8", errors="replace",
-                              timeout=120)
-        self.assertIn("line one", proc.stdout)
-        self.assertNotIn("line two", proc.stdout,
-                         "if this passes, the shim no longer truncates and "
-                         "shim_safe_argv's re-routing is no longer needed")
+    def _npm_shim(self) -> str:
+        """An npm-style shim: a .cmd/.ps1 pair naming a node_modules entry point.
+
+        The entry point is a JS file that never runs here - only its PATH is read.
+        `node` stands in as any real executable, since the property under test is
+        that a real exe receives argv unmodified.
+        """
+        entry_dir = os.path.join(self.dir, "node_modules", "@scope", "tool", "bin")
+        os.makedirs(entry_dir, exist_ok=True)
+        entry = os.path.join(entry_dir, "tool.js")
+        with open(entry, "w", encoding="utf-8") as handle:
+            handle.write("// entry point\n")
+        rel = "node_modules/@scope/tool/bin/tool.js"
+        cmd = os.path.join(self.dir, "tool.cmd")
+        with open(cmd, "w", encoding="utf-8", newline="\r\n") as handle:
+            handle.write("@echo off\r\n")
+            handle.write('"%_prog%"  "%dp0%\\' + rel.replace("/", "\\")
+                         + '" %*\r\n')
+        ps1 = os.path.join(self.dir, "tool.ps1")
+        with open(ps1, "w", encoding="utf-8") as handle:
+            handle.write('& "node$exe"  "$basedir/' + rel + '" $args\n')
+        return cmd
+
+    HOSTILE = 'rules say "3 failures" and\nthen a second line'
 
     @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
-    def test_percent_and_operators_are_not_affected(self):
-        """Scope the claim: only newlines are the problem."""
-        shim = self._make_shim(".cmd")
-        for arg in ("100% done", "a && b", "a ^ b | c"):
-            proc = subprocess.run([shim, arg], capture_output=True, text=True,
-                                  encoding="utf-8", errors="replace", timeout=120)
-            self.assertIn(arg, proc.stdout, f"{arg!r} did not survive")
+    def test_a_plain_batch_shim_truncates_at_the_newline(self):
+        """Establish the hazard rather than trusting the claim."""
+        shim = self._plain_shim()
+        want = hashlib.sha256("a\nb".encode("utf-8")).hexdigest()
+        proc = subprocess.run([shim, "a\nb"], capture_output=True, text=True,
+                              encoding="ascii", errors="replace",
+                              env=child_env(), timeout=120)
+        self.assertNotIn(want, proc.stdout,
+                         "if this passes, a .cmd shim no longer truncates and the "
+                         "node-direct route is no longer needed")
 
-    def test_a_single_line_argument_is_left_on_the_direct_route(self):
-        shim = self._make_shim(".cmd")
+    @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
+    def test_an_npm_shim_is_bypassed_for_its_entry_point(self):
+        shim = self._npm_shim()
+        target = npm_shim_target(shim)
+        self.assertIsNotNone(target, "the npm entry point was not extracted")
+        node, script = target
+        self.assertTrue(script.endswith("tool.js"), script)
+        self.assertTrue(os.path.exists(script), script)
+        self.assertTrue(os.path.basename(node).lower().startswith("node"), node)
+
+    @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
+    def test_the_bypass_route_is_chosen_and_the_argument_is_untouched(self):
+        shim = self._npm_shim()
+        argv, note = shim_safe_argv(shim, ["exec", self.HOSTILE])
+        self.assertIsNotNone(argv, note)
+        self.assertNotEqual(argv[0], shim, "the shim was launched directly")
+        self.assertEqual(argv[-1], self.HOSTILE)
+        self.assertIn("cannot carry", note)
+
+    @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
+    def test_a_real_executable_carries_a_quote_and_a_newline_intact(self):
+        """The property the whole reroute exists for, end to end."""
+        want = hashlib.sha256(self.HOSTILE.encode("utf-8")).hexdigest()
+        proc = subprocess.run([sys.executable, self.echo, self.HOSTILE],
+                              capture_output=True, text=True, encoding="ascii",
+                              errors="replace", env=child_env(), timeout=120)
+        self.assertIn(want, proc.stdout, proc.stderr[-200:])
+
+    @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
+    def test_a_single_line_argument_still_uses_the_shim(self):
+        """No entry point needed when the shim can carry the argument."""
+        shim = self._plain_shim()
         argv, note = shim_safe_argv(shim, ["one line"])
         self.assertEqual(argv[0], shim)
         self.assertEqual(note, "")
 
     @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
-    def test_a_multiline_argument_is_rerouted_through_the_ps1_sibling(self):
-        self._make_shim(".cmd")
-        ps1 = self._make_shim(".ps1")
-        argv, note = shim_safe_argv(os.path.join(self.dir, "tool.cmd"),
-                                    ["line one\nline two"])
-        self.assertIsNotNone(argv, note)
-        self.assertIn("powershell", argv[0].lower())
-        self.assertIn("-File", argv)
-        self.assertIn(ps1, argv)
-        self.assertIn("truncates", note)
-
-    @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
-    def test_the_rerouted_argv_actually_delivers_the_whole_argument(self):
-        """End to end: the point is the argument arriving, not the argv shape."""
-        self._make_shim(".cmd")
-        self._make_shim(".ps1")
-        argv, _ = shim_safe_argv(os.path.join(self.dir, "tool.cmd"),
-                                 ["line one\nline two\nline three"])
-        proc = subprocess.run(argv, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=180)
-        self.assertIn("line two", proc.stdout, proc.stderr[-300:])
-        self.assertIn("line three", proc.stdout, proc.stderr[-300:])
-
-    @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
-    def test_without_a_ps1_it_refuses_rather_than_truncating(self):
-        """Silent truncation is the worst outcome available, so it is refused."""
-        shim = self._make_shim(".cmd")
-        argv, note = shim_safe_argv(shim, ["line one\nline two"])
+    def test_an_unbypassable_shim_refuses_a_multiline_argument(self):
+        shim = self._plain_shim()
+        argv, note = shim_safe_argv(shim, ["a\nb"])
         self.assertIsNone(argv)
         self.assertIn("only its first line", note)
+
+    @unittest.skipUnless(os.name == "nt", "batch shims are a Windows concern")
+    def test_a_double_quote_alone_does_not_trigger_a_refusal(self):
+        """The .cmd route carries quotes fine; only newlines defeat it."""
+        shim = self._plain_shim()
+        argv, _ = shim_safe_argv(shim, ['say "3 failures"'])
+        self.assertIsNotNone(argv)
+        self.assertEqual(argv[0], shim)
 
     def test_a_real_executable_is_never_rerouted(self):
         argv, note = shim_safe_argv(sys.executable, ["-c", "print(1)\nprint(2)"])
         self.assertEqual(argv[0], sys.executable)
         self.assertEqual(note, "")
 
-    def test_carriage_returns_count_as_multiline(self):
-        """A CRLF prompt truncates exactly the same way."""
-        if os.name != "nt":
-            self.skipTest("batch shims are a Windows concern")
-        shim = self._make_shim(".cmd")
-        argv, note = shim_safe_argv(shim, ["line one\r\nline two"])
-        self.assertIsNone(argv)
-        self.assertTrue(note)
+    def test_non_windows_is_left_alone(self):
+        with mock.patch.object(platform_mod, "is_windows", lambda: False):
+            argv, note = shim_safe_argv("/usr/bin/tool", ["a\nb"])
+        self.assertEqual(argv, ["/usr/bin/tool", "a\nb"])
+        self.assertEqual(note, "")
+
+    def test_a_non_npm_ps1_is_not_mistaken_for_one(self):
+        """`npm_shim_target` must not invent an entry point."""
+        path = os.path.join(self.dir, "other.ps1")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("Write-Output 'hello'\n")
+        self.assertIsNone(npm_shim_target(path))
 
 
 class TestBashProbeAsksForWhatTheScriptNeeds(unittest.TestCase):

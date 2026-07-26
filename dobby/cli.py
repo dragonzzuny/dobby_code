@@ -15,6 +15,7 @@
     dobby panel "task" [--size N]       decorrelated multi-agent round
     dobby search "task" --score-command tree search, scored by a command
     dobby graph --changed FILE...       who depends on what changed
+    dobby endtask --split dev --yes     does the preamble change behaviour?
     dobby memory <stats|route|expire|integrity>
     dobby compress --file F             compression with a leakage audit
     dobby specialize [--status]         mastery level and its evidence
@@ -638,6 +639,62 @@ def cmd_graph(args):
     _out(payload)
 
 
+def cmd_endtask(args):
+    """The compliance experiment. See docs/EVAL_DESIGN.md before reading a number.
+
+    Measures whether the harness preamble changes output in the direction it
+    specifies. That is close to circular by construction, and the informative
+    outcome is a NULL one - it would mean the rules are being ignored. Compliance
+    is not benefit.
+    """
+    import sys as _sys
+
+    from .endtask import CONDITIONS, load_tasks, run_experiment
+
+    repo = _repo(args)
+    tasks_path = args.tasks or os.path.join(repo, "evals", "endtask", "tasks.json")
+    if not os.path.exists(tasks_path):
+        _die(f"no task file at {tasks_path}")
+    tasks = load_tasks(tasks_path, split=args.split)
+    if not tasks:
+        _die(f"no tasks in {tasks_path}"
+             + (f" for split {args.split!r}" if args.split else ""))
+
+    for condition in args.conditions:
+        if condition not in CONDITIONS:
+            _die(f"unknown condition {condition!r}; expected {list(CONDITIONS)}")
+
+    trials = len(tasks) * len(args.conditions) * args.reps
+    print(f"{trials} provider call(s): {len(tasks)} task(s) x "
+          f"{len(args.conditions)} condition(s) x {args.reps} rep(s), "
+          f"provider {args.provider}", file=_sys.stderr)
+    if not args.yes:
+        _die(f"this spends {trials} real provider calls; pass --yes to run. "
+             "An eval that spends silently is one nobody re-runs.")
+
+    done = {"n": 0}
+
+    def progress(record):
+        done["n"] += 1
+        mark = "ok " if record["ok"] else "FAIL"
+        score = record.get("total")
+        print(f"  [{done['n']}/{trials}] {mark} {record['task']}/"
+              f"{record['condition']}#{record['rep']} "
+              f"score={score} {record['duration_s']}s", file=_sys.stderr)
+
+    report = run_experiment(
+        tasks, repo=repo, provider_id=args.provider,
+        conditions=tuple(args.conditions), reps=args.reps,
+        timeout_s=args.timeout, declared_threshold=args.declare,
+        on_trial=progress)
+    report["split"] = args.split or "all"
+    report["tasks_file"] = tasks_path.replace("\\", "/")
+    if not args.keep_outputs:
+        report["outputs_note"] = ("model outputs omitted; pass --keep-outputs to "
+                                 "include them for manual inspection")
+    _out(report)
+
+
 # ------------------------------------------------------------- memory ----
 def _memory(args):
     from .memory import HierarchicalMemory
@@ -1035,6 +1092,29 @@ def build_parser() -> argparse.ArgumentParser:
                    help="keep imports of modules outside this repo (they can "
                         "never originate a blast radius here)")
     p.set_defaults(fn=cmd_graph)
+
+    p = sub.add_parser("endtask", parents=[common])
+    p.add_argument("--tasks", default=None,
+                   help="task JSON (default evals/endtask/tasks.json)")
+    p.add_argument("--split", default=None,
+                   help="dev | holdout. holdout is run ONCE per reported claim")
+    p.add_argument("--provider", default="codex",
+                   help="held fixed across conditions; the harness is the "
+                        "variable being tested")
+    p.add_argument("--conditions", nargs="+", default=["bare", "harness"],
+                   help="bare | harness | padded. `padded` is the "
+                        "length-matched control")
+    p.add_argument("--reps", type=int, default=3,
+                   help="repetitions per cell; pass^k needs more than one")
+    p.add_argument("--timeout", type=int, default=240)
+    p.add_argument("--declare", type=float, default=None,
+                   help="expected minimum effect, recorded BEFORE the run. "
+                        "Without it the verdict is marked exploratory")
+    p.add_argument("--keep-outputs", action="store_true",
+                   help="include raw model outputs in the report")
+    p.add_argument("--yes", action="store_true",
+                   help="confirm the provider spend")
+    p.set_defaults(fn=cmd_endtask)
 
     p = sub.add_parser("memory", parents=[common])
     p.add_argument("action", choices=["stats", "route", "expire", "integrity"])

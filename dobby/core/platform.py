@@ -30,6 +30,7 @@ author wrote.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import shutil
 import sys
@@ -232,74 +233,125 @@ def bash_path() -> str | None:
 _BATCH_EXTENSIONS = (".cmd", ".bat")
 
 
+#: The JS entry point an npm shim forwards to. Both the `.cmd` and the `.ps1`
+#: reference it relative to the shim's own directory (`%dp0%` / `$basedir`).
+_NPM_TARGET_RE = re.compile(
+    r"(?:%dp0%|\$basedir)[\\/]((?:node_modules)[\\/][^\"\s]+?\.js)",
+    re.IGNORECASE)
+
+
+def npm_shim_target(resolved: str) -> "tuple[str, str] | None":
+    """`(node_exe, script)` if `resolved` is an npm shim wrapping a node script.
+
+    Bypassing the shim is not a micro-optimisation, it is the only route that
+    carries an argument intact. Measured on this machine, one argument through
+    three routes, compared by sha256 of its UTF-8 bytes so the instrument cannot
+    corrupt the result:
+
+                              .cmd    powershell -File    node directly
+        newline               BROKEN  ok                  ok
+        double quote          ok      BROKEN              ok
+        quote + newline       BROKEN  BROKEN              ok
+        Korean, em dash       ok      ok                  ok
+        Korean+quote+newline  BROKEN  BROKEN              ok
+
+    A first version of that matrix reported Korean and an em dash broken on all
+    three routes. They were not: the echo script was printing non-ASCII to a cp949
+    stdout, so the measurement was of the instrument. The corrected run above
+    compares hashes of the arguments themselves.
+
+    The PowerShell reroute this replaces was added after testing newlines and
+    percent signs, and never tested with a double quote. It then failed on the
+    first real prompt that contained one - every call died with
+    `error: unexpected argument '...'` because the rules text says
+    `"3 failures" without the three names is not a finding`. Incomplete coverage
+    of my own fix, in exactly the class of defect the fix was for.
+
+    An npm shim is a standard wrapper - `node "<dir>/node_modules/.../cli.js"
+    %*` - so the target is extractable, and `node.exe` is a real executable whose
+    argv Python hands to CreateProcess unmodified.
+    """
+    if not is_windows():
+        return None
+    base, extension = os.path.splitext(resolved)
+    if extension.lower() not in _BATCH_EXTENSIONS + (".ps1",):
+        return None
+    directory = os.path.dirname(resolved)
+    for candidate in (base + ".ps1", base + ".cmd", base + ".bat"):
+        if not os.path.exists(candidate):
+            continue
+        try:
+            with open(candidate, encoding="utf-8", errors="replace") as handle:
+                text = handle.read()
+        except OSError:
+            continue
+        match = _NPM_TARGET_RE.search(text)
+        if not match:
+            continue
+        script = os.path.normpath(os.path.join(directory,
+                                              match.group(1).replace("/", os.sep)))
+        if not os.path.exists(script):
+            continue
+        local_node = os.path.join(directory, "node.exe")
+        node = local_node if os.path.exists(local_node) else shutil.which("node")
+        if node:
+            return node, script
+    return None
+
+
+#: Characters a batch shim cannot carry in an argument. Newline is the measured
+#: one; a lone carriage return behaves the same way.
+_BATCH_HOSTILE = ("\n", "\r")
+
+
 def shim_safe_argv(resolved: str,
                    args: "list[str]") -> "tuple[list[str] | None, str]":
     """Build an argv that delivers `args` INTACT, or refuse and say why.
 
-    A `.CMD` shim silently truncates any argument at its first newline. Measured
-    with the same string through both routes:
+    Windows offers three ways to launch an npm-installed CLI and only one of them
+    carries an arbitrary string. Measured, comparing sha256 of each argument's
+    UTF-8 bytes so the measurement cannot be confused with a console encoding:
 
-        via .CMD shim    ["line one"]
-        direct exe       ["line one\\nline two\\nline three"]
+                              .cmd    powershell -File    node directly
+        newline               BROKEN  ok                  ok
+        double quote          ok      BROKEN              ok
+        quote + newline       BROKEN  BROKEN              ok
+        Korean, em dash       ok      ok                  ok
 
-    Everything else survives - `%`, `&&`, `^`, `|` all arrive unharmed - so the
-    hazard is narrow and specific: multi-line arguments, and npm installs every
-    one of its CLIs as a `.CMD` on Windows.
+    So the order is: go straight to node when the shim reveals its target, which
+    handles everything; otherwise use the shim only for arguments it can carry;
+    otherwise REFUSE. A prompt that arrives truncated or split is worse than a
+    failed call, because the reply looks like an answer to the whole thing.
 
-    This is why a judge prompt came back with "Ready to grade, but I'm missing the
-    inputs": the provider received only the prompt's first line, which was the
-    preamble, and answered it faithfully. Nothing errored. A round of that is
-    worse than a failure, because the reply looks like an opinion about the work.
-
-    npm also installs a `.ps1` beside the `.CMD`, and PowerShell's `-File` mode
-    does preserve newlines and percent signs (measured). So a batch shim carrying
-    a multi-line argument is re-routed through the vendor's own PowerShell shim.
-
-    The execution policy is `RemoteSigned`, and that number was measured rather
-    than guessed. An earlier version of this used `Bypass` on the assumption that
-    an unsigned shim needed it. `codex.ps1` is indeed `NotSigned`, and with every
-    policy scope `Undefined` the machine default refuses to run it at all — but:
-
-        flag omitted (default)   rc 1, argument not delivered
-        RemoteSigned             rc 0, delivered
-        AllSigned                rc 1, script is unsigned
-        Bypass                   rc 0, delivered
-
-    `RemoteSigned` is sufficient and strictly narrower: it still refuses an
-    unsigned script that carries the internet-zone marker, which is the case worth
-    refusing. If a provider's shim is ever blocked for that reason the error says
-    so, and that refusal is correct rather than something to override here.
-
-    When there is no `.ps1` to fall back to, this returns `(None, reason)`. A
-    truncated prompt must never be sent silently - the caller refuses instead.
+    The PowerShell route is gone rather than kept as a second choice. It is
+    strictly worse than node-direct and it silently mangles the one character -
+    a double quote - that appears in almost every prompt carrying quoted text.
     """
     argv = [resolved] + list(args)
     if not is_windows():
         return argv, ""
     if os.path.splitext(resolved)[1].lower() not in _BATCH_EXTENSIONS:
         return argv, ""
-    multiline = [a for a in args if isinstance(a, str) and ("\n" in a or "\r" in a)]
-    if not multiline:
+
+    target = npm_shim_target(resolved)
+    if target is not None:
+        node, script = target
+        return ([node, script] + list(args),
+                f"launched via {os.path.basename(node)} and the shim's own entry "
+                f"point; a batch shim cannot carry a newline and PowerShell -File "
+                f"cannot carry a double quote")
+
+    hostile = [a for a in args
+               if isinstance(a, str) and any(c in a for c in _BATCH_HOSTILE)]
+    if not hostile:
         return argv, ""
 
-    sibling = os.path.splitext(resolved)[0] + ".ps1"
-    if os.path.exists(sibling):
-        powershell = shutil.which("pwsh") or shutil.which("powershell")
-        if powershell:
-            return ([powershell, "-NoProfile", "-ExecutionPolicy", "RemoteSigned",
-                     "-File", sibling] + list(args),
-                    f"multi-line argument re-routed through {os.path.basename(sibling)}: "
-                    f"a .cmd shim truncates it at the first newline")
-        return None, (
-            f"{os.path.basename(resolved)} is a batch shim that would truncate a "
-            f"multi-line argument at its first newline, and neither pwsh nor "
-            f"powershell is on PATH to use {os.path.basename(sibling)} instead")
     return None, (
-        f"{os.path.basename(resolved)} is a batch shim, which truncates a "
-        f"multi-line argument at its first newline, and there is no "
-        f"{os.path.basename(sibling)} beside it to route through. Sending the "
-        f"argument would deliver only its first line, and the reply would look "
-        f"like an answer to the whole thing")
+        f"{os.path.basename(resolved)} is a batch shim, which truncates an "
+        f"argument at its first newline, and its wrapped entry point could not be "
+        f"identified so the launch cannot bypass it. Sending the argument would "
+        f"deliver only its first line, and the reply would look like an answer to "
+        f"the whole thing")
 
 
 def posix_shell_available() -> bool:
