@@ -27,6 +27,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.error
 from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -37,42 +38,6 @@ from dobby.swebench import (AGENT_SANDBOX_NOTE, DEFAULT_DATASET, PAGE,
                             SweBenchError, build_prompt, changed_files,
                             gold_files, score_instance, summarize,
                             write_extra_for)
-
-
-def _probe_online() -> tuple[bool, str]:
-    """`(reachable, why_not)` for the endpoint this module ACTUALLY uses.
-
-    Two mistakes are corrected here and the second is the one worth keeping.
-
-    A first version opened the service ROOT, which answers 404. It therefore
-    returned False on a machine where the service was fine, and all six network
-    tests skipped — a test that never runs looks exactly like one that passes, and
-    the skip count scrolls past. Same shape as `posix_shell_available()` checking
-    for a file named bash: a probe asking a question next to the one that matters.
-
-    The second is that a skip must be DIAGNOSABLE. A bare "not reachable" deletes
-    the reason, and a skip observed once here could not be reproduced afterwards —
-    five consecutive probes returned 200 in under three seconds. Whatever that was,
-    the next person should see the exception rather than a shrug, so the reason
-    travels into the skip message.
-    """
-    import urllib.request
-    url = (f"https://datasets-server.huggingface.co/rows?dataset={DEFAULT_DATASET}"
-           f"&config=default&split=test&offset=0&length=1")
-    try:
-        request = urllib.request.Request(url, headers={"User-Agent": "dobby-test"})
-        with urllib.request.urlopen(request, timeout=25) as response:
-            if response.status != 200:
-                return False, f"HTTP {response.status}"
-            if not json.load(response).get("rows"):
-                return False, "200 but no rows in the payload"
-            return True, ""
-    except Exception as exc:
-        return False, f"{type(exc).__name__}: {str(exc)[:120]}"
-
-
-_ONLINE, _ONLINE_WHY = _probe_online()
-_ONLINE_REASON = f"datasets-server not reachable ({_ONLINE_WHY})"
 
 
 class TestWriteModeIsPerProvider(unittest.TestCase):
@@ -309,22 +274,57 @@ class TestSummary(unittest.TestCase):
         self.assertIn("fresh clone", report["method"])
 
 
-@unittest.skipUnless(_ONLINE, _ONLINE_REASON)
 class TestAgainstTheRealDataset(unittest.TestCase):
-    """Network, no agent calls. These pin facts about the published data."""
+    """Network, no agent calls. These pin facts about the published data.
+
+    No class-level reachability guard, deliberately. There was one, and it made a
+    single transient probe skip all six tests at import — observed twice here, and
+    the second time the service answered 200 in 0.4s moments later. A one-shot
+    guard also cannot cover mid-run degradation, which is exactly what reddened CI
+    with a 502 after the guard had passed.
+
+    So each test attempts its own call and skips only if THAT call fails on
+    transport, with the exception in the skip reason. There is no module-level probe
+    either: once the gate was gone nobody read its result, and it was still making
+    a network round-trip at import on every platform. An unused import-time side
+    effect is worse than the gate it replaced.
+    """
+
+    #: Transport failures that say nothing about this code.
+    TRANSPORT = (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
+                 OSError, json.JSONDecodeError)
+
+    def _or_skip(self, call, *args, **kwargs):
+        """Run `call`, or skip when the SERVICE failed rather than the code.
+
+        CI failed on `HTTP Error 502: Bad Gateway`. The import-time guard had
+        already passed, because the service was up when the module loaded and went
+        down during the run - a one-shot probe cannot cover that, and the check
+        belongs where the call is.
+
+        Only transport is forgiven. A 200 with the wrong fields still fails, which
+        is the whole point of these tests.
+        """
+        try:
+            return call(*args, **kwargs)
+        except self.TRANSPORT as exc:
+            self.skipTest(f"datasets-server transport failure, not a code "
+                          f"defect: {type(exc).__name__}: {str(exc)[:120]}")
 
     def test_pagination_satisfies_a_limit_over_one_page(self):
         """Defect 2: `limit=250` used to return 100 and say nothing."""
         from dobby.swebench import fetch_instances
-        self.assertEqual(len(fetch_instances(limit=PAGE + 5)), PAGE + 5)
+        rows = self._or_skip(fetch_instances, limit=PAGE + 5)
+        self.assertEqual(len(rows), PAGE + 5)
 
     def test_a_limit_within_one_page_is_exact(self):
         from dobby.swebench import fetch_instances
-        self.assertEqual(len(fetch_instances(limit=7)), 7)
+        rows = self._or_skip(fetch_instances, limit=7)
+        self.assertEqual(len(rows), 7)
 
     def test_every_instance_has_the_fields_this_module_reads(self):
         from dobby.swebench import fetch_instances
-        for row in fetch_instances(limit=10):
+        for row in self._or_skip(fetch_instances, limit=10):
             for field in ("repo", "instance_id", "base_commit", "patch",
                           "problem_statement", "FAIL_TO_PASS", "PASS_TO_PASS"):
                 self.assertIn(field, row, row.get("instance_id"))
@@ -337,7 +337,7 @@ class TestAgainstTheRealDataset(unittest.TestCase):
         """
         from dobby.swebench import fetch_instances
         offenders = []
-        for row in fetch_instances(limit=PAGE):
+        for row in self._or_skip(fetch_instances, limit=PAGE):
             for path in gold_files(row["patch"]):
                 if os.path.basename(path).startswith("test_"):
                     offenders.append((row["instance_id"], path))
@@ -345,13 +345,14 @@ class TestAgainstTheRealDataset(unittest.TestCase):
 
     def test_explicit_ids_are_found_without_the_caller_knowing_the_page(self):
         from dobby.swebench import find_instances
-        found, missing = find_instances(["psf__requests-2317"])
+        found, missing = self._or_skip(find_instances, ["psf__requests-2317"])
         self.assertEqual(missing, [])
         self.assertEqual(found[0]["repo"], "psf/requests")
 
     def test_an_unknown_id_is_reported_as_missing_not_raised(self):
         from dobby.swebench import find_instances
-        found, missing = find_instances(["not__a-real-instance-0"])
+        found, missing = self._or_skip(find_instances,
+                                       ["not__a-real-instance-0"])
         self.assertEqual(found, [])
         self.assertEqual(missing, ["not__a-real-instance-0"])
 
