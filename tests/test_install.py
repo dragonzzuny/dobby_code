@@ -25,8 +25,7 @@ import unittest
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
-from dobby.core.platform import (child_env, posix_shell_available,
-                                 posix_shell_path)
+from dobby.core.platform import bash_path, child_env
 from pathlib import Path
 
 INSTALL_SH = os.path.join(REPO, "install.sh")
@@ -182,7 +181,10 @@ class TestInterpreterProbe(_KitOnly):
                 self.assertIn(name, text, f"{path} does not try {name}")
 
 
-@unittest.skipUnless(posix_shell_available(), "install.sh needs a POSIX shell")
+@unittest.skipUnless(
+    bash_path(),
+    "install.sh declares #!/usr/bin/env bash and uses `set -o pipefail` "
+    "plus ${BASH_SOURCE[0]}; no shell here supports them")
 class TestShellInstallEndToEnd(_KitOnly):
     """Actually run it. The defects above were invisible to every other test."""
 
@@ -198,12 +200,19 @@ class TestShellInstallEndToEnd(_KitOnly):
             f.write("# the host's own contract\n")
 
     def _install(self, *extra):
-        # The PROBED shell, not the literal "bash". Running a different shell
-        # than the one the skip guard vetted is how this suite came to execute
-        # against C:\Windows\System32\bash.exe - the WSL launcher, which with no
-        # distribution installed printed a UTF-16LE error and exited 1, after
-        # which seven assertions failed complaining about missing files.
-        shell = posix_shell_path()
+        # The probed BASH. Two failures are being avoided at once, and each was
+        # introduced by fixing the other.
+        #
+        # The literal "bash" resolved to C:\Windows\System32\bash.exe on a Windows
+        # runner - the WSL launcher, which with no distribution installed printed
+        # a UTF-16LE error and exited 1, after which seven assertions failed
+        # complaining about missing files. Substituting posix_shell_path() fixed
+        # Windows and broke Ubuntu in the same commit: /bin/sh there is dash, and
+        # dash answers `set: Illegal option -o pipefail`.
+        #
+        # install.sh declares #!/usr/bin/env bash and uses BASH_SOURCE. The guard
+        # must vet that capability, not "a POSIX shell" and not a name.
+        shell = bash_path()
         self.assertIsNotNone(shell, "guard should have skipped this class")
         return subprocess.run(
             [shell, INSTALL_SH, self.host, *extra],
@@ -295,7 +304,7 @@ class TestShellInstallEndToEnd(_KitOnly):
 
     def test_refuses_to_install_into_itself(self):
         proc = subprocess.run(
-            [posix_shell_path(), INSTALL_SH, REPO], cwd=REPO,
+            [bash_path(), INSTALL_SH, REPO], cwd=REPO,
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             env=child_env(), timeout=120)
         self.assertNotEqual(proc.returncode, 0)

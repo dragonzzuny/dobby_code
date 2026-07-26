@@ -8,6 +8,7 @@ injection-marking of untrusted content.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 
@@ -52,6 +53,107 @@ DEFAULT_PROTECTED = [
     r".*\.pem$", r".*\.key$", r".*/?\.env$",
 ]
 ALLOW_SUFFIXES = (".cache", ".tmp")  # regenerable artifacts may be deleted
+
+#: Targets refused unconditionally, independent of `protected_paths`.
+#:
+#: `DEFAULT_PROTECTED` guards the repository's integrity and its secrets, and it
+#: is *configurable* — a host that sets `protected_paths` replaces this list
+#: wholesale. Measured consequence before this existed:
+#:
+#:     rm -rf /                  ALLOW
+#:     rm -rf ~                  ALLOW
+#:     rm -rf /home/runner       ALLOW
+#:     rd /s /q C:\Users         ALLOW
+#:     rm -rf C:/Windows         ALLOW
+#:
+#: The `C:\`-with-a-backslash forms were refused, but only because the trailing
+#: backslash makes `shlex.split` raise and the unparseable branch is conservative.
+#: Written with a forward slash the same command passed. Protection that depends
+#: on which slash was typed is luck, not a control.
+#:
+#: This guard is the only thing between a data-defined command — from
+#: `capabilities.json`, `criteria/*.json`, `slice_plans.json`, or a
+#: `--score-command` — and `shell=True`. Refusing to erase the machine should not
+#: be something a config file can switch off, so these are checked separately and
+#: are not part of the configurable list.
+#:
+#: Deliberately EXACT matches, not prefixes. `rm -rf ./build` and
+#: `rm -rf ~/project/dist` stay allowed, because a guard that blocks ordinary
+#: cleanup gets disabled and then protects nothing.
+_CATASTROPHIC_LITERALS = frozenset({
+    "/", "/*", "//", "~", "~/", "~/*",
+    "$home", "${home}", "%userprofile%", "$env:userprofile",
+    "/etc", "/usr", "/bin", "/sbin", "/var", "/lib", "/lib64", "/boot",
+    "/dev", "/proc", "/sys", "/opt", "/root", "/home", "/users",
+    "c:/windows", "c:/program files", "c:/program files (x86)", "c:/users",
+    "c:/programdata", "c:/windows/system32",
+})
+
+
+#: The same literals as a boundary-anchored scan over the WHOLE command.
+#:
+#: Argument-by-argument checking misses every path containing a space, because
+#: `shlex.split` turns `C:/Program Files` into two tokens and neither one matches.
+#: Measured: `rd /s /q C:/Program Files` was permitted while `rd /s /q C:/Users`
+#: was refused — the space was the only difference.
+#:
+#: `(?![\w/])` is what keeps this narrow: `/home` must not match inside
+#: `/home/runner/work`, and a following slash means the target is a child, which
+#: is ordinary work. `/` itself is excluded from this scan and handled per-argument,
+#: since a boundary scan for it would match every absolute path in every command.
+_CATASTROPHIC_RAW_RE = re.compile(
+    r"(?<![\w/])(?:"
+    + "|".join(re.escape(literal) for literal in
+               sorted((l for l in _CATASTROPHIC_LITERALS
+                       if len(l.rstrip("/*")) > 1),
+                      key=len, reverse=True))
+    + r")(?![\w/])",
+    re.IGNORECASE)
+
+
+def _catastrophic_in_raw(command: str) -> str:
+    """A machine-level target anywhere in the raw command, or ""."""
+    normalized = command.replace("\\", "/")
+    match = _CATASTROPHIC_RAW_RE.search(normalized)
+    return f"a filesystem, home or system root ({match.group(0)})" if match else ""
+
+
+def _is_catastrophic_target(arg: str) -> str:
+    """Reason this argument names the machine rather than a work product, or ""·
+
+    Normalizes to forward slashes and lowercase first, so `C:\\Users`, `c:/users/`
+    and `C:/USERS` are one case rather than three.
+    """
+    if not arg:
+        return ""
+    raw = arg.strip().strip("\"'").replace("\\", "/").lower()
+    if not raw:
+        return ""
+    # The root must be recognised BEFORE trailing slashes are stripped. A first
+    # version stripped first, which turned "/" into "" and fell through the
+    # empty-string guard — so `rm -rf /`, the single case this check exists for,
+    # was still permitted. Found by probing the function rather than by reading it.
+    if set(raw) <= {"/"} or set(raw) <= {"/", "*"}:
+        return f"the filesystem root ({arg})"
+    token = raw.rstrip("/")
+    if token in ("", "."):
+        return ""
+    # A bare drive root: `c:`, `d:/`, `z:/*`.
+    if re.fullmatch(r"[a-z]:(?:/\*)?", token):
+        return f"a drive root ({arg})"
+    candidates = {token, token + "/", token + "/*"}
+    if candidates & _CATASTROPHIC_LITERALS:
+        return f"a filesystem, home or system root ({arg})"
+    # The RESOLVED home directory, so `/home/runner` on a CI runner and
+    # `C:/Users/name` on a workstation are caught by the same rule that catches
+    # `~`. Exact match only: `~/project` is ordinary work.
+    try:
+        home = os.path.expanduser("~").replace("\\", "/").rstrip("/").lower()
+    except Exception:                       # no home on this platform
+        home = ""
+    if home and token == home:
+        return f"the home directory ({arg})"
+    return ""
 
 
 #: Whole-word matcher over `DESTRUCTIVE`, for the one path where the command
@@ -229,6 +331,23 @@ def guard_command(command: str, protected: list[str] | None = None) -> tuple[boo
                        or ">" in command)
     if not has_destructive:
         return True, "no destructive token"
+
+    # Machine-level targets first, and not via the configurable list: a host that
+    # sets `protected_paths` replaces DEFAULT_PROTECTED entirely, and "do not
+    # erase the filesystem" must not be something a config file can switch off.
+    for arg in tokens[1:] + re.split(r"[\s;|&]+", command):
+        reason = _is_catastrophic_target(arg)
+        if reason:
+            return False, (f"destructive command targets {reason}; refused "
+                           "regardless of protected_paths")
+    # A path containing a space survives the loop above: shlex splits
+    # `C:/Program Files` into two tokens and neither matches. Boundary-scan the
+    # whole command as well.
+    reason = _catastrophic_in_raw(command)
+    if reason:
+        return False, (f"destructive command targets {reason}; refused "
+                       "regardless of protected_paths")
+
     for arg in tokens[1:]:
         if arg.endswith(ALLOW_SUFFIXES):
             continue

@@ -13,6 +13,7 @@
 
     dobby fleet [--probe]               provider availability (and live probe)
     dobby panel "task" [--size N]       decorrelated multi-agent round
+    dobby search "task" --score-command tree search, scored by a command
     dobby memory <stats|route|expire|integrity>
     dobby compress --file F             compression with a leakage audit
     dobby specialize [--status]         mastery level and its evidence
@@ -561,6 +562,46 @@ def cmd_panel(args):
     })
 
 
+def cmd_search(args):
+    """Tree search over provider-produced candidates, scored by a command.
+
+    The score comes from running something, never from a model judging its own
+    output. A search told to maximise self-assessment reports steady improvement
+    while producing nothing better, and the failure is invisible because the
+    metric and the artifact come from the same place.
+    """
+    from .search import search
+    from .search_driver import command_scorer, driver_report, provider_expander
+
+    repo = _repo(args)
+    data = _data(args)
+    config = _config(args)
+
+    scorer = None
+    if args.score_command:
+        try:
+            scorer = command_scorer(args.score_command, data_dir=data, cwd=repo,
+                                    timeout_s=args.score_timeout, config=config)
+        except ValueError as exc:
+            _die(str(exc))
+
+    expander = provider_expander(
+        args.task, score=scorer, provider_id=args.provider,
+        timeout_s=args.timeout, cwd=repo)
+
+    result = search(expand=expander, max_nodes=args.max_nodes,
+                    min_drafts=args.min_drafts, debug_depth=args.debug_depth,
+                    patience=args.patience,
+                    higher_is_better=not args.lower_is_better)
+    payload = result.to_dict() if hasattr(result, "to_dict") else dict(result)
+    payload["driver"] = driver_report(result, expander.calls)
+    if scorer is None:
+        payload["driver"]["warning"] = (
+            "no --score-command: every candidate is uncomparable, so the search "
+            "produced no viable node. This is the honest outcome, not a bug.")
+    _out(payload)
+
+
 # ------------------------------------------------------------- memory ----
 def _memory(args):
     from .memory import HierarchicalMemory
@@ -928,6 +969,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--progress", action="store_true",
                    help="print a progress bar to stderr as agents finish")
     p.set_defaults(fn=cmd_panel)
+
+    p = sub.add_parser("search", parents=[common])
+    p.add_argument("task")
+    p.add_argument("--score-command", default=None,
+                   help="command that scores a candidate; must contain "
+                        "{candidate}, which becomes the candidate's file path. "
+                        "Without it nothing is comparable and no node is viable.")
+    p.add_argument("--score-timeout", type=int, default=300)
+    p.add_argument("--provider", default=None)
+    p.add_argument("--timeout", type=int, default=None,
+                   help="per-provider seconds")
+    p.add_argument("--max-nodes", type=int, default=8)
+    p.add_argument("--min-drafts", type=int, default=2)
+    p.add_argument("--debug-depth", type=int, default=2)
+    p.add_argument("--patience", type=int, default=4)
+    p.add_argument("--lower-is-better", action="store_true",
+                   help="for loss-like metrics")
+    p.set_defaults(fn=cmd_search)
 
     p = sub.add_parser("memory", parents=[common])
     p.add_argument("action", choices=["stats", "route", "expire", "integrity"])

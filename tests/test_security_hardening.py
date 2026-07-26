@@ -278,3 +278,91 @@ class TestOutputCaps(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMachineLevelTargetsAreRefusedRegardless(unittest.TestCase):
+    """`rm -rf /` passed the guard, and a test that ran it is how that surfaced.
+
+    `DEFAULT_PROTECTED` covers `.git`, `.pem`, `.key` and `.env` — the repository's
+    integrity and its secrets — and it is CONFIGURABLE: a host that sets
+    `protected_paths` replaces it wholesale. Measured before this check existed:
+
+        rm -rf /                  ALLOW
+        rm -rf ~                  ALLOW
+        rd /s /q C:/Users         ALLOW
+        rm -rf C:/Windows         ALLOW
+
+    The `C:/`-with-a-trailing-backslash spellings were refused, but only because
+    that backslash makes `shlex.split` raise and the unparseable branch is
+    conservative. Written `C:/` the same command passed. Protection that depends on
+    which slash was typed is luck.
+
+    This guard is the only thing between a data-defined command — from
+    `capabilities.json`, `criteria/*.json`, `slice_plans.json`, or a
+    `--score-command` — and `shell=True`, so these targets are refused separately
+    from the configurable list and cannot be switched off by a config file.
+    """
+
+    CATASTROPHIC = [
+        "rm -rf /", "rm -rf /*", "rm -rf //",
+        "rm -rf / candidate.txt",
+        "rm -rf ~", "rm -rf ~/", "rm -rf $HOME", "rm -rf ${HOME}",
+        "rm -rf /etc", "rm -rf /usr", "rm -rf /bin", "rm -rf /var",
+        "rm -rf /home", "rm -rf /root",
+        "rm -rf C:/", "rm -rf c:", "rm -rf D:/*",
+        "rm -rf C:/Windows", "rm -rf C:/Windows/System32",
+        "rd /s /q C:/Users", "rd /s /q C:/Program Files",
+        "del /f /s /q %USERPROFILE%",
+        "Remove-Item -Recurse -Force C:/ProgramData",
+    ]
+
+    ORDINARY = [
+        "rm -rf ./build", "rm -rf build", "rm -f candidate.txt",
+        "rm -rf ./node_modules", "rm -rf dist/*",
+        "rm -rf ~/project/dist", "rm -rf /home/runner/work/x/tmp",
+        "rm -rf C:/Users/someone/project/build",
+        "python -m pytest", "git status",
+    ]
+
+    def test_every_machine_level_target_is_refused(self):
+        allowed = [c for c in self.CATASTROPHIC if guard_command(c)[0]]
+        self.assertEqual(allowed, [], f"these would run: {allowed}")
+
+    def test_the_refusal_says_a_config_cannot_relax_it(self):
+        _, why = guard_command("rm -rf /")
+        self.assertIn("regardless of protected_paths", why)
+
+    def test_an_empty_protected_list_does_not_disable_it(self):
+        """The whole point: a host replacing protected_paths keeps this."""
+        allowed, why = guard_command("rm -rf /", [])
+        self.assertFalse(allowed, why)
+
+    def test_a_custom_protected_list_does_not_disable_it(self):
+        allowed, why = guard_command("rm -rf ~", [r".*/.secret$"])
+        self.assertFalse(allowed, why)
+
+    def test_ordinary_cleanup_is_still_allowed(self):
+        """A guard that blocks routine work gets disabled and protects nothing."""
+        blocked = [(c, guard_command(c)[1]) for c in self.ORDINARY
+                   if not guard_command(c)[0]]
+        self.assertEqual(blocked, [], f"these were wrongly refused: {blocked}")
+
+    def test_case_and_slash_do_not_change_the_answer(self):
+        for spelling in ("rm -rf C:/WINDOWS", "rm -rf c:/windows",
+                         "rm -rf C:/Windows/", "rm -rf 'C:/Windows'"):
+            self.assertFalse(guard_command(spelling)[0], spelling)
+
+    def test_the_resolved_home_directory_is_covered_not_just_the_tilde(self):
+        """`/home/runner` on a runner is `~`; the guard must see through that."""
+        import os
+        home = os.path.expanduser("~")
+        if not home or home in ("/", ""):
+            self.skipTest("no resolvable home directory here")
+        self.assertFalse(guard_command(f"rm -rf {home}")[0], home)
+        # A child of home is ordinary work.
+        self.assertTrue(guard_command(f"rm -rf {home}/project/build")[0])
+
+    def test_a_non_destructive_command_naming_root_is_untouched(self):
+        """Only destructive commands are examined; `ls /` is not the guard's business."""
+        self.assertTrue(guard_command("ls /")[0])
+        self.assertTrue(guard_command("du -sh /home")[0])

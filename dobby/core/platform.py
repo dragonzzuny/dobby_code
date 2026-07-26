@@ -168,6 +168,65 @@ def posix_shell_path() -> str | None:
     return None
 
 
+#: What `install.sh` actually requires. It declares `#!/usr/bin/env bash` and uses
+#: `set -o pipefail` and `${BASH_SOURCE[0]}`, neither of which is POSIX.
+_BASH_PROBE = (
+    'set -o pipefail || exit 1\n'
+    ': "${BASH_SOURCE[0]-}" || exit 1\n'
+    'test -f "%s" || exit 1\n'
+    'printf %%s %s\n'
+)
+
+
+@lru_cache(maxsize=1)
+def bash_path() -> str | None:
+    """A shell that can run THIS PROJECT'S bash scripts, or None.
+
+    Distinct from `posix_shell_path` on purpose, and the distinction cost a green
+    pipeline to learn. `install.sh` was being run through `posix_shell_path()`,
+    which on Ubuntu resolves `/bin/sh` — dash — and dash answers:
+
+        install.sh: 24: set: Illegal option -o pipefail
+
+    Windows went green and Linux went red in the same commit. The probe was asking
+    "can you resolve a path", while the script needs "do you support pipefail and
+    BASH_SOURCE". Probing for a capability is only progress if it is the capability
+    the caller depends on; a capability probe aimed at the wrong capability is just
+    a slower way to be wrong.
+
+    So this probe exercises the three things that actually matter: `pipefail`,
+    `BASH_SOURCE` (a bash-only array whose subscript syntax dash rejects), and the
+    ability to see a path in the form Python hands out — which is what excludes the
+    WSL launcher on Windows.
+    """
+    import subprocess
+
+    probe_path = os.path.abspath(__file__).replace("\\", "/")
+    script = _BASH_PROBE % (probe_path, _POSIX_PROBE_TOKEN)
+
+    candidates: list[str] = []
+    for name in ("bash",):
+        found = shutil.which(name)
+        if found:
+            candidates.append(found)
+    if is_windows():
+        for guess in _GIT_BASH_GUESSES:
+            if guess.lower().endswith("bash.exe") and os.path.exists(guess):
+                if guess not in candidates:
+                    candidates.append(guess)
+
+    for shell in candidates:
+        try:
+            proc = subprocess.run([shell, "-c", script], capture_output=True,
+                                  timeout=20, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        out = (proc.stdout or b"").decode("utf-8", "replace")
+        if proc.returncode == 0 and _POSIX_PROBE_TOKEN in out:
+            return shell
+    return None
+
+
 #: Windows extensions that are interpreted by cmd.exe's batch parser rather than
 #: launched directly. npm ships its CLIs this way.
 _BATCH_EXTENSIONS = (".cmd", ".bat")

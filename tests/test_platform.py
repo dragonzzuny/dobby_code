@@ -338,5 +338,103 @@ class TestBatchShimTruncatesMultilineArguments(unittest.TestCase):
         self.assertTrue(note)
 
 
+class TestBashProbeAsksForWhatTheScriptNeeds(unittest.TestCase):
+    """Fixing Windows with a POSIX probe broke Ubuntu in the same commit.
+
+    `install.sh` was being launched through `posix_shell_path()`. On Ubuntu that
+    resolves `/bin/sh`, which is dash, and dash answers:
+
+        install.sh: 24: set: Illegal option -o pipefail
+
+    windows-latest went green and both ubuntu jobs went red. The probe was asking
+    "can you resolve a path" while the script needs "do you support pipefail and
+    BASH_SOURCE" — it declares `#!/usr/bin/env bash` and uses both. Probing for a
+    capability is only an improvement if it is the capability the caller depends
+    on; aimed at the wrong one it is a slower way to be wrong.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        platform_mod.bash_path.cache_clear()
+        self.addCleanup(platform_mod.bash_path.cache_clear)
+
+    def _stub(self, *, reject_pipefail: bool) -> str:
+        """A shell that either accepts `set -o pipefail` or refuses like dash."""
+        body = os.path.join(self.dir, "stub_body.py")
+        with open(body, "w", encoding="utf-8") as handle:
+            handle.write(
+                "import sys\n"
+                "script = sys.argv[2] if len(sys.argv) > 2 else ''\n"
+                f"reject = {reject_pipefail!r}\n"
+                "if reject and 'pipefail' in script:\n"
+                "    sys.stderr.write('set: Illegal option -o pipefail')\n"
+                "    sys.exit(2)\n"
+                f"sys.stdout.write({platform_mod._POSIX_PROBE_TOKEN!r})\n")
+        if os.name == "nt":
+            launcher = os.path.join(self.dir, "stub.cmd")
+            with open(launcher, "w", encoding="utf-8", newline="\r\n") as handle:
+                handle.write('@"' + sys.executable + '" "' + body + '" %*\n')
+        else:
+            launcher = os.path.join(self.dir, "stub")
+            with open(launcher, "w", encoding="utf-8") as handle:
+                handle.write("#!" + sys.executable + "\n"
+                             + open(body, encoding="utf-8").read())
+            os.chmod(launcher, 0o755)
+        return launcher
+
+    def _with_only(self, stub):
+        return mock.patch.object(
+            platform_mod.shutil, "which",
+            lambda name: stub if name == "bash" else None)
+
+    def test_a_shell_that_rejects_pipefail_is_not_accepted(self):
+        """The exact Ubuntu failure, as a unit test."""
+        stub = self._stub(reject_pipefail=True)
+        with self._with_only(stub), \
+                mock.patch.object(platform_mod, "is_windows", lambda: False):
+            platform_mod.bash_path.cache_clear()
+            self.assertIsNone(platform_mod.bash_path())
+
+    def test_a_shell_that_accepts_it_is_accepted(self):
+        stub = self._stub(reject_pipefail=False)
+        with self._with_only(stub), \
+                mock.patch.object(platform_mod, "is_windows", lambda: False):
+            platform_mod.bash_path.cache_clear()
+            self.assertEqual(platform_mod.bash_path(), stub)
+
+    def test_this_machine_has_a_bash_that_can_run_the_installer(self):
+        """Not a tautology: it is why the install suite runs here at all."""
+        found = platform_mod.bash_path()
+        if found is None:
+            self.skipTest("no bash on this machine; the install suite skips too")
+        self.assertTrue(os.path.exists(found), found)
+
+    def test_the_probe_requires_all_three_capabilities(self):
+        for feature in ("pipefail", "BASH_SOURCE", "test -f"):
+            self.assertIn(feature, platform_mod._BASH_PROBE,
+                          f"the probe does not exercise {feature}")
+
+    def test_bash_and_posix_shell_are_separate_questions(self):
+        """Collapsing them is what caused the Ubuntu break."""
+        self.assertIsNot(platform_mod.bash_path, platform_mod.posix_shell_path)
+
+    def test_the_install_suite_guards_on_bash_not_on_posix(self):
+        """Checked on the IMPORTS, not the whole file.
+
+        A first version searched the text for "posix_shell_path()" and failed on
+        the comment that records why the guard changed. Forbidding the explanation
+        of a fix is not the same as verifying the fix.
+        """
+        source = os.path.join(REPO, "tests", "test_install.py")
+        with open(source, encoding="utf-8") as handle:
+            text = handle.read()
+        imports = [line for line in text.splitlines()
+                   if line.startswith(("from dobby", "import dobby"))]
+        joined = "\n".join(imports)
+        self.assertIn("bash_path", joined, joined)
+        self.assertNotIn("posix_shell", joined, joined)
+
+
 if __name__ == "__main__":
     unittest.main()
