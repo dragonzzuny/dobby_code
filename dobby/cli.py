@@ -14,6 +14,7 @@
     dobby fleet [--probe]               provider availability (and live probe)
     dobby panel "task" [--size N]       decorrelated multi-agent round
     dobby search "task" --score-command tree search, scored by a command
+    dobby graph --changed FILE...       who depends on what changed
     dobby memory <stats|route|expire|integrity>
     dobby compress --file F             compression with a leakage audit
     dobby specialize [--status]         mastery level and its evidence
@@ -613,6 +614,30 @@ def cmd_search(args):
     _out(payload)
 
 
+def cmd_graph(args):
+    """Import edges for this repo, or the blast radius of specific changed files.
+
+    Closes the recorded gap that `blast_radius` had no edge source: it consumed a
+    supplied edge list and nothing in the kit produced one.
+    """
+    from .codegraph import import_edges, radius_for
+
+    repo = _repo(args)
+    if args.changed:
+        _out(radius_for(repo, args.changed, max_hops=args.max_hops,
+                        max_nodes=args.max_nodes))
+        return
+
+    edges, report = import_edges(repo, internal_only=not args.include_external)
+    payload = dict(report)
+    if args.edges:
+        payload["edge_list"] = [list(e) for e in edges]
+    else:
+        payload["edge_list_omitted"] = (
+            f"{len(edges)} edges; pass --edges to include them")
+    _out(payload)
+
+
 # ------------------------------------------------------------- memory ----
 def _memory(args):
     from .memory import HierarchicalMemory
@@ -998,6 +1023,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lower-is-better", action="store_true",
                    help="for loss-like metrics")
     p.set_defaults(fn=cmd_search)
+
+    p = sub.add_parser("graph", parents=[common])
+    p.add_argument("--changed", nargs="*", default=None,
+                   help="changed FILE paths; prints who depends on them")
+    p.add_argument("--max-hops", type=int, default=2)
+    p.add_argument("--max-nodes", type=int, default=40)
+    p.add_argument("--edges", action="store_true",
+                   help="include the full edge list, not just the counts")
+    p.add_argument("--include-external", action="store_true",
+                   help="keep imports of modules outside this repo (they can "
+                        "never originate a blast radius here)")
+    p.set_defaults(fn=cmd_graph)
 
     p = sub.add_parser("memory", parents=[common])
     p.add_argument("action", choices=["stats", "route", "expire", "integrity"])

@@ -400,7 +400,7 @@ class TestFanout(unittest.TestCase):
 
 
 class TestResolvedPathIsWhatGetsLaunched(unittest.TestCase):
-    """The gap between the name PATH resolves and the name that gets executed.
+    r"""The gap between the name PATH resolves and the name that gets executed.
 
     `run_provider` looked the binary up, threw the answer away, and launched the
     bare name with shell=False. On Windows those are not the same question:

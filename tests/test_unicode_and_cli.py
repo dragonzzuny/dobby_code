@@ -239,6 +239,9 @@ CLI_SMOKE = [
     # does, so one stalled provider held the panel for fifteen minutes with
     # nothing the caller could do. `fleet --probe` had the flag all along.
     ["panel", "test task", "--size", "2", "--timeout", "45", "--dry-run"],
+    # `graph` needs no provider: it reads source with the stdlib parser.
+    ["graph"],
+    ["graph", "--changed", "dobby/core/security.py"],
 ]
 
 

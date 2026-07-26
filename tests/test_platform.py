@@ -117,7 +117,7 @@ class TestDescribePlatform(unittest.TestCase):
 
 
 class TestPosixShellIsProbedNotJustFound(unittest.TestCase):
-    """The predicate that made windows-latest red on every commit.
+    r"""The predicate that made windows-latest red on every commit.
 
     `posix_shell_available()` was `which("sh") or which("bash")`. On a GitHub
     Windows runner `bash` is C:\Windows\System32\bash.exe, the WSL launcher;

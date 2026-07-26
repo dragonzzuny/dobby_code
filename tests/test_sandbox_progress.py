@@ -422,7 +422,7 @@ class TestCrossVolumeRootFailsClosed(unittest.TestCase):
             self.skipTest("cross-volume paths are a Windows condition")
         root = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, root, True)
-        other_volume = "Q:\work" if not root.upper().startswith("Q:") else "R:\work"
+        other_volume = "Q:/work" if not root.upper().startswith("Q:") else "R:/work"
         with self.assertRaises(SandboxError) as caught:
             run("echo hi", data_dir=root, cwd=other_volume, root=root)
         self.assertIn("different volume", str(caught.exception))
