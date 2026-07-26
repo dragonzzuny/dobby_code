@@ -33,6 +33,7 @@ import time
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))
 
+from dobby.core.jsonl import append_jsonl              # noqa: E402
 from dobby.core.platform import (resolve_command, force_utf8_io,  # noqa: E402
                                  child_env)
 from dobby.core.kg import Ontology                      # noqa: E402
@@ -110,8 +111,7 @@ class Gateway:
 
     def audit(self, kind: str, payload: dict) -> None:
         rec = {"t": time.strftime("%Y-%m-%dT%H:%M:%S"), "kind": kind, **payload}
-        with open(self.audit_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        append_jsonl(self.audit_path, rec)
 
     # -- meta-tool implementations ------------------------------------------
     def search_capabilities(self, query: str, limit: int = 5) -> dict:

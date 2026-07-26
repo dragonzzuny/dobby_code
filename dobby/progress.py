@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import threading
 import time
 from collections.abc import Sequence
 
@@ -66,9 +67,22 @@ class Tracker:
     durations: list[float] = dataclasses.field(default_factory=list)
     failures: int = 0
     _last_mark: float | None = None
+    #: `complete_unit` is called from a ThreadPoolExecutor: `fanout.run_round`
+    #: fires `on_complete` from whichever worker thread finished. `failures += 1`
+    #: is LOAD/ADD/STORE and can interleave, and `durations.append` alongside a
+    #: `_last_mark` reset is a two-step update with no atomicity.
+    #:
+    #: A stress run of 160,000 concurrent increments lost nothing on this
+    #: machine, which measures how rare the race is here — not that it cannot
+    #: happen. These events fire a handful of times per round, so a lock costs
+    #: nothing measurable and removes the question instead of leaving it to
+    #: interpreter timing.
+    _lock: threading.Lock = dataclasses.field(default_factory=threading.Lock,
+                                              repr=False, compare=False)
 
     def start_unit(self) -> None:
-        self._last_mark = time.monotonic()
+        with self._lock:
+            self._last_mark = time.monotonic()
 
     def complete_unit(self, duration_s: float | None = None, *,
                       failed: bool = False) -> None:
@@ -79,13 +93,14 @@ class Tracker:
         counted separately so the caller can see that progress and success are
         not the same number.
         """
-        if duration_s is None:
-            mark = self._last_mark
-            duration_s = (time.monotonic() - mark) if mark else 0.0
-        self.durations.append(max(0.0, float(duration_s)))
-        if failed:
-            self.failures += 1
-        self._last_mark = None
+        with self._lock:
+            if duration_s is None:
+                mark = self._last_mark
+                duration_s = (time.monotonic() - mark) if mark else 0.0
+            self.durations.append(max(0.0, float(duration_s)))
+            if failed:
+                self.failures += 1
+            self._last_mark = None
 
     # -- state ----------------------------------------------------------
     @property
@@ -144,19 +159,23 @@ class Tracker:
         return "summed_durations (assumes serial execution)"
 
     def per_unit_stats(self) -> dict:
-        n = len(self.durations)
+        # Snapshot under the lock: a concurrent append between the len() and the
+        # mean would produce statistics over two different sample sets.
+        with self._lock:
+            durations = list(self.durations)
+        n = len(durations)
         if n == 0:
             return {"n": 0}
-        mean = sum(self.durations) / n
+        mean = sum(durations) / n
         if n == 1:
             return {"n": 1, "mean": round(mean, 2), "stdev": None,
-                    "min": round(self.durations[0], 2),
-                    "max": round(self.durations[0], 2)}
-        var = sum((d - mean) ** 2 for d in self.durations) / (n - 1)
+                    "min": round(durations[0], 2),
+                    "max": round(durations[0], 2)}
+        var = sum((d - mean) ** 2 for d in durations) / (n - 1)
         return {"n": n, "mean": round(mean, 2),
                 "stdev": round(math.sqrt(var), 2),
-                "min": round(min(self.durations), 2),
-                "max": round(max(self.durations), 2)}
+                "min": round(min(durations), 2),
+                "max": round(max(durations), 2)}
 
     def eta(self) -> dict:
         """Completion estimate, or an explicit refusal with the reason.

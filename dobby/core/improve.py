@@ -15,6 +15,8 @@ import json
 import os
 import shutil
 import time
+
+from .jsonl import append_jsonl
 import uuid
 
 FORBIDDEN_TARGETS = ("retrieval_gold", "criteria", "holdout", "scenarios")
@@ -150,5 +152,4 @@ class ImprovementLoop:
         return rec
 
     def _log(self, path: str, rec: dict) -> None:
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        append_jsonl(path, rec)

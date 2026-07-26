@@ -43,6 +43,8 @@ import os
 import time
 from collections.abc import Sequence
 
+from .core.jsonl import append_jsonl
+
 #: Ledger location under the data dir.
 SPEND_FILE = os.path.join("state", "spend.jsonl")
 
@@ -83,8 +85,7 @@ def record(data_dir: str, *, provider: str, duration_s: float, ok: bool,
     entry = Entry(t=time.time(), provider=provider, role=role,
                   duration_s=round(float(duration_s), 3), ok=bool(ok),
                   label=label, round_id=round_id)
-    with open(_path(data_dir), "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry.to_dict(), ensure_ascii=False) + "\n")
+    append_jsonl(_path(data_dir), entry.to_dict())
     return entry
 
 

@@ -54,6 +54,7 @@ import os
 import time
 from collections.abc import Iterable, Sequence
 
+from ..core.jsonl import append_jsonl
 from ..swarm.diversity import jaccard_distance, token_set, tokens
 
 #: Tier names, root first. The list order IS the hierarchy; `TIER_INDEX` gives
@@ -315,8 +316,7 @@ class HierarchicalMemory:
         return len(items)
 
     def append(self, item: MemoryItem) -> MemoryItem:
-        with open(self.path(item.tier), "a", encoding="utf-8") as f:
-            f.write(json.dumps(item.to_dict(), ensure_ascii=False) + "\n")
+        append_jsonl(self.path(item.tier), item.to_dict())
         self._cache = None
         return item
 

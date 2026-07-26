@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import os
 import time
+
+from .jsonl import append_jsonl
 import uuid
 
 FAILURE_LEVELS = ("action", "trajectory", "task_family", "cross_task",
@@ -32,8 +34,9 @@ class Trajectory:
 
     def append(self, event: str, payload: dict) -> dict:
         rec = {"t": time.strftime("%Y-%m-%dT%H:%M:%S"), "event": event, **payload}
-        with open(self.path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        # One atomic append. A torn line here is a lost DECISION: this file is
+        # what a resumed session reads to learn what was already done.
+        append_jsonl(self.path, rec)
         return rec
 
     def record_failure(self, level: str, symptom: str, root_cause: str,
