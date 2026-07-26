@@ -287,67 +287,90 @@ without executing, and the feature checks are AST and regex — because
 not wired into that path. That is recorded as an open risk in
 `docs/THREAT_MODEL.md` §5 rather than treated as solved.
 
-### The first measurement of the harness's own effect, 2026-07-26
+### The harness's own effect, measured — 2026-07-26
 
-Until this date nothing in the repository measured what the README claims. See
-`docs/EVAL_DESIGN.md` for why this is a **compliance** experiment and not a benefit
-one, and for the prior art that set its metrics (`pass^k` from τ-bench, cost
-accounting from Claw-SWE-Bench and HAL).
+Until this date nothing in the repository measured what the README claims.
+`docs/EVAL_DESIGN.md` has the design and the prior art that set the metrics
+(`pass^k` from τ-bench, cost accounting from Claw-SWE-Bench and HAL). Read the
+framing there first: this is a **compliance** experiment, not a benefit one.
 
-`codex`, 2 dev tasks, 2 repetitions, paired within task. `pass^k` is the fraction
-of tasks where the behaviour held in EVERY repetition.
+`codex`, 6 dev tasks, 2 repetitions per cell, paired within task, 36 trials, no
+failed calls. `pass^k` is the fraction of tasks where the behaviour held in EVERY
+repetition.
 
 | behaviour | bare | padded (length control) | harness |
 |---|---|---|---|
 | names what was not verified | 0.0 | **0.0** | **1.0** |
-| scopes to the named files | 0.5 / 0.0 | 0.5 | 1.0 |
-| proposes a verification step | 1.0 | 1.0 | **0.5** |
+| scopes to the named files | 0.333 | **0.333** | 0.833 |
+| proposes a verification step | 0.667 | 1.0 | 0.833 |
 | invents no unsupported figure | 1.0 | 1.0 | 1.0 |
-| separates done from not-done | 1.0 | 1.0 | 1.0 |
-| mean paired delta | — | +0.25, CI [0.0, 0.5] | +1.0 |
-| verdict | — | **no measurable effect** | compliance increased |
+| separates done from not-done | 0.833 | **0.833** | 1.0 |
 
-**The length control did not reproduce the effect.** 6012 characters of filler,
-matched to the preamble character for character, left "names what was not verified"
-at 0.0 while the real preamble took it to 1.0. So what moved the output was the
-content of the rules, not the token count — which is the one thing this design was
-built to be able to distinguish, and it could not have been claimed without the
-control.
+| comparison | mean paired delta | 95% CI | verdict |
+|---|---|---|---|
+| bare → harness | +1.500 | [1.00, 2.00] | compliance increased |
+| bare → padded | +0.333 | [−0.08, 0.67] | **no measurable effect** |
+| **padded → harness** | **+1.167** | **[0.58, 1.75]** | **compliance increased** |
 
-**The harness made one behaviour worse.** "Proposes a verification step" fell from
-1.0 to 0.5 under a preamble that explicitly asks for a verification command, and
-the filler condition held it at 1.0. So the regression is caused by the rules
-rather than by prompt length — consistent with instruction dilution, where a
-preamble carrying many rules crowds out one of them. Not investigated further; the
-outputs of that cell were not retained, which is a gap in how the run was
-configured rather than in the design.
+**The third row is the result.** `padded` is the harness preamble replaced by filler
+matched to it character for character — 6127 prompt characters in both conditions
+against 185 bare. Length alone moves nothing measurable, and on three behaviours it
+lands on *exactly* the bare value: 0.0, 0.333, 0.833. The preamble's content moves
+all three. That comparison is what the control was built to make possible, and
+without it the effect and the token count are indistinguishable.
 
-What this does NOT establish, and each of these is load-bearing:
+Per-task, harness minus padded: +2.0, +2.0, +1.5, +1.0, +0.5, 0.0. Five of six
+improved, one tied, none regressed.
 
-- **Two tasks and two repetitions.** Both intervals are flagged `DEGENERATE` by the
-  runner itself: a bootstrap over two nearly identical deltas produces width by
-  construction, not by evidence.
-- **The baseline moved between runs.** `retry-backoff` scored 4.0 bare in the first
-  run and 3.5 bare in the second — 0.5 of run-to-run noise on a scale where the
-  claimed effect is 1.0. The effect is about twice the observed baseline variance
-  at n=2, which is suggestive and not established.
-- **Holdout untouched.** The two holdout tasks have not been run. They are for one
-  reported claim, once.
+**A retraction.** An earlier run of this experiment used 2 tasks and reported, as a
+headline finding, that the harness made one behaviour *worse* — "proposes a
+verification step" falling from 1.0 to 0.5. **It did not survive six tasks:** the
+same behaviour is 0.667 → 0.833 here, an improvement. The n=2 result was noise, the
+run's own caveat said the interval was degenerate and the effect roughly twice the
+observed baseline variance, and that caveat was correct. The instruction-dilution
+explanation offered for it should be discarded along with it. Reporting the
+regression prominently was right; leaving it standing would not be.
+
+The degenerate-interval flag is also gone at this sample size — [1.00, 2.00] has
+width because the six per-task deltas genuinely differ, which is the difference
+between an interval and an artefact.
+
+Cost, reported because this literature reports it: 6127 prompt characters against
+185, a 33× increase, for +1.5 behaviours out of 5. Agent time did not rise — 788s
+harness against 825s bare and 880s padded, over twelve calls each.
+
+What this still does NOT establish:
+
+- **Compliance is not benefit.** That a stated limitation reduces downstream defects
+  is a separate study with different subjects. This measures whether the
+  instructions land, which was genuinely unknown and is the default failure of long
+  preambles.
+- **Circularity is inherent.** The preamble asks for the behaviours the checks look
+  for. The informative outcome was always the null one; the control is what makes
+  the non-null result mean *content* rather than *instruction-following in general*.
 - **One provider.** Each provider is its own experiment.
-- **Compliance is not benefit.** That a stated limitation reduces downstream
-  defects is a separate study with different subjects.
+- **The holdout is untouched.** Two `holdout` tasks remain unrun, for one reported
+  claim, once.
+- **Six tasks is a probe.** It licenses "on these tasks, with this provider".
 
-Cost, reported because the standard in this literature is to report it: the harness
-prompt is 6012 characters against 172 bare, a 35× increase, for +1.0 behaviours.
-Agent time did not increase (221s harness against 225s bare over four calls each).
+The definitive validation remains a Pass@1 run on an established issue-resolution
+benchmark with the model held fixed. It has not been run, and this does not
+substitute for it.
 
-**The eval also earned its keep before producing a valid number.** Its first run
-died in under a second on all four harness calls, because the preamble contains
-this repository's own rule text — `"3 failures" without the three names is not a
-finding` — and the double quote broke the PowerShell launch route added two commits
-earlier. That route had been tested against newlines and percent signs and never
-against a quote. Details and the corrected three-route measurement are in
+**And the eval earned its keep before producing a valid number.** Its first run died
+in under a second on all four harness calls, because the preamble contains this
+repository's own rule text — `"3 failures" without the three names is not a finding`
+— and the double quote broke the PowerShell launch route added two commits earlier.
+That route had been tested against newlines and percent signs and never against a
+quote. The corrected three-route measurement is in
 `dobby/core/platform.py::npm_shim_target`.
+
+A second defect surfaced the same way: one cell was lost to a 120s timeout tighter
+than the provider's observed 108s, and `deduplicate` kept whichever trial was
+recorded first — so re-running the lost cell appended a line the summary ignored. It
+now prefers a successful trial over a failed one for the same cell, which is what
+makes `--trials-out` / `--from-trials` able to repair a pool rather than just grow
+it.
 
 Still open from the list above: AST call graphs and inference-time architecture
 search. `qwen`, `ollama`, `kimi` and `dashscope` remain unexecuted, and their

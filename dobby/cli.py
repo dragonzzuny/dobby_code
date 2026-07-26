@@ -649,9 +649,29 @@ def cmd_endtask(args):
     """
     import sys as _sys
 
-    from .endtask import CONDITIONS, load_tasks, run_experiment
+    from .endtask import (CONDITIONS, append_trials, deduplicate, load_tasks,
+                          read_trials, run_experiment, summarize)
 
     repo = _repo(args)
+    if args.from_trials:
+        # Re-summarize saved trials without calling anything. A reporting fix
+        # should not cost another half hour of provider time, and batches run
+        # separately have to be poolable or a long run cannot be split at all.
+        pooled, problems = read_trials(args.from_trials)
+        pooled, dropped = deduplicate(pooled)
+        tasks_all = load_tasks(
+            args.tasks or os.path.join(repo, "evals", "endtask", "tasks.json"))
+        present = {t["task"] for t in pooled}
+        tasks_seen = [t for t in tasks_all if t["id"] in present]
+        conditions = tuple(dict.fromkeys(t["condition"] for t in pooled))
+        report = summarize(pooled, tasks_seen, conditions=conditions,
+                          reps=args.reps, declared_threshold=args.declare)
+        report["pooled_from"] = list(args.from_trials)
+        report["trials_read"] = len(pooled)
+        report["duplicate_trials_dropped"] = dropped
+        report["malformed_lines"] = problems
+        _out(report)
+        return
     tasks_path = args.tasks or os.path.join(repo, "evals", "endtask", "tasks.json")
     if not os.path.exists(tasks_path):
         _die(f"no task file at {tasks_path}")
@@ -676,6 +696,8 @@ def cmd_endtask(args):
 
     def progress(record):
         done["n"] += 1
+        if args.trials_out:
+            append_trials(args.trials_out, [record])
         mark = "ok " if record["ok"] else "FAIL"
         score = record.get("total")
         print(f"  [{done['n']}/{trials}] {mark} {record['task']}/"
@@ -1112,6 +1134,12 @@ def build_parser() -> argparse.ArgumentParser:
                         "Without it the verdict is marked exploratory")
     p.add_argument("--keep-outputs", action="store_true",
                    help="include raw model outputs in the report")
+    p.add_argument("--trials-out", default=None,
+                   help="append each trial to this JSONL as it completes, so an "
+                        "interrupted run keeps what it paid for")
+    p.add_argument("--from-trials", nargs="+", default=None,
+                   help="summarize saved trial files and call nothing; pools "
+                        "batches and re-reports without new spend")
     p.add_argument("--yes", action="store_true",
                    help="confirm the provider spend")
     p.set_defaults(fn=cmd_endtask)

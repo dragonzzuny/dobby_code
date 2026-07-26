@@ -509,3 +509,82 @@ def summarize(trials: Sequence[dict], tasks: Sequence[dict], *,
             "confounded"
             if "padded" not in conditions else "included in this run"),
     }
+
+def append_trials(path: str, trials: "Sequence[dict]") -> None:
+    """Append trials as JSONL. One line per trial, flushed as it lands.
+
+    Appended rather than rewritten so an interrupted run keeps what it already
+    paid for. A six-task run is ~24 minutes of sequential calls, and losing it to
+    a killed shell means it does not get repeated.
+    """
+    import json
+
+    os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
+    with open(path, "a", encoding="utf-8", newline="\n") as handle:
+        for trial in trials:
+            handle.write(json.dumps(trial, ensure_ascii=False) + "\n")
+            handle.flush()
+
+
+def read_trials(paths: "Sequence[str]") -> "tuple[list[dict], list[str]]":
+    """`(trials, problems)` from one or more JSONL files.
+
+    A malformed line is reported rather than skipped: a summary computed over
+    silently dropped trials is a summary of an unknown subset.
+    """
+    import json
+
+    trials: list[dict] = []
+    problems: list[str] = []
+    for path in paths:
+        if not os.path.exists(path):
+            problems.append(f"{path}: missing")
+            continue
+        with open(path, encoding="utf-8") as handle:
+            for number, line in enumerate(handle, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except ValueError as exc:
+                    problems.append(f"{path}:{number}: {exc}")
+                    continue
+                if not isinstance(record, dict) or "task" not in record:
+                    problems.append(f"{path}:{number}: not a trial record")
+                    continue
+                trials.append(record)
+    return trials, problems
+
+
+def deduplicate(trials: "Sequence[dict]") -> "tuple[list[dict], int]":
+    """Drop repeated (task, condition, rep) cells, preferring a SUCCESSFUL trial.
+
+    Pooling overlapping batches would otherwise weight some cells twice and move
+    the mean with nothing looking wrong.
+
+    Keeping the first would be simpler and is wrong. A cell can hold a failed call
+    - one of these batches lost `n-plus-one/bare#1` to a timeout that was my own
+    `--timeout 120` being tighter than the provider's observed 108s - and a failed
+    call carries no score at all, so an `ok` trial for the same cell is strictly
+    more informative than a timeout that happened to be recorded first. Preferring
+    `ok` is what makes re-running a lost cell actually repair the pool instead of
+    appending a line the summary ignores.
+
+    Among trials of the same status the first still wins, so this never silently
+    replaces one measurement with another.
+    """
+    best: dict = {}
+    order: list = []
+    dropped = 0
+    for trial in trials:
+        key = (trial.get("task"), trial.get("condition"), trial.get("rep"))
+        if key not in best:
+            best[key] = trial
+            order.append(key)
+            continue
+        dropped += 1
+        # Upgrade only from failed to ok; never ok -> ok, never ok -> failed.
+        if not best[key].get("ok") and trial.get("ok"):
+            best[key] = trial
+    return [best[key] for key in order], dropped

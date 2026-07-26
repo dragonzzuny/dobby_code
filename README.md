@@ -431,25 +431,33 @@ Read these before believing anything above.
 
   What has been measured is narrower and worth stating precisely. `dobby endtask`
   asks whether the preamble changes output in the direction it specifies —
-  compliance, not benefit. First run, `codex`, 2 tasks × 2 reps, `pass^k`:
+  compliance, not benefit. `codex`, 6 tasks x 2 reps, 36 trials, `pass^k`:
 
   | behaviour | bare | padded (length control) | harness |
   |---|---|---|---|
   | names what was not verified | 0.0 | **0.0** | **1.0** |
-  | proposes a verification step | 1.0 | 1.0 | **0.5** |
+  | scopes to the named files | 0.333 | **0.333** | 0.833 |
+  | separates done from not-done | 0.833 | **0.833** | 1.0 |
 
-  Two findings, and the second is not the flattering one. A 6012-character filler
-  block matched to the preamble character for character did **not** reproduce the
-  effect, so what moved the output was the content of the rules rather than their
-  length. And the harness made one behaviour **worse** — a preamble that explicitly
-  asks for a verification command reduced how reliably one appeared, which the
-  filler condition did not do. That is consistent with instruction dilution.
+  | comparison | mean delta | 95% CI |
+  |---|---|---|
+  | bare → harness | +1.500 | [1.00, 2.00] |
+  | bare → padded | +0.333 | [−0.08, 0.67] — no measurable effect |
+  | **padded → harness** | **+1.167** | **[0.58, 1.75]** |
 
-  Two tasks and two repetitions. The runner flags both confidence intervals as
-  `DEGENERATE`, the baseline itself moved 0.5 between runs on a scale where the
-  effect is 1.0, and the holdout tasks are untouched. Suggestive, not established.
-  Full numbers and caveats: `docs/RESEARCH_EVIDENCE_MATRIX.md`; design and prior
-  art: `docs/EVAL_DESIGN.md`.
+  The third row is the result. `padded` replaces the preamble with filler matched
+  character for character — 6127 prompt characters in both conditions against 185
+  bare — and length alone moves nothing, landing on *exactly* the bare value for
+  three behaviours. The content moves all three. Five of six tasks improved, one
+  tied, none regressed. Cost: a 33x longer prompt, and agent time did not rise.
+
+  An earlier 2-task run of this reported a *regression* in one behaviour as a
+  headline finding. It did not survive six tasks and is retracted in
+  `docs/RESEARCH_EVIDENCE_MATRIX.md` — the run's own degenerate-interval caveat was
+  correct.
+
+  Still: one provider, the two holdout tasks untouched, and compliance is not
+  benefit. Design and prior art: `docs/EVAL_DESIGN.md`.
 
   For scale on why the unmeasured claim matters: on a fixed backbone,
   [Claw-SWE-Bench](https://arxiv.org/abs/2606.12344) reports 19.1% Pass@1 with a
