@@ -3,7 +3,7 @@
   {
    "id": "tool:cli-context",
    "type": "Tool",
-   "name": "harness context",
+   "name": "dobby context",
    "summary": "routed context pack for a task: fired policies, skills, knowledge summaries, budgets — call at task start",
    "keywords": [
     "context",
@@ -12,7 +12,7 @@
     "pack",
     "시작"
    ],
-   "path": "harness/cli.py",
+   "path": "dobby/cli.py",
    "authority": 0.8,
    "provenance": {
     "source": "kit v2.1 generic self-knowledge",
@@ -25,7 +25,7 @@
   {
    "id": "tool:cli-init",
    "type": "Tool",
-   "name": "harness init",
+   "name": "dobby init",
    "summary": "bootstrap scan of the host repository into a knowledge graph",
    "keywords": [
     "init",
@@ -35,7 +35,7 @@
     "new repository",
     "설정"
    ],
-   "path": "harness/bootstrap.py",
+   "path": "dobby/core/bootstrap.py",
    "authority": 0.8,
    "provenance": {
     "source": "kit v2.1 generic self-knowledge",
@@ -48,7 +48,7 @@
   {
    "id": "tool:cli-route",
    "type": "Tool",
-   "name": "harness route",
+   "name": "dobby route",
    "summary": "agency-ladder routing: level 1-7, model tier, budgets",
    "keywords": [
     "route",
@@ -56,7 +56,7 @@
     "level",
     "budget"
    ],
-   "path": "harness/router.py",
+   "path": "dobby/core/router.py",
    "authority": 0.8,
    "provenance": {
     "source": "kit v2.1 generic self-knowledge",
@@ -69,7 +69,7 @@
   {
    "id": "tool:cli-slice",
    "type": "Tool",
-   "name": "harness slice",
+   "name": "dobby slice",
    "summary": "end-to-end runner: route→execute→evaluate→trajectory→handoff→improvement",
    "keywords": [
     "slice",
@@ -77,7 +77,7 @@
     "self-check",
     "health"
    ],
-   "path": "harness/cli.py",
+   "path": "dobby/cli.py",
    "authority": 0.8,
    "provenance": {
     "source": "kit v2.1 generic self-knowledge",
@@ -90,7 +90,7 @@
   {
    "id": "tool:cli-optimize",
    "type": "Tool",
-   "name": "harness optimize",
+   "name": "dobby optimize",
    "summary": "retrieval-config search (GOA + random + hill-climb) on gold labels",
    "keywords": [
     "optimize",
@@ -98,7 +98,7 @@
     "search",
     "tune"
    ],
-   "path": "harness/optimizer.py",
+   "path": "dobby/core/optimizer.py",
    "authority": 0.8,
    "provenance": {
     "source": "kit v2.1 generic self-knowledge",
@@ -111,7 +111,7 @@
   {
    "id": "tool:cli-improve",
    "type": "Tool",
-   "name": "harness improve-auto",
+   "name": "dobby improve-auto",
    "summary": "one bounded improvement candidate: propose→validate→promote/reject with rollback",
    "keywords": [
     "improve",
@@ -119,7 +119,7 @@
     "promote",
     "rollback"
    ],
-   "path": "harness/improve.py",
+   "path": "dobby/core/improve.py",
    "authority": 0.8,
    "provenance": {
     "source": "kit v2.1 generic self-knowledge",
@@ -132,7 +132,7 @@
   {
    "id": "tool:cli-handoff",
    "type": "Tool",
-   "name": "harness handoff-latest",
+   "name": "dobby handoff-latest",
    "summary": "locate the newest session handoff to resume from",
    "keywords": [
     "handoff",
@@ -141,7 +141,7 @@
     "previous session",
     "이어서"
    ],
-   "path": "harness/trajectory.py",
+   "path": "dobby/core/trajectory.py",
    "authority": 0.8,
    "provenance": {
     "source": "kit v2.1 generic self-knowledge",
@@ -175,7 +175,7 @@
   {
    "id": "tool:mcp-gateway",
    "type": "MCPServer",
-   "name": "harness MCP gateway",
+   "name": "dobby MCP gateway",
    "summary": "stdio JSON-RPC capability gateway; 4 meta-tools, allowlisted execs, audit log",
    "keywords": [
     "mcp",
@@ -183,7 +183,7 @@
     "tools",
     "server"
    ],
-   "path": "mcp/harness_mcp_server.py",
+   "path": "mcp/dobby_mcp_server.py",
    "authority": 0.8,
    "provenance": {
     "source": "kit v2.1 generic self-knowledge",
@@ -523,7 +523,7 @@
    "name": "ARCHITECTURE",
    "summary": "harness v2 layers, data flow, ADRs",
    "keywords": [],
-   "path": "docs/HARNESS_V2_ARCHITECTURE.md",
+   "path": "docs/RESEARCH_EVIDENCE_MATRIX.md",
    "authority": 0.8,
    "provenance": {
     "source": "kit v2.1 generic self-knowledge",
@@ -740,6 +740,617 @@
     "confidence": "verified"
    },
    "created": "2026-07-12"
+  },
+  {
+   "id": "tool:cli-doctor",
+   "type": "Tool",
+   "name": "dobby doctor",
+   "summary": "what works on this machine and what does not, with the fix for each; blocking failures set the exit code, advisory gaps do not",
+   "keywords": [
+    "doctor",
+    "diagnose",
+    "health",
+    "broken",
+    "check",
+    "진단",
+    "점검"
+   ],
+   "path": "dobby/cli.py",
+   "authority": 0.85,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "tool:cli-fleet",
+   "type": "Tool",
+   "name": "dobby fleet",
+   "summary": "which agent providers are available, absent, or blocked here, and which roles can be filled; --probe makes one real call each",
+   "keywords": [
+    "fleet",
+    "provider",
+    "available",
+    "claude",
+    "codex",
+    "gemini",
+    "agy",
+    "프로바이더"
+   ],
+   "path": "dobby/providers/detect.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "tool:cli-panel",
+   "type": "Tool",
+   "name": "dobby panel",
+   "summary": "decorrelated multi-agent round: isolated generation, assigned lenses, and a measured diversity verdict so agreement is not mistaken for consensus",
+   "keywords": [
+    "panel",
+    "multi-agent",
+    "fan-out",
+    "swarm",
+    "parallel",
+    "패널",
+    "멀티에이전트"
+   ],
+   "path": "dobby/cli.py",
+   "authority": 0.85,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "tool:cli-sandbox",
+   "type": "Tool",
+   "name": "dobby sandbox",
+   "summary": "run a command with its output withheld from context and held on disk; extract only the lines you need with a pattern, head, or tail",
+   "keywords": [
+    "sandbox",
+    "output",
+    "capture",
+    "extract",
+    "grep",
+    "withhold",
+    "샌드박스"
+   ],
+   "path": "dobby/sandbox.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "tool:cli-review",
+   "type": "Tool",
+   "name": "dobby review",
+   "summary": "perspective-based review plan over ISO 25010 characteristics, with the uncovered perspectives reported alongside the verdict",
+   "keywords": [
+    "review",
+    "code review",
+    "inspect",
+    "perspective",
+    "defect",
+    "리뷰",
+    "코드리뷰"
+   ],
+   "path": "dobby/review.py",
+   "authority": 0.85,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "tool:cli-ml",
+   "type": "Tool",
+   "name": "dobby ml",
+   "summary": "leakage, reproducibility, statistical rigor, and interpretation gates for a machine-learning result; confirmed leakage invalidates everything after",
+   "keywords": [
+    "ml",
+    "leakage",
+    "experiment",
+    "reproducibility",
+    "holdout",
+    "baseline",
+    "머신러닝",
+    "누수"
+   ],
+   "path": "dobby/mlops.py",
+   "authority": 0.85,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "tool:cli-spend",
+   "type": "Tool",
+   "name": "dobby spend",
+   "summary": "agent time per provider, with wall time and agent time reported separately; --line renders a one-line host status bar",
+   "keywords": [
+    "spend",
+    "time",
+    "cost",
+    "parallelism",
+    "statusline",
+    "시간",
+    "비용"
+   ],
+   "path": "dobby/spend.py",
+   "authority": 0.75,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:providers",
+   "type": "Component",
+   "name": "provider fleet",
+   "summary": "drives claude, codex, gemini, agy, qwen, ollama and OpenAI-compatible APIs as child processes; availability is measured, never assumed",
+   "keywords": [
+    "provider",
+    "fleet",
+    "cli",
+    "adapter",
+    "role",
+    "routing"
+   ],
+   "path": "dobby/providers/catalog.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:fanout",
+   "type": "Component",
+   "name": "parallel fan-out",
+   "summary": "bounded-concurrency agent execution with git worktree isolation for providers that write files; one failure never loses the round",
+   "keywords": [
+    "fanout",
+    "parallel",
+    "concurrency",
+    "worktree",
+    "isolation"
+   ],
+   "path": "dobby/providers/fanout.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:diversity",
+   "type": "Component",
+   "name": "diversity measurement",
+   "summary": "effective_n answers how many independent opinions a panel actually bought; six identical answers report as one",
+   "keywords": [
+    "diversity",
+    "collapse",
+    "coupling",
+    "consensus",
+    "effective",
+    "다양성"
+   ],
+   "path": "dobby/swarm/diversity.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:protocols",
+   "type": "Component",
+   "name": "ideation protocols",
+   "summary": "NGT, Double Diamond, Six Thinking Hats, dialectic and adversarial protocols; each isolates generation and assigns a distinct lens",
+   "keywords": [
+    "protocol",
+    "ideation",
+    "brainstorm",
+    "scamper",
+    "ngt",
+    "dialectic",
+    "아이디어"
+   ],
+   "path": "dobby/swarm/protocols.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:grounding",
+   "type": "Component",
+   "name": "grounding gate",
+   "summary": "no ideation before prior art; every idea needs an evidence id that resolves and a falsifiable test, or it is rejected before synthesis",
+   "keywords": [
+    "grounding",
+    "evidence",
+    "prior art",
+    "falsifiable",
+    "hallucination",
+    "근거"
+   ],
+   "path": "dobby/swarm/grounding.py",
+   "authority": 0.85,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:memory-tiers",
+   "type": "Component",
+   "name": "six-tier memory",
+   "summary": "nation, mountain, forest, tree, branch, leaf: five hops to any leaf, each tier remembering by a different mechanism",
+   "keywords": [
+    "memory",
+    "tier",
+    "hierarchical",
+    "routing",
+    "promotion",
+    "기억",
+    "계층"
+   ],
+   "path": "dobby/memory/tiers.py",
+   "authority": 0.85,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:memory-gates",
+   "type": "Component",
+   "name": "memory gates and compression",
+   "summary": "forget, admit and expose decisions per item, and a leakage audit that refuses a summary which drops a file path, a number, or a negation",
+   "keywords": [
+    "compression",
+    "leakage",
+    "gate",
+    "forget",
+    "promote",
+    "summary",
+    "압축",
+    "누수"
+   ],
+   "path": "dobby/memory/gates.py",
+   "authority": 0.85,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:specialize",
+   "type": "Component",
+   "name": "specialization gate",
+   "summary": "a domain gain never licenses a loss of general competence: the project gold must improve and the generic gold must not regress on any case",
+   "keywords": [
+    "specialize",
+    "domain",
+    "expert",
+    "mastery",
+    "generalist",
+    "전문화"
+   ],
+   "path": "dobby/specialize.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:tokens",
+   "type": "Component",
+   "name": "token accounting",
+   "summary": "per-command output condensers, priority-tiered snapshots inside a hard byte budget, and blast radius; savings are estimates, labelled as such",
+   "keywords": [
+    "token",
+    "compress",
+    "condense",
+    "budget",
+    "snapshot",
+    "blast radius",
+    "토큰"
+   ],
+   "path": "dobby/tokens.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:research",
+   "type": "Component",
+   "name": "research and claim verification",
+   "summary": "search plans that always include a refutation query, claim strength driving the evidence bar, and citation resolution at three severities",
+   "keywords": [
+    "research",
+    "claim",
+    "citation",
+    "paper",
+    "verify",
+    "evidence",
+    "논문",
+    "검증"
+   ],
+   "path": "dobby/research.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:search",
+   "type": "Component",
+   "name": "solution-tree search",
+   "summary": "draft, debug, improve over candidate solutions with a bounded debug depth; refuses to report a selection score as performance without a holdout",
+   "keywords": [
+    "search",
+    "tree",
+    "solution",
+    "draft",
+    "debug",
+    "improve",
+    "탐색"
+   ],
+   "path": "dobby/search.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:prompt",
+   "type": "Component",
+   "name": "prompt compiler",
+   "summary": "turns a casual request into an executable prompt and names what is unspecified instead of guessing it; returns one question, not five",
+   "keywords": [
+    "prompt",
+    "compile",
+    "ambiguous",
+    "clarify",
+    "question",
+    "프롬프트"
+   ],
+   "path": "dobby/prompt.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:style",
+   "type": "Component",
+   "name": "prose style detector",
+   "summary": "the generated-text signature in English and Korean: uniform sentence length, comma density, stacked hedges, connective commas",
+   "keywords": [
+    "style",
+    "prose",
+    "writing",
+    "ai text",
+    "humanize",
+    "문체",
+    "글쓰기"
+   ],
+   "path": "dobby/style.py",
+   "authority": 0.75,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:jsonl",
+   "type": "Component",
+   "name": "atomic JSONL append",
+   "summary": "every ledger writes through one locked, unbuffered append; the obvious open-and-write idiom lost and corrupted records under concurrency",
+   "keywords": [
+    "jsonl",
+    "ledger",
+    "append",
+    "concurrency",
+    "atomic",
+    "corruption"
+   ],
+   "path": "dobby/core/jsonl.py",
+   "authority": 0.8,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:design",
+   "type": "Component",
+   "name": "DESIGN.md validation",
+   "summary": "token frontmatter, an explicit aesthetic, WCAG contrast, and the check that matters most: tokens declared without the prose saying when to use them",
+   "keywords": [
+    "design",
+    "tokens",
+    "aesthetic",
+    "contrast",
+    "typography",
+    "디자인"
+   ],
+   "path": "dobby/design.py",
+   "authority": 0.75,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "component:progress",
+   "type": "Component",
+   "name": "progress and ETA",
+   "summary": "refuses to estimate below three samples, reports a range from observed spread, and extrapolates parallel work on waves rather than items",
+   "keywords": [
+    "progress",
+    "eta",
+    "estimate",
+    "remaining",
+    "진행률"
+   ],
+   "path": "dobby/progress.py",
+   "authority": 0.7,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "risk:diversity-collapse",
+   "type": "Risk",
+   "name": "Diversity Collapse",
+   "summary": "a panel converging before the minority view is stated, so the orchestrator reads collapse as consensus and therefore as confidence",
+   "keywords": [
+    "collapse",
+    "consensus",
+    "coupling",
+    "agreement",
+    "panel"
+   ],
+   "path": "dobby/swarm/diversity.py",
+   "authority": 0.85,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "risk:silent-leakage",
+   "type": "Risk",
+   "name": "Silent Data Leakage",
+   "summary": "an ML result whose split is clean and whose answer is publicly available elsewhere, so every pipeline check passes and the score means nothing",
+   "keywords": [
+    "leakage",
+    "contamination",
+    "holdout",
+    "external",
+    "누수"
+   ],
+   "path": "dobby/mlops.py",
+   "authority": 0.85,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
+  },
+  {
+   "id": "risk:existence-not-measurement",
+   "type": "Risk",
+   "name": "Existence Is Not Measurement",
+   "summary": "trusting that a declared thing works: a name that resolves, a file that exists, a control that is defined but never called",
+   "keywords": [
+    "existence",
+    "assumption",
+    "declared",
+    "verify",
+    "measure"
+   ],
+   "path": "docs/THREAT_MODEL.md",
+   "authority": 0.85,
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   },
+   "created": "2026-07-26"
   }
  ],
  "edges": [
@@ -1180,6 +1791,160 @@
     "source": "kit v2.1 generic self-knowledge",
     "method": "curated",
     "date": "2026-07-12",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "tool:cli-panel",
+   "rel": "invokes",
+   "dst": "component:fanout",
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "tool:cli-panel",
+   "rel": "requires",
+   "dst": "component:protocols",
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "component:fanout",
+   "rel": "requires",
+   "dst": "component:providers",
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "tool:cli-fleet",
+   "rel": "invokes",
+   "dst": "component:providers",
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "component:protocols",
+   "rel": "prevents",
+   "dst": "risk:diversity-collapse",
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "component:diversity",
+   "rel": "evaluated_by",
+   "dst": "risk:diversity-collapse",
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "component:grounding",
+   "rel": "requires",
+   "dst": "component:research",
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "component:memory-gates",
+   "rel": "scoped_to",
+   "dst": "component:memory-tiers",
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "tool:cli-sandbox",
+   "rel": "produces",
+   "dst": "component:tokens",
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "tool:cli-ml",
+   "rel": "prevents",
+   "dst": "risk:silent-leakage",
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "tool:cli-spend",
+   "rel": "consumes",
+   "dst": "component:progress",
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "component:specialize",
+   "rel": "constrained_by",
+   "dst": "component:search",
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "tool:cli-doctor",
+   "rel": "prevents",
+   "dst": "risk:existence-not-measurement",
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
+    "confidence": "verified"
+   }
+  },
+  {
+   "src": "component:jsonl",
+   "rel": "available_to",
+   "dst": "component:memory-tiers",
+   "provenance": {
+    "source": "self-audit refresh (tools/refresh_self_kg.py)",
+    "method": "curated",
+    "date": "2026-07-26",
     "confidence": "verified"
    }
   }

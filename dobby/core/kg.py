@@ -22,6 +22,12 @@ def tokenize(text: str) -> list[str]:
     return [t.lower() for t in _TOKEN_RE.findall(text or "")]
 
 
+#: How much a path match counts relative to a name/summary match.
+#: A file whose name matches the query is evidence, but weaker than prose that
+#: describes the concept. Set below 1.0 so a path can surface a node that would
+#: otherwise score zero without letting filename coincidences outrank content.
+_PATH_WEIGHT = 0.5
+
 DEFAULT_WEIGHTS = {
     "lexical": 1.0,       # token-overlap score
     "graph": 0.5,         # 1-hop neighbor propagation factor
@@ -138,14 +144,45 @@ class KnowledgeGraph:
         return [e for e in self.edges if e["rel"] == "contradicts"]
 
     def _lexical_score(self, qtokens: set, node: dict) -> tuple[float, float]:
-        text_tokens = set(tokenize(node["name"])) | set(tokenize(node.get("summary", "")))
+        """(lexical, keyword) overlap for one node.
+
+        `path` is scored alongside name and summary. It was omitted, and the
+        omission was measurable: the query "router" matched ZERO nodes even
+        though `dobby/core/router.py` was recorded as a node's path, because the
+        only place the word appeared was the field nobody looked at. Naming a
+        file is one of the most common ways to ask for something, and it was the
+        one phrasing retrieval could not answer.
+
+        Path tokens are scored SEPARATELY rather than merged into
+        `text_tokens`, and that separation is load-bearing. Merging them was the
+        first attempt, and it inflated the `sqrt(len(text_tokens) + 1)`
+        denominator for every node that has a path — so nodes with paths were
+        systematically penalized against nodes without, and two gold cases
+        regressed by ranking jitter while retrieving the same nodes. Scoring the
+        path on its own normalization gives the benefit with no such side
+        effect.
+
+        The path contributes at `_PATH_WEIGHT` of a name/summary match: a file
+        whose name matches the query is real evidence, but weaker than prose
+        that describes the concept, and much weaker than a curated keyword.
+        """
+        text_tokens = (set(tokenize(node["name"]))
+                       | set(tokenize(node.get("summary", ""))))
         kw_tokens = set()
-        for kw in node.get("keywords", []):
+        for kw in node.get("keywords") or []:
             kw_tokens |= set(tokenize(kw))
         overlap = len(qtokens & text_tokens)
         kw_overlap = len(qtokens & kw_tokens)
         denom = math.sqrt(len(text_tokens) + 1)
-        return overlap / denom, float(kw_overlap)
+        lexical = overlap / denom
+
+        path_tokens = set(tokenize(node.get("path") or ""))
+        if path_tokens:
+            path_overlap = len(qtokens & path_tokens)
+            if path_overlap:
+                lexical += _PATH_WEIGHT * path_overlap / math.sqrt(
+                    len(path_tokens) + 1)
+        return lexical, float(kw_overlap)
 
     def retrieve(self, query: str, weights: dict | None = None, k: int = 10,
                  type_filter: set | None = None) -> list[Hit]:
