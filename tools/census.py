@@ -12,18 +12,39 @@ calling a method on None deep inside, a `RecursionError`, a `ZeroDivisionError`,
 an `UnboundLocalError`. Those are the shapes a real caller hits as a crash they
 cannot act on.
 
-Functions that SPAWN or WRITE are excluded by name, not by hope: probing them
-with 20 000-character arguments launches real subprocesses and writes real
-files, which is how the first version of this script hung. The exclusion list is
-explicit so what is NOT covered is visible rather than implied.
+Functions that SPAWN are excluded by name: probing them with 20 000-character
+arguments launches real subprocesses, which is how the first version of this
+script hung.
+
+WRITES ARE CONTAINED, NOT ENUMERATED
+
+An earlier version claimed writers were "excluded by name, not by hope" and that
+the list made the gap visible. That claim was false, and it failed the way an
+enumerated allowlist always eventually does: the list missed a writer, and probing
+it created two directories in the REPOSITORY ROOT, named from the degenerate
+inputs themselves -
+
+    dobby_code/한국어한국어...   (x20)
+    dobby_code/🔥🔥🔥...        (x20)
+
+each holding an empty `.dobby/memory`. They survived unnoticed because git does
+not track empty directories, so `git status` was clean the whole time.
+
+So the probing loop now runs with its working directory set to a throwaway
+temp dir. A missed writer writes there, and census REPORTS what appeared -
+turning "which functions did we forget" from a maintenance question into an
+output of the run.
 """
 
 from __future__ import annotations
 
 import importlib
 import inspect
+import os
 import pkgutil
+import shutil
 import sys
+import tempfile
 
 REPO = __file__.rsplit("tools", 1)[0]
 sys.path.insert(0, REPO)
@@ -68,6 +89,13 @@ def main() -> int:
     import dobby
     modules = [m.name for m in pkgutil.walk_packages(dobby.__path__, "dobby.")]
     findings, checked, skipped = [], 0, 0
+
+    # Probe from a throwaway directory. Anything a missed writer creates lands
+    # here instead of in the repository, and is reported below rather than found
+    # months later as an untracked empty directory nobody can explain.
+    origin = os.getcwd()
+    scratch = tempfile.mkdtemp(prefix="dobby-census-")
+    os.chdir(scratch)
 
     for modname in sorted(modules):
         if modname in SKIP_MODULES:
@@ -122,6 +150,17 @@ def main() -> int:
     print("%-24s %-26s %-24s %s" % ("module", "function", "input", "raised"))
     for mod, fn, val, exc in findings:
         print("%-24s %-26s %-24s %s" % (mod.replace("dobby.", ""), fn, val, exc))
+    os.chdir(origin)
+    strays = sorted(os.listdir(scratch))
+    if strays:
+        print()
+        print(f"{len(strays)} path(s) were CREATED by probing, "
+              "despite the spawn exclusion list:")
+        for name in strays[:20]:
+            print("   ", ascii(name))
+        print("    (contained in a temp dir; before this they "
+              "landed in the repository root)")
+    shutil.rmtree(scratch, ignore_errors=True)
     return 1
 
 

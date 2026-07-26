@@ -271,5 +271,74 @@ class TestKitOnlyTestsAreGuarded(unittest.TestCase):
                              f"which would break the kit-only predicate")
 
 
+
+
+class TestNothingWritesIntoTheRepositoryRoot(unittest.TestCase):
+    """Two directories appeared in the repo root and nobody noticed for a day.
+
+        dobby_code/한국어한국어...   (x20)
+        dobby_code/🔥🔥🔥...        (x20)
+
+    `tools/census.py` calls every public function with degenerate arguments,
+    including non-ASCII strings for parameters named `path`. Its docstring claimed
+    writers were "excluded by name, not by hope" and that the list made the gap
+    visible. The list missed `HierarchicalMemory`, which creates its directory
+    tree from the path it is given, so the fuzzer's own inputs became directories
+    in the repository.
+
+    They survived because **git does not track empty directories** — `git status`
+    was clean the entire time, which is why every check run since then said the
+    tree was fine.
+
+    The fix is containment rather than a longer list: census now probes from a
+    throwaway cwd and reports whatever appeared there. An enumerated allowlist
+    fails this way eventually; a contained blast radius does not.
+    """
+
+    def test_the_repository_root_has_no_stray_non_ascii_entries(self):
+        strays = [name for name in os.listdir(REPO)
+                  if any(ord(char) > 127 for char in name)]
+        self.assertEqual(strays, [], f"debris in the repo root: {strays!r}")
+
+    def test_census_probes_from_a_contained_working_directory(self):
+        with open(os.path.join(REPO, "tools", "census.py"),
+                  encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertIn("os.chdir(scratch)", source,
+                      "census probes from the repository, so a missed writer "
+                      "creates files in it")
+        self.assertIn("os.chdir(origin)", source,
+                      "census never restores the working directory")
+
+    def test_a_writer_probed_with_a_degenerate_path_cannot_reach_the_repo(self):
+        """The exact hazard, reproduced: contained cwd, repo must stay clean."""
+        import shutil
+        import tempfile
+
+        from dobby.memory import HierarchicalMemory
+
+        before = set(os.listdir(REPO))
+        origin = os.getcwd()
+        scratch = tempfile.mkdtemp(prefix="dobby-census-test-")
+        try:
+            os.chdir(scratch)
+            for degenerate in ("\U0001f525" * 20, "한국어" * 20):
+                try:
+                    HierarchicalMemory(os.path.join(degenerate, ".dobby",
+                                                    "memory"))
+                except Exception:            # noqa: BLE001 - refusal is fine
+                    pass
+            created = os.listdir(scratch)
+        finally:
+            os.chdir(origin)
+            shutil.rmtree(scratch, ignore_errors=True)
+
+        self.assertTrue(created, "the hazard did not reproduce; if this fails, "
+                                 "HierarchicalMemory no longer creates its tree "
+                                 "and the containment may be unnecessary")
+        self.assertEqual(sorted(set(os.listdir(REPO)) - before), [],
+                         "a probed writer reached the repository root")
+
+
 if __name__ == "__main__":
     unittest.main()
