@@ -196,9 +196,20 @@ def shim_safe_argv(resolved: str,
     does preserve newlines and percent signs (measured). So a batch shim carrying
     a multi-line argument is re-routed through the vendor's own PowerShell shim.
 
-    `-ExecutionPolicy Bypass` is required because those shims are unsigned. It is
-    scoped to this one invocation and the file is one the user installed and would
-    run themselves; stating the choice is the point, not hiding it.
+    The execution policy is `RemoteSigned`, and that number was measured rather
+    than guessed. An earlier version of this used `Bypass` on the assumption that
+    an unsigned shim needed it. `codex.ps1` is indeed `NotSigned`, and with every
+    policy scope `Undefined` the machine default refuses to run it at all — but:
+
+        flag omitted (default)   rc 1, argument not delivered
+        RemoteSigned             rc 0, delivered
+        AllSigned                rc 1, script is unsigned
+        Bypass                   rc 0, delivered
+
+    `RemoteSigned` is sufficient and strictly narrower: it still refuses an
+    unsigned script that carries the internet-zone marker, which is the case worth
+    refusing. If a provider's shim is ever blocked for that reason the error says
+    so, and that refusal is correct rather than something to override here.
 
     When there is no `.ps1` to fall back to, this returns `(None, reason)`. A
     truncated prompt must never be sent silently - the caller refuses instead.
@@ -216,7 +227,7 @@ def shim_safe_argv(resolved: str,
     if os.path.exists(sibling):
         powershell = shutil.which("pwsh") or shutil.which("powershell")
         if powershell:
-            return ([powershell, "-NoProfile", "-ExecutionPolicy", "Bypass",
+            return ([powershell, "-NoProfile", "-ExecutionPolicy", "RemoteSigned",
                      "-File", sibling] + list(args),
                     f"multi-line argument re-routed through {os.path.basename(sibling)}: "
                     f"a .cmd shim truncates it at the first newline")

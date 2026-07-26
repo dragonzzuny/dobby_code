@@ -9,6 +9,97 @@ though it were proven.
 
 ## [Unreleased]
 
+### Fixed — the provider layer had never been executed, and it did not work
+
+Three defects, all found by running things that had only ever been described.
+None of them could have been found by reading, and two of them made the
+multi-agent capability — the reason this kit has a provider layer at all —
+non-functional on its primary development platform.
+
+- **Most of the fleet could not launch.** `run_provider` resolved the binary and
+  discarded the answer, launching the bare name with `shell=False`. On Windows
+  `shutil.which` consults PATHEXT and `CreateProcess` appends only `.exe`, so
+  every npm-installed `.CMD` shim resolved and then refused to start. Measured:
+  `which("codex")` → `codex.CMD`; `run(["codex"])` → WinError 2;
+  `run([r"...\codex.CMD"])` → rc 0. `fleet` reported all four CLIs
+  `usable: true` while two of them failed in 0.14s without starting a process.
+- **A batch shim truncated every multi-line prompt, silently.** Measured with one
+  string through both routes: `.CMD` shim → `["line one"]`, direct exe →
+  `["line one\nline two\nline three"]`. `%`, `&&`, `^` and `|` all survive; only
+  newlines are lost. This was worse than the launch failure, which at least
+  errored: a provider returned a fluent answer to the prompt's first line, with
+  nothing in the output to indicate the rest had been cut. Multi-line arguments
+  now route through the vendor's own `.ps1` shim, and where there is none the
+  call is **refused** rather than truncated.
+- **The POSIX-shell check trusted a name.** `which("sh") or which("bash")`
+  returned true for `C:\Windows\System32\bash.exe`, the WSL launcher, which with
+  no distribution installed prints a UTF-16LE error and exits 1. A suite guarded
+  by `skipUnless(posix_shell_available(), ...)` therefore did not skip; it ran the
+  installer through a shell that executes nothing, and seven assertions failed
+  with messages about missing files. The guard existed; the predicate was the bug.
+  It now probes for the capability required — resolving a path in the form Python
+  hands out — rather than for a greeting.
+
+`-ExecutionPolicy RemoteSigned`, not `Bypass`. An earlier version assumed an
+unsigned shim needed `Bypass`; measured, `RemoteSigned` is sufficient and still
+refuses an unsigned script carrying the internet-zone marker.
+
+**What this establishes:** three providers (claude, agy, codex) answered a live
+probe with the exact expected token, at 29.1s / 14.6s / 31.0s. Before this,
+`verified_on=(WIN,)` had claimed executed-here for all four CLIs since it was
+written, while execution was impossible for two of them.
+**What it does not:** `gemini` launches and is refused by its service for an
+account-tier reason; `qwen`, `ollama`, `kimi` and `dashscope` have still never
+been executed, and their `verified_on` is still empty.
+
+### Added — model judgment as advisory evidence (`dobby/judge.py`)
+
+- `Evaluator(judge=True)` and `dobby slice --judge` grade `model_judgment`
+  criteria with a provider. Every such criterion had been `NOT RUN` since the
+  repository existed.
+- **Advisory, never verification.** `.dobby/ontology.json` states that a
+  `model_assertion` is never `confidence=verified`. `Evaluator.evaluate` had been
+  treating every record with a non-`None` `passed` as deterministic, and model
+  judgments always returned `None`, so the rule held *by accident*. Wiring a judge
+  without splitting that bucket would have made a model opinion weigh exactly as
+  much as a test exit code. Judgments are now excluded from the verdict in both
+  directions, capped at confidence 0.6, and reported separately with the judging
+  provider named.
+- Three refusals, each tested: never runs implicitly (it costs money and leaves
+  the machine); never grades its own author (`exclude` reaches `resolve_role`);
+  never guesses at a reply outside the fixed format — prose containing the word
+  "pass" is `UNPARSEABLE`, because lenient parsing is how a judge starts agreeing
+  with everything.
+
+**What this establishes:** on two artifacts differing only in honesty, the judge
+returned PASS quoting the artifact's own "NOT verified here" section, and FAIL
+quoting "Everything works perfectly across every platform … does not state
+anything not verified". It discriminates rather than rubber-stamping.
+**What it does not:** one judge, one provider, two artifacts. No agreement rate
+across providers, and no measurement of how it behaves on artifacts that are
+subtly rather than obviously overclaiming.
+
+### Added — CI that explains its own failures (`tools/ci_*.py`)
+
+The first fourteen runs of this pipeline were red while the local suite was green,
+for three separate reasons, and none of them could be read. Measured:
+`GET /actions/jobs/{id}/logs` → `403 "Must have admin rights to Repository."`;
+`GET /check-runs/{id}/annotations` → `200`.
+
+- `ci_step.py` wraps each step and emits the failing `unittest` blocks as
+  annotations, with platform, interpreter, stdout encoding, UTF-8 mode, cwd and
+  tempdir. Not a bash wrapper: that would mean `shell: bash` on the Windows jobs,
+  and swapping pwsh for MSYS bash changes the environment under investigation.
+- `ci_env_report.py` records those values on every run, green or red.
+- `ci_local.py` runs the mirrored pipeline in a fresh clone, on every interpreter
+  installed, with `PYTHONUTF8` and `PYTHONIOENCODING` **removed** — every local
+  run in this project had been made from a shell that exported them, which is why
+  the encoding class of failure could not appear locally.
+- The reporter downgrades characters the console cannot encode instead of dying
+  on them. cp949 and cp1252 are complementary: cp949 encodes Korean but not an em
+  dash, cp1252 the reverse. A reporter that a Korean string can kill is not a
+  reporter.
+
 ### Added — solution search (`dobby/search.py`)
 
 - Tree search over candidate solutions with a hard-coded DRAFT → DEBUG → IMPROVE

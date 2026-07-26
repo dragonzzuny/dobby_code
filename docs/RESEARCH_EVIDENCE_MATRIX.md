@@ -211,6 +211,31 @@ text rather than fixtures — mean pairwise distance 0.8824, `effective_n` 1.882
 verdict `scattered` with the advice to tighten the task statement before adding
 voters.
 
+**The diversity metric did not notice that one member had been half-blinded.**
+That first round ran while a `.CMD` shim was truncating multi-line prompts at
+their first newline, so one of the two members saw only the prompt's opening line.
+The same task was re-run on the same panel after the truncation was fixed:
+
+| | truncated prompt | intact prompt |
+|---|---|---|
+| mean pairwise distance | 0.8824 | 0.8883 |
+| `effective_n` | 1.882 | 1.888 |
+| distinct 2-gram | 0.971 | 0.966 |
+| coverage tokens | 204 | 197 |
+| verdict | `scattered` | `scattered` |
+
+The numbers are effectively unchanged, and the answers were not. With the prompt
+intact, one member cited specific line ranges of the relevant source file and
+argued from a caveat that file states about itself; with it truncated, the same
+member had produced a plausible causal chain that did not survive checking. A
+metric that cannot separate those two situations is not measuring answer quality.
+
+This is the §9.4 limitation with a number attached rather than a new finding —
+`swarm/diversity.py` is lexical overlap and says so at every call site — but it is
+worth stating concretely: `effective_n` answers "are these answers worded
+differently", and it should never be read as "are these answers well grounded".
+The grounding gate, not the diversity metric, is what addresses that.
+
 The round also earned its keep as a review. One member identified an unguarded
 `os.path.relpath` in the sandbox confinement path — correct — and attributed it to
 a live crossing between `providers/fanout.py`'s worktree root and
