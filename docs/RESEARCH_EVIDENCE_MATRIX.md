@@ -252,9 +252,45 @@ Both outcomes are the argument for the grounding gate stated in
 was partly wrong, and the disagreement between members was what the diversity
 metric flagged. Panel output is a hypothesis set, never a finding.
 
-Still open from the list above: the model-judge adapter, the `search.search`
-driver, AST call graphs, and inference-time architecture search. `qwen`, `ollama`,
-`kimi` and `dashscope` remain unexecuted, and their `verified_on` is still empty.
+**A real tree search.** `search.search` had implemented DRAFT/DEBUG/IMPROVE and
+never executed a model call. First live run, `codex`, 3-node budget, objective a
+command scoring five static properties of the candidate (max 5):
+
+```
+best_score        4.0        provider_calls    3
+nodes_evaluated   3          answered          3
+actions           2 draft, 1 improve           scored            3
+buggy             0          agent_seconds     33.39
+stopped_because   budget_exhausted
+```
+
+Two things in that result are worth more than the score.
+
+**The best node was a DRAFT, not the IMPROVE.** The improve step did not beat the
+first draft. At a 3-node budget that is not evidence against tree search — the
+published MLE-Bench comparison this module cites ran far longer — but it is exactly
+what `stopped_because` and `selection_bias_warning` exist to surface, and it would
+have been easy to report "4.0/5, search worked" without noticing which action
+produced it.
+
+**The objective and the prompt contradicted each other.** The prompt said "output
+only the code"; the scorer awarded a point for a docstring. The missing point is
+not a model failure, it is a defect in the setup — and no amount of searching can
+resolve a conflict between the instruction and the metric. Anyone wiring a real
+objective should check that the score is reachable under the prompt they are
+sending. The candidate itself was correct: stack-based, all three bracket pairs,
+early return on mismatch.
+
+The score deliberately comes from **static** properties — `compile()` parses
+without executing, and the feature checks are AST and regex — because
+`--score-command` normally means running model-generated code and the sandbox is
+not wired into that path. That is recorded as an open risk in
+`docs/THREAT_MODEL.md` §5 rather than treated as solved.
+
+Still open from the list above: AST call graphs and inference-time architecture
+search. `qwen`, `ollama`, `kimi` and `dashscope` remain unexecuted, and their
+`verified_on` is still empty. The model-judge adapter and the `search.search`
+driver are now closed, both with live measurements above.
 
 ---
 
