@@ -1,9 +1,23 @@
 name: ci
 
-# The matrix is the point. This harness ships four cross-platform fixes that a
+# The matrix is the point. This harness ships cross-platform fixes that a
 # single-OS pipeline would not have caught (interpreter name, stdio encoding,
 # child-process env, path separators), so every push must prove them on all
 # three platforms rather than on the maintainer's laptop.
+#
+# Every step runs through tools/ci_step.py, which annotates its own failure.
+# That is not decoration. Measured on this repository:
+#     GET /actions/jobs/{id}/logs      -> 403 "Must have admin rights"
+#     GET /check-runs/{id}/annotations -> 200
+# So without annotations a failure here reports only THAT it broke, and the first
+# fourteen runs of this pipeline were red for three separate reasons that nobody
+# could read. The reporter also downgrades characters the console cannot encode
+# instead of dying on them: the runner's stdout is cp1252 and this project's
+# output contains Korean, which cp1252 has no mapping for.
+#
+# There is deliberately NO `env:` block. Exporting PYTHONUTF8 here would hide the
+# encoding failures this matrix exists to surface - which is exactly what every
+# local shell in this project was doing.
 on:
   push:
     branches: [main, master]
@@ -27,33 +41,38 @@ jobs:
       - name: install the only dependency
         run: python -m pip install --upgrade pip PyYAML
 
+      # First, because these values are what made the Windows-only failures
+      # unreproducible elsewhere. Runs even on a green build so the record exists.
+      - name: environment the tests will actually see
+        run: python tools/ci_env_report.py
+
       - name: engine tests
-        run: python -m unittest discover -s tests -q
+        run: python tools/ci_step.py --title "engine tests" -- python -m unittest discover -s tests -q
 
       # Non-ASCII output must survive on a non-UTF-8 default locale. Without the
       # UTF-8 pinning in dobby/core/platform.py this step fails on Windows.
       - name: unicode round-trip
-        run: python -c "import sys; sys.path.insert(0,'.'); from dobby.core.platform import force_utf8_io; force_utf8_io(); print('em—dash 한국어 OK')"
+        run: python tools/ci_step.py --title "unicode round-trip" -- python tools/ci_unicode_probe.py
 
       - name: bootstrap scan
-        run: python -m dobby.cli init --scan .
+        run: python tools/ci_step.py --title "bootstrap scan" -- python -m dobby.cli init --scan .
 
       - name: doctor
-        run: python -m dobby.cli doctor
+        run: python tools/ci_step.py --title "doctor" -- python -m dobby.cli doctor
 
       - name: self-check slice (routes, executes, evaluates, hands off)
-        run: python -m dobby.cli slice --scenario SELF-CHECK
+        run: python tools/ci_step.py --title "self-check slice" -- python -m dobby.cli slice --scenario SELF-CHECK
 
       - name: retrieval optimizer smoke
-        run: python -m dobby.cli optimize --seeds 0 --iters 5 --pop 6
+        run: python tools/ci_step.py --title "retrieval optimizer smoke" -- python -m dobby.cli optimize --seeds 0 --iters 5 --pop 6
 
       - name: DESIGN.md validates
-        run: python -m dobby.cli design
+        run: python tools/ci_step.py --title "DESIGN.md validates" -- python -m dobby.cli design
 
       # Availability detection must never crash when nothing is installed —
       # a CI runner has none of the agent CLIs, which is the honest zero case.
       - name: fleet reports an empty fleet without failing
-        run: python -m dobby.cli fleet
+        run: python tools/ci_step.py --title "fleet" -- python -m dobby.cli fleet
 
   mcp:
     name: mcp gateway protocol
@@ -65,4 +84,4 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip PyYAML
       - name: four meta-tools only (progressive disclosure)
-        run: python -m unittest tests.test_mcp_server -v
+        run: python tools/ci_step.py --title "mcp meta-tools" -- python -m unittest tests.test_mcp_server -v
