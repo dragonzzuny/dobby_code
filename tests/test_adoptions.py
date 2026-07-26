@@ -14,6 +14,7 @@ sys.path.insert(0, REPO)
 from dobby.core.skills import SkillRegistry, SkillError, check_requires
 from dobby.core.friction import friction_report
 from dobby.core.trajectory import Trajectory
+from pathlib import Path
 
 META = {"name": "gated-skill", "description": "d",
         "applicable_when": ["demo"], "not_applicable_when": ["never"],
@@ -123,7 +124,7 @@ class TestRunnerLedger(unittest.TestCase):
                       runners=[{"name": "validator", "status": "ok"},
                                {"name": "judge-model", "status": "degraded",
                                 "note": "NOT RUN — no LLM here"}])
-        content = open(p, encoding="utf-8").read()
+        content = Path(p).read_text(encoding="utf-8")
         self.assertIn("## Runners (status ledger)", content)
         self.assertIn("judge-model: degraded — NOT RUN", content)
 

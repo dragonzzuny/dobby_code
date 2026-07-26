@@ -7,6 +7,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
 from dobby.core.trajectory import Trajectory
+from pathlib import Path
 
 
 class TestTrajectory(unittest.TestCase):
@@ -40,7 +41,7 @@ class TestTrajectory(unittest.TestCase):
                       evidence=["reports/x.md"], next_steps=["n"])
         self.assertTrue(os.path.exists(p))
         self.assertEqual(Trajectory.latest_handoff(self.tmp.name), p)
-        content = open(p, encoding="utf-8").read()
+        content = Path(p).read_text(encoding="utf-8")
         for section in ("## Done", "## Remaining", "## Decisions",
                         "## Evidence", "## Next steps"):
             self.assertIn(section, content)

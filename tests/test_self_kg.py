@@ -24,6 +24,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
 from dobby.core.kg import KnowledgeGraph, Ontology
+from pathlib import Path
 
 KG_PATH = os.path.join(REPO, ".dobby", "knowledge", "kg.json")
 ONTOLOGY_PATH = os.path.join(REPO, ".dobby", "ontology.json")
@@ -157,7 +158,7 @@ class TestRefreshScript(unittest.TestCase):
         """Re-running must be safe: the fix has to survive the next rename."""
         script = os.path.join(REPO, "tools", "refresh_self_kg.py")
         self.assertTrue(os.path.exists(script))
-        text = open(script, encoding="utf-8").read()
+        text = Path(script).read_text(encoding="utf-8")
         # Guards that make a second run harmless and an unverifiable path
         # impossible to record.
         self.assertIn("if nid in by_id:", text)

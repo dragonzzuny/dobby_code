@@ -25,7 +25,9 @@ import unittest
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
-from dobby.core.platform import child_env, posix_shell_available
+from dobby.core.platform import (child_env, posix_shell_available,
+                                 posix_shell_path)
+from pathlib import Path
 
 INSTALL_SH = os.path.join(REPO, "install.sh")
 INSTALL_PS1 = os.path.join(REPO, "install.ps1")
@@ -51,7 +53,7 @@ class _KitOnly(unittest.TestCase):
 
 def _runtime_state_from(script_path: str) -> set[str]:
     """Extract the RuntimeState / RUNTIME_STATE list an installer declares."""
-    text = open(script_path, encoding="utf-8").read()
+    text = Path(script_path).read_text(encoding="utf-8")
     entries: set[str] = set()
     # sh:  RUNTIME_STATE="a b \<newline> c"
     m = re.search(r"RUNTIME_STATE=\"([^\"]+)\"", text)
@@ -68,7 +70,7 @@ def _runtime_state_from(script_path: str) -> set[str]:
 def _gitignored_dobby_paths() -> set[str]:
     """The `.dobby/...` patterns `.gitignore` excludes, normalized."""
     out: set[str] = set()
-    for line in open(GITIGNORE, encoding="utf-8"):
+    for line in Path(GITIGNORE).read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or not line.startswith(".dobby/"):
             continue
@@ -112,7 +114,7 @@ class TestExclusionListsAgree(_KitOnly):
 
 def _engine_tests_from(script_path: str) -> set[str]:
     """The test modules an installer runs as its health check."""
-    text = open(script_path, encoding="utf-8").read()
+    text = Path(script_path).read_text(encoding="utf-8")
     found: set[str] = set()
     for m in re.finditer(r"tests\.test_[a-z_]+", text):
         found.add(m.group(0))
@@ -164,18 +166,18 @@ class TestInterpreterProbe(_KitOnly):
     """Existence is not a measurement."""
 
     def test_shell_installer_probes_rather_than_trusting_command_v(self):
-        text = open(INSTALL_SH, encoding="utf-8").read()
+        text = Path(INSTALL_SH).read_text(encoding="utf-8")
         self.assertIn("sys.version_info[0]*100", text,
                       "install.sh must ask each candidate to COMPUTE a version; "
                       "a Store stub resolves and prints its own name")
 
     def test_powershell_installer_probes_too(self):
-        text = open(INSTALL_PS1, encoding="utf-8").read()
+        text = Path(INSTALL_PS1).read_text(encoding="utf-8")
         self.assertIn("sys.version_info[0]*100", text)
 
     def test_both_try_more_than_one_candidate(self):
         for path in (INSTALL_SH, INSTALL_PS1):
-            text = open(path, encoding="utf-8").read()
+            text = Path(path).read_text(encoding="utf-8")
             for name in ("python3", "python", "py"):
                 self.assertIn(name, text, f"{path} does not try {name}")
 
@@ -196,8 +198,15 @@ class TestShellInstallEndToEnd(_KitOnly):
             f.write("# the host's own contract\n")
 
     def _install(self, *extra):
+        # The PROBED shell, not the literal "bash". Running a different shell
+        # than the one the skip guard vetted is how this suite came to execute
+        # against C:\Windows\System32\bash.exe - the WSL launcher, which with no
+        # distribution installed printed a UTF-16LE error and exited 1, after
+        # which seven assertions failed complaining about missing files.
+        shell = posix_shell_path()
+        self.assertIsNotNone(shell, "guard should have skipped this class")
         return subprocess.run(
-            ["bash", INSTALL_SH, self.host, *extra],
+            [shell, INSTALL_SH, self.host, *extra],
             cwd=REPO, capture_output=True, text=True,
             encoding="utf-8", errors="replace", env=child_env(), timeout=600)
 
@@ -266,10 +275,10 @@ class TestShellInstallEndToEnd(_KitOnly):
         kg = os.path.join(self.host, ".dobby", "knowledge", "kg.json")
         with open(kg, "a", encoding="utf-8") as f:
             f.write("\n")           # a stand-in for curation
-        before = open(kg, encoding="utf-8").read()
+        before = Path(kg).read_text(encoding="utf-8")
         proc = self._install()
         self.assertIn("EXISTS", proc.stdout)
-        self.assertEqual(open(kg, encoding="utf-8").read(), before,
+        self.assertEqual(Path(kg).read_text(encoding="utf-8"), before,
                          "an upgrade must never rewrite curated knowledge")
 
     def test_reinstall_does_not_report_bootstrap_as_failed(self):
@@ -286,8 +295,8 @@ class TestShellInstallEndToEnd(_KitOnly):
 
     def test_refuses_to_install_into_itself(self):
         proc = subprocess.run(
-            ["bash", INSTALL_SH, REPO], cwd=REPO, capture_output=True,
-            text=True, encoding="utf-8", errors="replace",
+            [posix_shell_path(), INSTALL_SH, REPO], cwd=REPO,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
             env=child_env(), timeout=120)
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("dobby repo itself", proc.stdout + proc.stderr)

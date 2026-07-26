@@ -1,13 +1,18 @@
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
+import dobby.core.platform as platform_mod
 from dobby.core.platform import (PYTHON_PLACEHOLDER, child_env,
                                  describe_platform, force_utf8_io,
+                                 posix_shell_available, posix_shell_path,
                                  python_executable, resolve_command)
 
 
@@ -111,3 +116,115 @@ class TestDescribePlatform(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPosixShellIsProbedNotJustFound(unittest.TestCase):
+    """The predicate that made windows-latest red on every commit.
+
+    `posix_shell_available()` was `which("sh") or which("bash")`. On a GitHub
+    Windows runner `bash` is C:\Windows\System32\bash.exe, the WSL launcher;
+    with no distribution installed it prints a UTF-16LE error and exits 1. The
+    check saw a file named bash and said yes, so a suite guarded by
+    `skipUnless(posix_shell_available(), ...)` did not skip. It ran the installer
+    through a shell that cannot execute anything, and seven assertions then failed
+    with messages about missing files - none of which named the real cause.
+
+    The guard existed. The predicate was the bug.
+    """
+
+    def setUp(self):
+        posix_shell_path.cache_clear()
+        self.addCleanup(posix_shell_path.cache_clear)
+
+    def test_the_answer_is_a_usable_path_or_none(self):
+        result = posix_shell_path()
+        if result is not None:
+            self.assertTrue(os.path.exists(result), result)
+
+    def test_available_agrees_with_path(self):
+        self.assertEqual(posix_shell_available(), posix_shell_path() is not None)
+
+    def test_a_shell_that_exits_nonzero_is_rejected(self):
+        """A WSL launcher with no distro behaves exactly like this."""
+        stub = self._fake_shell(exit_code=1, stdout=b"")
+        with mock.patch.object(platform_mod, "_posix_shell_candidates",
+                               return_value=[stub]):
+            posix_shell_path.cache_clear()
+            self.assertIsNone(posix_shell_path())
+
+    def test_a_shell_that_prints_utf16_is_rejected(self):
+        """The precise signature observed on the runner."""
+        message = ("Windows Subsystem for Linux has no installed "
+                   "distributions.").encode("utf-16-le")
+        stub = self._fake_shell(exit_code=1, stdout=message)
+        with mock.patch.object(platform_mod, "_posix_shell_candidates",
+                               return_value=[stub]):
+            posix_shell_path.cache_clear()
+            self.assertIsNone(posix_shell_path())
+
+    def test_a_shell_that_exits_zero_but_says_nothing_is_rejected(self):
+        """Exit 0 is not evidence; the token is."""
+        stub = self._fake_shell(exit_code=0, stdout=b"")
+        with mock.patch.object(platform_mod, "_posix_shell_candidates",
+                               return_value=[stub]):
+            posix_shell_path.cache_clear()
+            self.assertIsNone(posix_shell_path())
+
+    def test_a_working_shell_is_accepted(self):
+        stub = self._fake_shell(
+            exit_code=0,
+            stdout=platform_mod._POSIX_PROBE_TOKEN.encode("ascii"))
+        with mock.patch.object(platform_mod, "_posix_shell_candidates",
+                               return_value=[stub]):
+            posix_shell_path.cache_clear()
+            self.assertEqual(posix_shell_path(), stub)
+
+    def test_the_first_working_candidate_wins_over_a_broken_earlier_one(self):
+        broken = self._fake_shell(exit_code=1, stdout=b"")
+        good = self._fake_shell(
+            exit_code=0,
+            stdout=platform_mod._POSIX_PROBE_TOKEN.encode("ascii"))
+        with mock.patch.object(platform_mod, "_posix_shell_candidates",
+                               return_value=[broken, good]):
+            posix_shell_path.cache_clear()
+            self.assertEqual(posix_shell_path(), good)
+
+    def test_a_candidate_that_cannot_be_launched_does_not_raise(self):
+        with mock.patch.object(platform_mod, "_posix_shell_candidates",
+                               return_value=["dobby-no-such-shell-xyz"]):
+            posix_shell_path.cache_clear()
+            self.assertIsNone(posix_shell_path())
+
+    def test_describe_platform_names_the_shell_it_accepted(self):
+        """'True' is what let the wrong shell through unnoticed."""
+        described = describe_platform()
+        self.assertIn("posix_shell_path", described)
+        self.assertEqual(described["posix_shell_path"], posix_shell_path())
+
+    def _fake_shell(self, *, exit_code: int, stdout: bytes) -> str:
+        """A real executable script that ignores -c and replies as told.
+
+        Written as a Python script invoked through this interpreter, so it needs
+        no shell to run - using a shell to fake a shell would be circular.
+        """
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, True)
+        payload = os.path.join(directory, "stub.py")
+        with open(payload, "w", encoding="utf-8") as handle:
+            handle.write(
+                "import sys\n"
+                f"sys.stdout.buffer.write({stdout!r})\n"
+                f"sys.exit({exit_code})\n")
+        if os.name == "nt":
+            launcher = os.path.join(directory, "stub.cmd")
+            with open(launcher, "w", encoding="utf-8", newline="\r\n") as handle:
+                handle.write(f'@"{sys.executable}" "{payload}" %*\n')
+        else:
+            launcher = os.path.join(directory, "stub")
+            with open(launcher, "w", encoding="utf-8") as handle:
+                handle.write(f'#!{sys.executable}\n'
+                             f'import sys\n'
+                             f'sys.stdout.buffer.write({stdout!r})\n'
+                             f'sys.exit({exit_code})\n')
+            os.chmod(launcher, 0o755)
+        return launcher

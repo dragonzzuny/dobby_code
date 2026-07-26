@@ -32,6 +32,7 @@ from __future__ import annotations
 import os
 import shlex
 import sys
+from functools import lru_cache
 
 #: Placeholder that data files use in place of a hard-coded interpreter name.
 PYTHON_PLACEHOLDER = "{python}"
@@ -88,16 +89,94 @@ def is_windows() -> bool:
     return os.name == "nt"
 
 
+#: Emitted by the probe below. Deliberately ASCII and unlikely to occur by
+#: accident, so a shell that prints something else is not mistaken for a pass.
+_POSIX_PROBE_TOKEN = "dobby_posix_shell_ok"
+
+#: Where Git for Windows puts a real POSIX shell. Worth checking explicitly:
+#: it is frequently installed and frequently absent from PATH, and it is the one
+#: Windows shell that both speaks POSIX and understands `D:/a/repo` paths.
+_GIT_BASH_GUESSES = (
+    r"C:\Program Files\Git\bin\bash.exe",
+    r"C:\Program Files\Git\usr\bin\sh.exe",
+    r"C:\Program Files (x86)\Git\bin\bash.exe",
+    r"C:\Program Files (x86)\Git\usr\bin\sh.exe",
+)
+
+
+def _posix_shell_candidates() -> list[str]:
+    from shutil import which
+    found: list[str] = []
+    for name in ("sh", "bash", "dash", "zsh"):
+        path = which(name)
+        if path and path not in found:
+            found.append(path)
+    if is_windows():
+        for guess in _GIT_BASH_GUESSES:
+            if os.path.exists(guess) and guess not in found:
+                found.append(guess)
+    return found
+
+
+@lru_cache(maxsize=1)
+def posix_shell_path() -> str | None:
+    """A shell that can actually RUN a POSIX script here, or None.
+
+    This used to be `which("sh") or which("bash")`, and that was wrong in the way
+    this project keeps rediscovering: existence is not a measurement. On a GitHub
+    Windows runner `bash` resolves to `C:\\Windows\\System32\\bash.exe`, the WSL
+    launcher. With no distribution installed it prints, in UTF-16LE,
+
+        Windows Subsystem for Linux has no installed distributions.
+
+    and exits 1. The old check saw a file named bash and said yes, so a suite
+    guarded by `skipUnless(posix_shell_available(), ...)` did not skip — it ran,
+    the installer never executed, and seven downstream assertions failed with
+    messages about missing files. The guard was present and the predicate was
+    the bug.
+
+    The same shape as the `python3` hazard this module already handles: a name on
+    PATH that resolves to a stub which cannot do the job.
+
+    So the shell is probed, and the probe asks for the capability actually needed
+    rather than a greeting: resolve a path of the form Python hands out and
+    confirm the file is there. That distinction matters because a WSL bash WITH a
+    distribution installed would happily echo a token while being unable to see
+    `D:/a/repo` at all — functional as a shell, useless for running an installer
+    against Windows paths.
+
+    Cached: the answer cannot change within a process, and callers ask often.
+    `posix_shell_path.cache_clear()` exists for tests.
+    """
+    import subprocess
+
+    probe_path = os.path.abspath(__file__).replace("\\", "/")
+    script = f'test -f "{probe_path}" && printf %s {_POSIX_PROBE_TOKEN}'
+    for shell in _posix_shell_candidates():
+        try:
+            proc = subprocess.run(
+                [shell, "-c", script], capture_output=True, timeout=20,
+                stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        # Decoded permissively on purpose: a UTF-16LE reply is itself the WSL
+        # launcher's signature, and it simply will not contain the ASCII token.
+        out = (proc.stdout or b"").decode("utf-8", "replace")
+        if proc.returncode == 0 and _POSIX_PROBE_TOKEN in out:
+            return shell
+    return None
+
+
 def posix_shell_available() -> bool:
-    """Whether a POSIX shell is on PATH.
+    """Whether a POSIX shell that actually works is available.
 
     Data-defined commands that need `&&`, pipes, or `2>/dev/null` are portable
     only where this is true. Callers use it to SKIP such a capability with a
     stated reason rather than to silently run it and misreport the failure as a
-    defect in the thing being tested.
+    defect in the thing being tested — which is exactly what happened while this
+    was a `which()` call. See `posix_shell_path`.
     """
-    from shutil import which
-    return which("sh") is not None or which("bash") is not None
+    return posix_shell_path() is not None
 
 
 def force_utf8_io() -> None:
@@ -168,5 +247,6 @@ def describe_platform() -> dict:
         "python": sys.executable,
         "python_version": sys.version.split()[0],
         "posix_shell": posix_shell_available(),
+        "posix_shell_path": posix_shell_path(),
         "shlex_quote_example": shlex.quote("a b"),
     }

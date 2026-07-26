@@ -8,6 +8,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
 from dobby.core.improve import ImprovementLoop, ImprovementError
+from pathlib import Path
 
 
 def const_fitness(scores):
@@ -52,10 +53,10 @@ class TestImprovementLoop(unittest.TestCase):
     def test_no_gain_rejected_and_rolled_back(self):
         scores = {"dev": 0.5, "val": 0.5, "dev_cases": {}, "val_cases": {}}
         loop = ImprovementLoop(self.data, const_fitness(scores))
-        before = open(self.target, encoding="utf-8").read()
+        before = Path(self.target).read_text(encoding="utf-8")
         rec = loop.run_once(self._cand(loop))
         self.assertEqual(rec["decision"], "rejected")
-        self.assertEqual(open(self.target, encoding="utf-8").read(), before,
+        self.assertEqual(Path(self.target).read_text(encoding="utf-8"), before,
                          "rollback must restore the target file exactly")
 
     def test_regression_rejected_even_with_dev_gain(self):
