@@ -108,6 +108,34 @@ def _ollama(prompt: str, model: str | None, extra: Sequence[str]) -> list[str]:
 #: Platform tag used in `verified_on` for observations made on native Windows.
 WIN = "win32"
 
+# WHEN AND HOW `verified_on=(WIN,)` WAS ACTUALLY EARNED
+#
+# This field asserts that the invocation was EXECUTED, not merely that the tool
+# was installed. It carried that assertion for all four CLIs long before it was
+# true: `run_provider` launched the bare binary name with shell=False, and on
+# Windows `shutil.which` consults PATHEXT while CreateProcess does not, so any
+# provider shipped as an npm `.CMD` shim could never start. The claim was
+# unfalsifiable in practice because nothing had ever run a live call.
+#
+# First real `dobby fleet --probe` run, 2026-07-26, native Windows 11, after
+# argv[0] was changed to the resolved path:
+#
+#   claude   ok, replied DOBBY_OK exactly           29.1s
+#   agy      ok, replied DOBBY_OK exactly           14.6s
+#   codex    ok, replied DOBBY_OK exactly           31.0s   (0.14s failure before)
+#   gemini   launched, reached the service, refused 22.2s
+#
+# gemini keeps WIN because what `verified_on` describes IS verified: the CLI
+# accepted the argv, ran non-interactively, and reached authentication. It then
+# returned IneligibleTierError - "This client is no longer supported for Gemini
+# Code Assist for individuals" - which is a condition of the account, not of the
+# invocation. Detection reports it usable and a live probe reports why it is not;
+# collapsing those two into one flag is what hid the .CMD defect for so long.
+#
+# Anything below with `verified_on=()` has never been executed here. That empty
+# tuple is the honest state and must not be filled in from a plausible reading of
+# a tool's documentation.
+
 CATALOG: tuple[ProviderSpec, ...] = (
     ProviderSpec(
         id="claude", kind="cli", display="Claude Code", binary="claude",

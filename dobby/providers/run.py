@@ -60,12 +60,33 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
             provider=spec.id, ok=False,
             error=f"{spec.id} is an api provider; run_provider drives cli "
                   f"providers only (see api_client for the api path)")
-    if spec.which() is None:
+    resolved = spec.which()
+    if resolved is None:
         return ProviderResult(
             provider=spec.id, ok=False,
             error=f"binary {spec.binary!r} not on PATH")
 
     argv = spec.build_argv(prompt, model, extra)
+
+    # Launch the RESOLVED path, not the bare name. `shutil.which` and
+    # CreateProcess disagree about what "on PATH" means on Windows, and the
+    # disagreement silently broke most of the fleet:
+    #
+    #   which("codex")                     -> C:\...\npm\codex.CMD   (found)
+    #   subprocess.run(["codex", ...])      -> WinError 2, not found
+    #   subprocess.run([r"C:\...codex.CMD"]) -> rc 0, works
+    #
+    # `which` consults PATHEXT and so finds .CMD; CreateProcess appends only
+    # .exe. npm installs its CLIs as .CMD shims on Windows, which is how codex
+    # and gemini came to be reported `usable: true` while being unlaunchable —
+    # measured by the first real `dobby fleet --probe` run: claude and agy
+    # answered in 35s and 62s, codex and gemini failed in 0.14s without ever
+    # starting a process.
+    #
+    # Detection already paid for this lookup and its answer was being discarded
+    # one line later. Substituting it costs nothing and keeps shell=False, so
+    # prompt text still cannot become shell syntax.
+    argv = [resolved] + argv[1:]
     limit = timeout_s or spec.timeout_s
     started = time.monotonic()
     meta = {
@@ -74,6 +95,8 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
         # length and a hash-free preview length are enough for provenance.
         "argv_head": argv[:2],
         "argv_len": len(argv),
+        # Recorded because the gap between the name and the path was the bug.
+        "resolved_binary": resolved,
         "prompt_chars": len(prompt),
         "model": model,
         "cwd": cwd or os.getcwd(),
@@ -98,10 +121,18 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
                   f"interactive mode — check its non-interactive flag)",
             meta=meta)
     except FileNotFoundError:
+        # State the contradiction rather than just the symptom: PATH lookup
+        # succeeded and launching the very path it returned did not. The old
+        # message said only "cannot execute 'codex'", which read like a missing
+        # install and hid a resolvable path for as long as nobody probed.
         return ProviderResult(
             provider=spec.id, ok=False,
             duration_s=round(time.monotonic() - started, 2),
-            error=f"cannot execute {spec.binary!r}", meta=meta)
+            error=(f"{spec.binary!r} resolved to {resolved!r} but could not be "
+                   f"launched — the file exists and the OS refused it, so this "
+                   f"is a shim or extension the process loader cannot start "
+                   f"directly, not a missing install"),
+            meta=meta)
     except OSError as exc:
         return ProviderResult(
             provider=spec.id, ok=False,

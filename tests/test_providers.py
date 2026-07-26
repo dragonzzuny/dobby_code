@@ -1,6 +1,8 @@
 import os
 import sys
+import types
 import unittest
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
@@ -10,6 +12,7 @@ from dobby.providers import (ABSENT, AVAILABLE, BLOCKED, AgentTask,
                              registry, report, resolve_panel, resolve_role,
                              run_provider, survey)
 from dobby.providers.catalog import LOCAL_ONLY_ROLES, ROLE_ROUTING
+import dobby.providers.run as run_mod
 from dobby.providers.detect import check
 from dobby.providers.fanout import _needs_isolation, run_round
 
@@ -396,3 +399,94 @@ class TestFanout(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestResolvedPathIsWhatGetsLaunched(unittest.TestCase):
+    """The gap between the name PATH resolves and the name that gets executed.
+
+    `run_provider` looked the binary up, threw the answer away, and launched the
+    bare name with shell=False. On Windows those are not the same question:
+
+        which("codex")                        -> C:\...\npm\codex.CMD  (found)
+        subprocess.run(["codex", ...])         -> WinError 2, not found
+        subprocess.run([r"C:\...codex.CMD"])  -> rc 0, works
+
+    `which` consults PATHEXT; CreateProcess appends only .exe. npm ships its CLIs
+    as .CMD shims on Windows, so codex and gemini were reported `usable: true`
+    and could never start. Measured by the first real `fleet --probe` run of this
+    project: claude and agy answered, codex and gemini failed in 0.14s without
+    launching a process. After the fix codex answered in 31s and gemini launched
+    and returned an account-tier error - a real answer instead of a masked one.
+
+    No network here. What is asserted is that argv[0] is the resolved path.
+    """
+
+    def _capture_argv(self, spec, resolved):
+        seen = {}
+
+        def fake_run(argv, **kwargs):
+            seen["argv"] = argv
+            seen["shell"] = kwargs.get("shell")
+            return types.SimpleNamespace(returncode=0, stdout="DOBBY_OK",
+                                         stderr="")
+
+        # ProviderSpec is a frozen dataclass, so the instance rejects patching.
+        # The class attribute is not protected by frozen-ness.
+        with mock.patch.object(type(spec), "which", return_value=resolved), \
+                mock.patch.object(run_mod.subprocess, "run", fake_run):
+            result = run_provider(spec, "hello")
+        return seen, result
+
+    def _cli_spec(self):
+        reg = registry()
+        for pid in reg.ids():
+            spec = reg.get(pid)
+            if spec.kind == "cli":
+                return spec
+        self.skipTest("no cli provider in the catalog")
+
+    def test_argv_zero_is_the_resolved_path_not_the_bare_name(self):
+        spec = self._cli_spec()
+        fake = r"C:\some\where\npm\tool.CMD" if os.name == "nt" \
+            else "/usr/local/bin/tool"
+        seen, result = self._capture_argv(spec, fake)
+        self.assertEqual(seen["argv"][0], fake,
+                         "the bare name was launched; PATHEXT shims cannot start")
+        self.assertTrue(result.ok, result.error)
+
+    def test_the_rest_of_the_argv_is_untouched(self):
+        spec = self._cli_spec()
+        expected_tail = spec.build_argv("hello", None, ())[1:]
+        seen, _ = self._capture_argv(spec, "/x/tool")
+        self.assertEqual(seen["argv"][1:], expected_tail)
+
+    def test_shell_stays_false_so_a_prompt_cannot_become_shell_syntax(self):
+        spec = self._cli_spec()
+        seen, _ = self._capture_argv(spec, "/x/tool")
+        self.assertIs(seen["shell"], False)
+
+    def test_the_resolved_path_is_recorded_in_meta(self):
+        spec = self._cli_spec()
+        _, result = self._capture_argv(spec, "/x/tool")
+        self.assertEqual(result.meta.get("resolved_binary"), "/x/tool")
+
+    def test_a_launch_refusal_says_the_path_resolved(self):
+        """"cannot execute 'codex'" read like a missing install for weeks."""
+        spec = self._cli_spec()
+
+        def refuse(argv, **kwargs):
+            raise FileNotFoundError(2, "no such file")
+
+        with mock.patch.object(type(spec), "which", return_value="/x/tool.CMD"), \
+                mock.patch.object(run_mod.subprocess, "run", refuse):
+            result = run_provider(spec, "hello")
+        self.assertFalse(result.ok)
+        self.assertIn("/x/tool.CMD", result.error)
+        self.assertIn("not a missing install", result.error)
+
+    def test_absent_binary_still_reports_absent(self):
+        spec = self._cli_spec()
+        with mock.patch.object(type(spec), "which", return_value=None):
+            result = run_provider(spec, "hello")
+        self.assertFalse(result.ok)
+        self.assertIn("not on PATH", result.error)
