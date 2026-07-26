@@ -1,0 +1,15 @@
+# Deterministic line endings, so the skill origin pins do not depend on how a
+# checkout happened to normalize them. dobby/core/skills._content_digest also
+# normalizes before hashing, which is the real fix; this makes the working tree
+# consistent so a diff shows content changes and not whitespace churn.
+* text=auto eol=lf
+
+# Windows scripts must keep CRLF or cmd.exe/PowerShell can mis-parse them.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never touched.
+*.png binary
+*.jpg binary
+*.ico binary

@@ -58,6 +58,30 @@ def check_requires(req: dict) -> tuple[bool, str]:
     return True, "ok"
 
 
+def _content_digest(path: str) -> str:
+    """sha256 of a skill body with line endings NORMALIZED.
+
+    Hashing raw bytes made the tamper check fail on every clean checkout. git
+    rewrites line endings on the way out - core.autocrlf=true is the Windows
+    default - so a body pinned at 3325 bytes of LF arrives as 3381 bytes of CRLF
+    and the digest differs. Measured on an untouched file: pin 13336a69, fresh
+    clone 1beccd11. Every CI run of this repository was red for this reason.
+
+    A control that reports tampering after a normal `git clone` is worse than no
+    control: it trains everyone to ignore it, and the one real tamper then looks
+    like the usual noise.
+
+    Normalizing CRLF and lone CR to LF hashes the CONTENT, which is what the pin
+    is for. An injected step, a rewritten command, a changed path all change
+    content. A change that is only line endings is precisely the change nobody
+    needs to be warned about.
+    """
+    with open(path, "rb") as handle:
+        raw = handle.read()
+    normalized = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(normalized).hexdigest()
+
+
 class SkillRegistry:
     def __init__(self, path: str):
         self.path = path
@@ -165,7 +189,7 @@ class SkillRegistry:
         body = os.path.join(repo_root, s.get("path") or "")
         if not os.path.exists(body):
             raise SkillError(f"cannot pin '{name}': body not found at {body}")
-        h = hashlib.sha256(open(body, "rb").read()).hexdigest()
+        h = _content_digest(body)
         s["origin"] = {"pinned_sha256": h, "path": s["path"],
                        "date": time.strftime("%Y-%m-%d")}
         return s["origin"]
@@ -178,7 +202,7 @@ class SkillRegistry:
         body = os.path.join(repo_root, s.get("path") or "")
         if not os.path.exists(body):
             return False, f"body missing: {body}"
-        h = hashlib.sha256(open(body, "rb").read()).hexdigest()
+        h = _content_digest(body)
         if h != origin["pinned_sha256"]:
             return False, ("body hash differs from pinned origin — review the "
                            "change, then re-pin via the lifecycle (revise)")
