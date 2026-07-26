@@ -71,12 +71,37 @@ def run_doctor(repo: str):
 
 class TestHealthyRepo(unittest.TestCase):
     def test_passes_and_exits_zero(self):
+        """Assert the CONTRACT, not a verdict string that varies by machine.
+
+        This test originally required the exact text "all checks pass", which
+        encoded the authoring machine's incidental state: a `kg.bootstrap.json`
+        left behind by dogfooding (gitignored, so absent from any checkout) and
+        four installed agent CLIs. On a fresh clone the honest verdict is
+        "usable, with 1 advisory gap(s): bootstrapped", and the assertion failed
+        — in CI, on every OS, on every commit, while passing locally.
+
+        The contract is that undamaged data produces no BLOCKING failure and a
+        zero exit. Advisory gaps are expected on a machine that has not been
+        bootstrapped and has no providers installed, which describes every CI
+        runner.
+        """
         d = make_repo()
         self.addCleanup(shutil.rmtree, d, True)
         rc, payload, err = run_doctor(d)
         self.assertIsNotNone(payload, f"doctor emitted no JSON: {err[-300:]}")
+        self.assertEqual(payload["blocking_failures"], [],
+                         f"undamaged data reported a blocking failure: "
+                         f"{payload['verdict']}")
         self.assertEqual(rc, 0, payload["verdict"])
-        self.assertEqual(payload["verdict"], "all checks pass")
+
+    def test_verdict_wording_matches_the_state_it_found(self):
+        d = make_repo()
+        self.addCleanup(shutil.rmtree, d, True)
+        _, payload, _ = run_doctor(d)
+        if payload["advisory_gaps"]:
+            self.assertIn("advisory", payload["verdict"])
+        else:
+            self.assertEqual(payload["verdict"], "all checks pass")
 
 
 class TestDamageIsReportedNotCrashed(unittest.TestCase):
