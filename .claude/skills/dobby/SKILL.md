@@ -103,6 +103,25 @@ Read `prior_art_verdict` exactly as written. `NOTHING RETRIEVED` means these
 queries surfaced nothing; it never means nothing exists. Every source returns as a
 CLAIM of a source, unresolved — open the URLs before relying on one.
 
+## 4b. 한글 documents are read, not guessed at
+
+When the task involves a `.hwp` or `.hwpx` — a proposal, a paper, a government
+form — read it before asking the user what it says:
+
+```
+python -m dobby.cli hwp info    "<file>"    # both formats
+python -m dobby.cli hwp tables  "<file>"    # a form's content IS its cells
+python -m dobby.cli hwp replace "<file>" --text "기존" --with "새로" --out "<new>"
+```
+
+Two limits worth knowing before you promise anything. `.hwp` (the legacy binary)
+is **read-only** here; editing one means saving it as HWPX in 한글 first. And a
+replacement that crosses two runs is refused rather than applied — the command
+reports the runs, so treat that as "split the edit", not as "the text is missing".
+
+Writes always go to `--out`. The source is never modified, which matters because
+these documents are usually the only copy of a submission.
+
 ## 5. Verify the output, then report
 
 A producing command exiting 0 says nothing about what it produced. Check the

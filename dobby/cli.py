@@ -978,6 +978,85 @@ def cmd_design(args):
     _out(validate_design_md(path))
 
 
+# ---------------------------------------------------------------- hwp ----
+def cmd_hwp(args):
+    """Read and edit 한글 documents, dispatching on the file's magic bytes.
+
+    The extension is a claim; the first eight bytes are a measurement. 한글 saves
+    legacy format under whatever name was typed, so a `.hwpx` that is really an
+    OLE compound file is common and must be named rather than crashed on.
+    """
+    from . import hwp5, hwpx
+    path = os.path.abspath(args.file)
+    if not os.path.exists(path):
+        sys.exit(f"no such file: {path}")
+    try:
+        kind = hwpx.detect_format(path)
+    except hwpx.HwpxError as exc:
+        sys.exit(str(exc))
+
+    if args.action == "info":
+        _out(hwpx.summarize(path) if kind == "hwpx" else hwp5.summarize(path))
+        return
+    if args.action == "text":
+        text = (hwpx.document_text(path) if kind == "hwpx"
+                else hwp5.document_text(path))
+        sys.stdout.write(text + "\n")
+        return
+
+    if kind != "hwpx":
+        # Stated as a limit with its reason and a way forward, not as a bug.
+        sys.exit(
+            f"{os.path.basename(path)} is HWP 5.0 (binary). This reads it "
+            f"(`dobby hwp text`) but cannot write it: the body is compressed "
+            f"records inside a compound file whose sector allocation would have "
+            f"to be rebuilt, and a half-correct writer corrupts documents in "
+            f"ways that only appear when 한글 opens them. Save it as HWPX in "
+            f"한글 and edit that.")
+
+    doc = hwpx.HwpxDocument(path)
+    if args.action == "paragraphs":
+        _out([{"index": p.index, "location": p.location, "text": p.text}
+              for p in doc.paragraphs if p.text.strip() or args.all])
+        return
+    if args.action == "tables":
+        _out(doc.tables())
+        return
+    if args.action == "find":
+        if not args.text:
+            sys.exit("find needs --text")
+        _out([{"index": p.index, "location": p.location, "text": p.text}
+              for p in doc.find(args.text)])
+        return
+    if args.action == "replace":
+        if args.text is None or args.with_ is None:
+            sys.exit("replace needs --text and --with")
+        if not args.out:
+            sys.exit("replace needs --out; this never writes over the source")
+        result = doc.replace_text(args.text, args.with_, count=args.count)
+        if not result["applied"]:
+            # Absence and refusal are different answers to "did it work".
+            _out({**result, "written": None,
+                  "why": ("nothing was written because nothing was replaced"
+                          if not result["straddled"] else
+                          "nothing was written; every match crosses two runs")})
+            return
+        _out({**result, **doc.save(args.out, overwrite=args.overwrite)})
+        return
+    if args.action == "set":
+        if args.index is None or args.text is None:
+            sys.exit("set needs --index and --text")
+        if not args.out:
+            sys.exit("set needs --out; this never writes over the source")
+        try:
+            changed = doc.set_paragraph_text(args.index, args.text)
+        except hwpx.HwpxError as exc:
+            sys.exit(str(exc))
+        _out({**changed, **doc.save(args.out, overwrite=args.overwrite)})
+        return
+    sys.exit(f"unknown hwp action {args.action!r}")
+
+
 # ------------------------------------------------------------- review ----
 def cmd_review(args):
     """Produce a perspective-based review plan for a change."""
@@ -1328,6 +1407,26 @@ def build_parser() -> argparse.ArgumentParser:
                    help="`run` spends money; without this it only shows the calls")
     p.add_argument("--timeout", type=int, default=300)
     p.set_defaults(fn=cmd_research)
+
+    p = sub.add_parser("hwp", parents=[common],
+                       help="read .hwp / .hwpx; edit .hwpx text")
+    p.add_argument("action", choices=["info", "text", "paragraphs", "tables",
+                                      "find", "replace", "set"])
+    p.add_argument("file")
+    p.add_argument("--text", default=None, help="needle, or the new text")
+    p.add_argument("--with", dest="with_", default=None,
+                   help="replacement for --text")
+    p.add_argument("--index", type=int, default=None,
+                   help="paragraph index for `set`")
+    p.add_argument("--out", default=None,
+                   help="destination; edits never overwrite the source")
+    p.add_argument("--count", type=int, default=None,
+                   help="stop after this many replacements")
+    p.add_argument("--overwrite", action="store_true",
+                   help="permit --out to replace an existing file")
+    p.add_argument("--all", action="store_true",
+                   help="include empty paragraphs in `paragraphs`")
+    p.set_defaults(fn=cmd_hwp)
 
     p = sub.add_parser("design", parents=[common])
     p.add_argument("--file", default=None)

@@ -367,6 +367,42 @@ Validation's real target is **tokens declared without the prose that says when t
 use them**. An agent that knows the values and not the rules applies them
 arbitrarily.
 
+### 한글 documents — `dobby/hwpx.py`, `dobby/hwp5.py`
+
+Korean proposals, papers and government forms arrive as `.hwp` or `.hwpx`, and a
+harness that cannot open them cannot help with the work.
+
+- **Read both, edit HWPX.** `dobby hwp text|info|paragraphs|tables|find` works on
+  either format. `replace` and `set` write HWPX only. HWP 5.0 writing is not
+  implemented and is refused with the reason: its body is compressed records
+  inside a compound file whose sector allocation would have to be rebuilt, and a
+  half-correct writer corrupts documents in ways that only surface when 한글
+  opens them.
+- **The edit is a byte splice.** Only the character data being changed moves;
+  every other byte of the section is identical afterwards. Re-serialising the XML
+  would rewrite all fourteen namespace declarations, and whether 한글 still opens
+  that is not a question to answer with somebody's submission. Measured: 12 of 12
+  real documents are byte-identical after a no-op save.
+- **Character data, not elements.** Of 4151 `<hp:t>` elements in the real corpus,
+  65 contain child elements — 26 of 48 in one paper summary. Treating the element
+  as a string would have destroyed inline markup in exactly the file being worked
+  on.
+- **Refusals say why.** A replacement that crosses two runs is declined, not
+  silently skipped, and reports the runs — because returning zero reads as "the
+  text is not there", which is the opposite of the truth. Writes never overwrite
+  the source; `--out` is required.
+- **No new dependency.** The compound-file reader is stdlib. Where `olefile` is
+  installed the tests use it as an ORACLE: both readers agreed on every stream of
+  all 12 real `.hwp` documents.
+
+```bash
+python -m dobby.cli hwp info    "제안서.hwpx"
+python -m dobby.cli hwp tables  "제안서.hwpx"          # a form is its cells
+python -m dobby.cli hwp replace "제안서.hwpx" --text "기존" --with "새로" \
+                                --out "제안서_수정.hwpx"
+python -m dobby.cli hwp text    "논문.hwp"             # legacy binary, read-only
+```
+
 ### Research and paper verification — `dobby/research.py`
 
 - **Plans, and then the search.** One query returns *enough* — plausible results
@@ -405,6 +441,8 @@ dobby/mlops.py     leakage / reproducibility / rigor / interpretation
 dobby/tokens.py    output condensers, snapshots, blast radius
 dobby/research.py  search planning, claim + citation verification
 dobby/research_runner.py  runs the plan; absence, failure and refusal kept apart
+dobby/hwpx.py      HWPX read + edit; the edit is a byte splice, not a rewrite
+dobby/hwp5.py      HWP 5.0 read; compound file parsed with the stdlib alone
 dobby/design.py    DESIGN.md validation, aesthetics, contrast
 dobby/search.py    solution-tree search, layer composition, case bank
 dobby/search_driver.py  the search, driven by real providers and a real objective
