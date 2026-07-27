@@ -93,7 +93,8 @@ class TestImprovementLoop(unittest.TestCase):
         rec = loop.run_once(self._cand(loop))
         self.assertEqual(rec["decision"], "promoted")
         self.assertIn("holdout_after", rec)
-        data = json.load(open(self.target, encoding="utf-8"))
+        with open(self.target, encoding="utf-8") as handle:
+            data = json.load(handle)
         self.assertIn("billing", data["nodes"][0]["keywords"])
 
     def test_negative_memory_blocks_rediscovery(self):

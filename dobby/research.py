@@ -44,7 +44,8 @@ import dataclasses
 import re
 from collections.abc import Sequence
 
-from .swarm.diversity import jaccard_distance, token_set, tokens
+from .swarm.diversity import (_MIN_CJK_TOKEN_LEN, _MIN_TOKEN_LEN, _has_cjk,
+                              jaccard_distance, token_set, tokens)
 
 # --------------------------------------------------------------------------
 # Search planning
@@ -117,6 +118,48 @@ def _script_of(text: str) -> str:
     return "ko" if hangul > latin else "en"
 
 
+def query_terms(need: str, limit: int = 8) -> list[str]:
+    """The subject terms a query is built from, without deleting the subject.
+
+    This used to be `[t for t in tokens(need) if len(t) > 3][:6]`. The threshold
+    is calibrated for Latin function words — `the`, `and`, `for` are three
+    characters — and Korean content words are two or three, so it deleted them.
+    Measured on real needs from this machine:
+
+        '산업안전보건법 전기차 화재 대응 규정'   13 tokens -> 1 kept
+        '산단 안전 제도개선 공모전 심사 기준'     11 tokens -> 1 kept
+        '4족 보행 로봇 SLAM 매핑 정확도'          7 tokens -> 1 kept
+        'edge AI smoke detection ... benchmark'   6 tokens -> 6 kept
+
+    Every Korean search therefore ran on one surviving word: the query for
+    electric-vehicle fire regulations searched `산업안전보건법` alone. The plan
+    still looked correct — six shapes, sensible rationales — and only the results
+    would have been thin, which is the same shape of defect `plan_queries` already
+    warns about for its shape vocabulary and then reintroduced one line earlier.
+
+    `swarm/diversity.py` had solved this: `_MIN_CJK_TOKEN_LEN = 2`, with a comment
+    stating that the Latin minimum "would discard exactly the content-bearing
+    words". This reuses that predicate instead of restating a second threshold
+    that can drift from it.
+
+    `tokens` also emits character bigrams alongside each whole CJK token, which is
+    right for similarity scoring and wrong in a query string — `산업안전보건법
+    산업 안전 보건 건법` weights fragments as if they were separate terms. Any
+    token contained in a longer kept one is dropped for that reason.
+    """
+    kept: list[str] = []
+    for token in tokens(need):
+        if len(token) < (_MIN_CJK_TOKEN_LEN if _has_cjk(token)
+                         else _MIN_TOKEN_LEN + 1):
+            continue
+        if token not in kept:
+            kept.append(token)
+    # Fragments of a term are not additional terms.
+    whole = [t for t in kept
+             if not any(t != other and t in other for other in kept)]
+    return whole[:limit]
+
+
 def plan_queries(need: str, *, year_hint: str | None = None) -> QueryPlan:
     """Decompose one information need into complementary queries.
 
@@ -131,8 +174,7 @@ def plan_queries(need: str, *, year_hint: str | None = None) -> QueryPlan:
     the shape of the plan looked correct the whole time — every query was present,
     every rationale sensible, and only the retrieved results would have been thin.
     """
-    terms = [t for t in tokens(need) if len(t) > 3][:6]
-    core = " ".join(terms)
+    core = " ".join(query_terms(need))
     script = _script_of(need)
     words = _SHAPE_TERMS[script]
     queries = [

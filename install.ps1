@@ -141,8 +141,9 @@ foreach ($dir in @('.dobby', 'evals')) {
 }
 
 Say ""
-Say "rules and skills (per-file, existing files kept):"
-foreach ($sub in @('.claude\rules', '.claude\skills', 'reports', 'docs')) {
+Say "rules, skills and commands (per-file, existing files kept):"
+foreach ($sub in @('.claude\rules', '.claude\skills', '.claude\commands',
+                   'reports', 'docs')) {
     $p = Join-Path $Target $sub
     if (-not (Test-Path -LiteralPath $p)) {
         if ($DryRun) { Say "  would create: $sub" }
@@ -159,6 +160,13 @@ foreach ($d in Get-ChildItem (Join-Path $src '.claude\skills') -Directory) {
     $dest = Join-Path $Target (Join-Path '.claude\skills' $d.Name)
     if (Test-Path -LiteralPath $dest) { Say "  skills\$($d.Name) exists - kept" }
     else { CopyTree $d.FullName $dest }
+}
+# Slash commands. Without these, `/dobby` does not exist in the host project.
+foreach ($f in Get-ChildItem (Join-Path $src '.claude\commands') -Filter *.md -ErrorAction SilentlyContinue) {
+    $dest = Join-Path $Target (Join-Path '.claude\commands' $f.Name)
+    if (Test-Path -LiteralPath $dest) { Say "  commands\$($f.Name) exists - kept" }
+    elseif ($DryRun) { Say "  would copy commands\$($f.Name)" }
+    else { Copy-Item -LiteralPath $f.FullName -Destination $dest -Force }
 }
 foreach ($f in Get-ChildItem (Join-Path $src 'docs') -Filter *.md) {
     $dest = Join-Path $Target (Join-Path 'docs' $f.Name)

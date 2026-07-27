@@ -134,8 +134,9 @@ done
 
 # Rules and skills: merge per-file so a host's own additions survive.
 say ""
-say "rules and skills (per-file, existing files kept):"
-run mkdir -p "$TARGET/.claude/rules" "$TARGET/.claude/skills" "$TARGET/reports" "$TARGET/docs"
+say "rules, skills and commands (per-file, existing files kept):"
+run mkdir -p "$TARGET/.claude/rules" "$TARGET/.claude/skills" \
+  "$TARGET/.claude/commands" "$TARGET/reports" "$TARGET/docs"
 for f in "$SRC"/.claude/rules/*.md; do
   base="$(basename "$f")"
   if [ -e "$TARGET/.claude/rules/$base" ]; then
@@ -150,6 +151,17 @@ for d in "$SRC"/.claude/skills/*/; do
     say "  skills/$base exists — kept"
   else
     run cp -R "$d" "$TARGET/.claude/skills/$base"
+  fi
+done
+# Slash commands. Without these, `/dobby` does not exist in the host project and
+# the entry protocol is reachable only if the agent happens to read the skill.
+for f in "$SRC"/.claude/commands/*.md; do
+  [ -e "$f" ] || continue
+  base="$(basename "$f")"
+  if [ -e "$TARGET/.claude/commands/$base" ]; then
+    say "  commands/$base exists — kept"
+  else
+    run cp "$f" "$TARGET/.claude/commands/$base"
   fi
 done
 for f in "$SRC"/docs/*.md; do

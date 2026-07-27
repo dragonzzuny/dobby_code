@@ -235,10 +235,37 @@ class TestShellInstallEndToEnd(_KitOnly):
                             f"missing after install: {rel}")
 
     def test_all_factory_skills_land(self):
+        """Enumerated from the source, not hard-coded.
+
+        The hard-coded list named three skills and passed while a fourth was
+        added and never installed — the assertion described the test author's
+        memory rather than the distribution. Reading the source directory means
+        the next skill added is covered without anyone remembering to.
+        """
         self._install()
-        skills = os.listdir(os.path.join(self.host, ".claude", "skills"))
-        for name in ("author-evals", "bootstrap-project", "ledgered-task"):
-            self.assertIn(name, skills)
+        want = sorted(d for d in os.listdir(
+            os.path.join(REPO, ".claude", "skills"))
+            if os.path.isdir(os.path.join(REPO, ".claude", "skills", d)))
+        self.assertIn("dobby", want, "the front-door skill is missing from the kit")
+        landed = os.listdir(os.path.join(self.host, ".claude", "skills"))
+        for name in want:
+            self.assertIn(name, landed, f"skill did not install: {name}")
+            self.assertTrue(
+                os.path.exists(os.path.join(self.host, ".claude", "skills",
+                                            name, "SKILL.md")),
+                f"skill directory landed without its SKILL.md: {name}")
+
+    def test_slash_commands_land(self):
+        """`/dobby` does not exist in a host unless the command file travels."""
+        src = os.path.join(REPO, ".claude", "commands")
+        want = sorted(f for f in os.listdir(src) if f.endswith(".md"))
+        self.assertIn("dobby.md", want)
+        self._install()
+        dest = os.path.join(self.host, ".claude", "commands")
+        self.assertTrue(os.path.isdir(dest), "no .claude/commands in the host")
+        for name in want:
+            self.assertIn(name, os.listdir(dest),
+                          f"slash command did not install: {name}")
 
     def test_no_runtime_state_is_copied(self):
         """The leak: audit logs, trajectories, and sandbox captures travelled."""

@@ -121,9 +121,9 @@
    "name": "author-evals",
    "description": "Build this project's evaluation assets: scenarios with objective verification, retrieval gold labels (dev/val/holdout), evaluator criteria",
    "applicable_when": [
-    "create|build evals",
+    "create evals|build evals|write evals|author evals",
     "measure the harness",
-    "평가 만들|측정"
+    "평가 만들|평가 작성|하네스 측정"
    ],
    "not_applicable_when": [
     "running existing evals (use cli optimize / slice)"

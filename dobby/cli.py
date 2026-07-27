@@ -130,6 +130,18 @@ def _die(message: str) -> "NoReturn":
     raise SystemExit(2)
 
 
+def _read_json(path: str):
+    """Read one JSON file and CLOSE it.
+
+    This was `lambda p: json.load(open(p, encoding="utf-8"))`, which leaks the
+    handle. On Windows an unclosed handle makes `shutil.rmtree` fail with
+    PermissionError, so it is a flaky failure waiting for a slower machine — and
+    it is how the leak surfaced: a ResourceWarning from an unrelated test.
+    """
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
 def _load_stack(repo: str):
     from .core.bootstrap import merged_graph
     from .core.kg import Ontology, OntologyError
@@ -161,8 +173,7 @@ def _load_stack(repo: str):
                      PolicyBook)
     registry = _read("the skill registry",
                      os.path.join("registry", "skills.json"), SkillRegistry)
-    config = _read("the config", "config.json",
-                   lambda p: json.load(open(p, encoding="utf-8")))
+    config = _read("the config", "config.json", _read_json)
     return data, kg, policies, registry, config
 
 
@@ -928,6 +939,32 @@ def cmd_research(args):
             with open(os.path.abspath(args.corpus), encoding="utf-8") as f:
                 corpus = json.load(f)
         _out(verify_citations(refs, corpus))
+    elif args.action == "run":
+        # A plan that is never executed is the failure this action exists to fix.
+        # It spends money — one provider call per query shape — so it is opt-in,
+        # the same stance `fleet --probe` and `endtask` take.
+        from .research_runner import ResearchError, research, web_provider
+        from .research import plan_queries
+        if not args.need:
+            sys.exit("research run needs the information need as an argument")
+        try:
+            chosen = web_provider(args.provider)
+        except ResearchError as exc:
+            sys.exit(f"cannot search: {exc}")
+        plan = plan_queries(args.need, year_hint=args.year)
+        if not args.yes:
+            _out({
+                "action": "run",
+                "refused": "not confirmed",
+                "would_call": chosen,
+                "calls": len(plan.queries),
+                "queries": [q["query"] for q in plan.queries],
+                "why": ("each query is a real provider call and costs money, so "
+                        "this is opt-in. Re-run with --yes to search."),
+            })
+            return
+        _out(research(args.need, year_hint=args.year, provider_id=args.provider,
+                      timeout_s=args.timeout, cwd=_repo(args)))
     else:
         sys.exit(f"unknown research action {args.action!r}")
 
@@ -1280,11 +1317,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(fn=cmd_specialize)
 
     p = sub.add_parser("research", parents=[common])
-    p.add_argument("action", choices=["plan", "claims", "citations"])
+    p.add_argument("action", choices=["plan", "run", "claims", "citations"])
     p.add_argument("need", nargs="?", default="")
     p.add_argument("--file", default=None)
     p.add_argument("--corpus", default=None)
     p.add_argument("--year", default=None)
+    p.add_argument("--provider", default=None,
+                   help="web-capable provider for `run` (default: first usable)")
+    p.add_argument("--yes", action="store_true",
+                   help="`run` spends money; without this it only shows the calls")
+    p.add_argument("--timeout", type=int, default=300)
     p.set_defaults(fn=cmd_research)
 
     p = sub.add_parser("design", parents=[common])

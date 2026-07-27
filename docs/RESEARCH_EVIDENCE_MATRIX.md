@@ -379,6 +379,86 @@ driver are now closed, both with live measurements above.
 
 ---
 
+### The search plan became a search — 2026-07-27
+
+`research plan` decomposed an information need into six query shapes and searched
+nothing. The artifact looked like research and contained no findings.
+
+`dobby research run "<need>" --yes` now dispatches each shape to a provider that
+declares a `web` capability — measured: `claude` and `gemini` do, `codex`, `agy`,
+`qwen`, `ollama`, `kimi` and `dashscope` do not, and any of them would have
+answered from memory in a form indistinguishable from a search.
+
+**One live call, `claude`, 266.7s**, on `산업안전보건법 산업단지 전기차 화재 대응
+규정`: 8 bullet entries returned, **6 real sources with URLs** (소방청 press
+release, 정책브리핑 ×2, 매일노동뉴스, 한국화재보험협회 KFS-1130, 국가법령정보센터),
+and the reply's own note that the law.go.kr page returned a navigation shell rather
+than article text. Verdict `PRIOR ART CLAIMED`; citation report `NOT CHECKED` with
+`awaiting_resolution: 8`.
+
+Three defects that only a real call could surface:
+
+1. **The plan was searching one word.** `plan_queries` filtered terms with
+   `len(t) > 3` — a threshold calibrated for Latin function words, while Korean
+   content words are two or three characters. Measured across four needs: 13→1,
+   11→1, 7→1 tokens kept for Korean, 6→6 for English. Every Korean search ran on
+   the single longest surviving word. `swarm/diversity.py` had already solved this
+   with `_MIN_CJK_TOKEN_LEN = 2` and a comment naming the exact hazard; the new
+   `research.query_terms` reuses that predicate instead of restating it.
+2. **Markdown emphasis counted as sources.** The reply used `**FOUND:**` and
+   bullet lines whose whole body was `*`, inflating `sources_claimed` from 6 to 8.
+3. **`NOT FOUND:` contains `FOUND:`.** A substring search would have read the gap
+   list as the source list — absence reported as evidence.
+
+The reporting rule this module exists for: an empty result is `NOTHING RETRIEVED`
+with the queries that produced it, never "no prior art exists". Provider failure
+and provider refusal are separate verdicts (`INCOMPLETE`) from a search that ran
+and found nothing, because all three produce zero sources and merging them is how
+a false absence is manufactured.
+
+Still not established here: nothing resolves a returned URL, so every source is a
+CLAIM. Resolution needs an independently retrieved corpus, which this machine does
+not have.
+
+### Korean requests were routed as if they were trivial — 2026-07-27
+
+Matched-pair method: the same request in both languages, level and tier compared.
+**7 of 12 pairs diverged**, every one an authoring request. `논문 초안 작성` routed
+level 2 / tier small / "simple response task"; `write the paper draft` routed level
+3 / medium. `작성`, `만들`, `제작`, `수정`, `개선`, `설계`, `번역` were all absent
+from `PRODUCING_KW`, while the destructive stems `삭제` and `배포` were present and
+fired — which is why the list looked bilingual.
+
+The pairing then found the reverse: adding the Korean stems made `보고서 만들어줘`
+produce while `make the report` did not, because `make` and `design` were missing
+from the English half.
+
+Both directions were fixed under a measured guard. `make`, `design`, `update`,
+`설계`, `수정`, `개선` are ordinary nouns as well as verbs, so they are producing
+signals only when nothing in the sentence asks a question — otherwise `check the
+design of this module` and `개선 사항 확인` buy a higher rung and a larger model for
+a read-only task. After the change: 1 of 11 pairs diverges, 0 of 15 read-only
+sentences over-escalate, 0 of 14 producing sentences under-route.
+
+**Left open, measured rather than guessed:** Korean joins nouns with `와`/`과`, so
+`포스터와 제안서 작성` is two deliverables the router cannot see. Three detection
+rules were tested against sentences where the syllable sits inside one word
+(`결과 보여줘`, `효과 분석`, `성과 지표`, `이 학과 자료`): the bare particles gave 9
+false positives out of 10, and `[가-힣][와과]\s+[가-힣]` still gave 7, because
+`결과 보` matches it. Substring matching cannot separate the particle from the
+syllable without morphology, so nothing was added.
+
+`applicable_when` in the skill registry held two kinds of entry and only one was
+text. `>1 requirement` and `>~10 expected tool calls` describe router state and
+were substring-matched against the task, so no sentence could satisfy them and
+`ledgered-task` was unreachable by any input — while `create|build evals` split on
+the pipe into the bare token `create`, surfacing `author-evals` for `create the
+report`. Structural conditions are now evaluated against what the router computed;
+`first run in a new repository` stays dead and is recorded as such, because the
+router has no repository-freshness signal and inventing one would be a guess.
+
+---
+
 ## How to extend this file
 
 A new mechanism gets a row **before** it gets code, with its limit column filled

@@ -67,6 +67,13 @@ python -m dobby.cli review --reviewers 4 --risk security,reliability
 python -m dobby.cli slice --scenario SELF-CHECK
 ```
 
+Inside Claude Code there is one entry point for all of it: type `/dobby` followed
+by what you want, in any language. It compiles the ask, asks the router which
+skill and which agency rung apply, fans the work out across independent providers
+when the rung calls for it, and verifies the output before reporting. The protocol
+is `.claude/skills/dobby/SKILL.md`; the slash command is `.claude/commands/dobby.md`.
+Both install into a host project.
+
 ---
 
 ## What is actually in here
@@ -362,9 +369,15 @@ arbitrarily.
 
 ### Research and paper verification — `dobby/research.py`
 
-- **Search plans, not searches.** One query returns *enough* — plausible results
+- **Plans, and then the search.** One query returns *enough* — plausible results
   that stop the search before the contradicting source appears. Plans always
   include a refutation and a limitation query built from the same terms.
+  `dobby research run "<need>" --yes` executes the plan against a provider that
+  declares a `web` capability; anything else would answer from memory and the
+  output would be indistinguishable from a search. **An empty result is reported
+  as `NOTHING RETRIEVED`, never as "no prior art exists"** — for a contest whose
+  rules disqualify an idea already in force, a false absence is the most expensive
+  output the system can produce. Every source comes back as a CLAIM, unresolved.
 - **Claim strength drives the evidence bar.** "may help" needs an example;
   "improves 40%" needs the measurement; "always" needs the proof.
 - **Citations resolve or they don't.** Fabricated references are stylistically
@@ -391,6 +404,7 @@ dobby/review.py    PBR review, QA/QC split, priced severity
 dobby/mlops.py     leakage / reproducibility / rigor / interpretation
 dobby/tokens.py    output condensers, snapshots, blast radius
 dobby/research.py  search planning, claim + citation verification
+dobby/research_runner.py  runs the plan; absence, failure and refusal kept apart
 dobby/design.py    DESIGN.md validation, aesthetics, contrast
 dobby/search.py    solution-tree search, layer composition, case bank
 dobby/search_driver.py  the search, driven by real providers and a real objective

@@ -356,6 +356,9 @@ class TestNoLeakedFileHandles(unittest.TestCase):
     flaky failure waiting for a slower runner.
     """
 
+    #: `f(open(...))` where `f` takes ownership and closes it.
+    _TAKES_OWNERSHIP = frozenset({"closing", "TextIOWrapper"})
+
     def _leaks(self, path):
         with open(path, encoding="utf-8", errors="replace") as handle:
             text = handle.read()
@@ -365,6 +368,7 @@ class TestNoLeakedFileHandles(unittest.TestCase):
             return []
         found = []
         for node in ast.walk(tree):
+            # Shape 1: a reader METHOD on the handle — `open(...).read()`.
             if (isinstance(node, ast.Call)
                     and isinstance(node.func, ast.Attribute)
                     and node.func.attr in ("read", "write", "readlines",
@@ -373,7 +377,26 @@ class TestNoLeakedFileHandles(unittest.TestCase):
                     and isinstance(node.func.value.func, ast.Name)
                     and node.func.value.func.id == "open"):
                 found.append(f"{_label(path)}:{node.lineno}")
-        return found
+                continue
+            # Shape 2: the handle passed AS AN ARGUMENT to the reader —
+            # `json.load(open(p))`. This shape was invisible until a
+            # ResourceWarning from an unrelated test named dobby/cli.py:165,
+            # which is how the previous regex was caught too: the rule described
+            # one idiom and the code used two.
+            #
+            # `open(...).close()` is deliberately NOT flagged. Four sites use it
+            # to create an empty file, and the handle is closed on the same line.
+            if isinstance(node, ast.Call):
+                callee = node.func
+                name = getattr(callee, "attr", None) or getattr(callee, "id", "")
+                if name in self._TAKES_OWNERSHIP:
+                    continue
+                for arg in list(node.args) + [k.value for k in node.keywords]:
+                    if (isinstance(arg, ast.Call)
+                            and isinstance(arg.func, ast.Name)
+                            and arg.func.id == "open"):
+                        found.append(f"{_label(path)}:{arg.lineno}")
+        return sorted(set(found))
 
     def test_no_source_file_leaks_a_handle(self):
         leaked = [site for path in _sources() for site in self._leaks(path)]
@@ -392,6 +415,26 @@ class TestNoLeakedFileHandles(unittest.TestCase):
                              'open(os.path.join("a", "b"), "w").write("x")\n')
             found = self._leaks(planted)
         self.assertTrue(found, "a nested-call leak went undetected")
+
+    def test_the_detector_sees_the_handle_passed_as_an_argument(self):
+        """`json.load(open(p))` — the shape that reached dobby/cli.py:165."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            planted = os.path.join(directory, "planted.py")
+            with open(planted, "w", encoding="utf-8") as handle:
+                handle.write("import json\n"
+                             'x = json.load(open("a", encoding="utf-8"))\n')
+            self.assertTrue(self._leaks(planted),
+                            "a handle passed to a reader went undetected")
+
+    def test_open_then_close_on_one_line_is_not_flagged(self):
+        """Four sites create an empty file this way; none of them leaks."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            clean = os.path.join(directory, "clean.py")
+            with open(clean, "w", encoding="utf-8") as handle:
+                handle.write('open("a", "w").close()\n')
+            self.assertEqual(self._leaks(clean), [])
 
     def test_a_with_statement_is_not_flagged(self):
         import tempfile
