@@ -191,9 +191,16 @@ fi
 #
 # The POSIX form is `dobby.sh`, NOT `dobby`. The installer copies the engine
 # package to `<host>/dobby/`, so a file named `dobby` beside it is the same name in
-# the same directory - the first attempt failed with "Is a directory" on the first
-# run. On Windows there is no collision: `dobby.cmd` differs from the directory,
-# and cmd.exe resolves a bare `dobby` through PATHEXT.
+# the same directory - the first attempt failed with "Is a directory" on its first
+# run. On Windows there is no collision, because `dobby.cmd` differs from the
+# directory name.
+#
+# Use `.\dobby`, with the leading `.\`. A bare `dobby` was claimed to work in
+# cmd.exe via PATHEXT and then measured NOT to, in this environment: PowerShell
+# never searches the current directory, and cmd.exe skipped it too - a control
+# launcher with no same-named directory beside it also failed, so the directory is
+# not what shadows it. `NoDefaultCurrentDirectoryInExePath=1` is set here. Whether a
+# bare name resolves therefore depends on the machine, and `.\dobby` does not.
 #
 # The .cmd carries one limit, measured rather than assumed: cmd.exe truncates an
 # argument at its first NEWLINE, so `dobby panel "line one<newline>line two"`
@@ -209,8 +216,8 @@ if [ "$DRY" != "--dry" ]; then
     "$PY" > "$TARGET/dobby.sh"
   chmod +x "$TARGET/dobby.sh" 2>/dev/null || true
 fi
-say "  dobby.cmd  (cmd.exe / PowerShell: dobby doctor  |  .\\dobby doctor)"
-say "  dobby.sh   (sh / bash / zsh: ./dobby.sh doctor)"
+say "  dobby.cmd  ->  .\\dobby doctor      (PowerShell and cmd.exe)"
+say "  dobby.sh   ->  ./dobby.sh doctor   (sh / bash / zsh)"
 say "             named .sh because <host>/dobby/ is the engine package"
 say "  note: a .cmd truncates an argument at its first newline; for a"
 say "        multi-line prompt use python -m dobby.cli"
