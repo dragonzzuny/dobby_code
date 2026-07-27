@@ -171,14 +171,30 @@ Recorded so they are not mistaken for oversights.
 - **AST-level call graph**: `blast_radius` consumes an edge list; there is no
   Tree-sitter parser, so import/call edges must be supplied.
 - **Embedding retrieval**: deliberate (ADR-2), and it is the main ceiling on §9.4.
-- **A model-judge adapter**: every `model_judgment` criterion is `NOT RUN`.
 - **Inference-time architecture *search***: `suggest_pipeline` proposes and
   `validate_pipeline` checks, but nothing searches the configuration space the
   way Archon does. Searching requires an objective and a budget to spend on it.
-- **A driver that runs `search.search` against real providers.** The policy,
-  bounds, and honesty checks are implemented and tested; wiring the `expand`
-  callable to `providers/fanout.py` is not done, so the tree search has never
-  executed a model call.
+- **`qwen`, `ollama`, `kimi`, `dashscope`**: catalogued from documentation and
+  never executed here. Their `verified_on` is empty and must stay empty until a
+  run fills it.
+- **HWP 5.0 writing** (`dobby/hwp5.py` reads only): the body is compressed
+  records inside a compound file whose sector allocation would have to be
+  rebuilt. Refused rather than approximated, because a half-correct writer
+  corrupts documents in ways that surface only when 한글 opens them.
+- **HWPX paragraph insert/delete** (`dobby/hwpx.py` replaces text only):
+  both need new markup, which reintroduces the namespace-rewrite problem the
+  byte-splice design exists to avoid.
+- **Korean `와`/`과` as a multi-requirement signal**: three detection rules were
+  measured and all produced 7–9 false positives out of 10 on sentences where the
+  syllable sits inside one word (`결과`, `효과`, `성과`, `학과`). Nothing was
+  added; see §"Korean requests were routed as if they were trivial".
+
+**This list was stale and is corrected here.** It carried "a model-judge adapter"
+and "a driver that runs `search.search` against real providers" as unimplemented
+after both had been built and run — `dobby/judge.py` (175 lines, live panel round
+recorded below) and `dobby/search_driver.py` (278 lines, driven against real
+providers). A known-gaps section that lists closed items is worse than no section:
+its whole purpose is to be the thing a reader trusts about what is missing.
 
 Closed since 0.1.0: team topologies (`swarm/topologies.py`), API-kind provider
 transport (`providers/api.py`), and sandboxed execution (`dobby/sandbox.py`,
