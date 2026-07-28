@@ -98,6 +98,52 @@ class SkillRegistry:
                       ensure_ascii=False, indent=1)
         os.replace(tmp, self.path)
 
+    # -- distribution --------------------------------------------------------
+    def merge_factory(self, kit_path: str, repo_root: str = ".") -> dict:
+        """Add factory skills this registry has never heard of. Change nothing else.
+
+        `.dobby/` is copied into a host ONLY IF ABSENT, which is right for a
+        knowledge graph somebody curated and wrong for the skill registry — the
+        registry is both. Measured in two installed hosts after shipping four new
+        skills: all four SKILL.md files landed under `.claude/skills/`, and all
+        four were invisible to the router, because progressive disclosure reads
+        `registry.index()` and not `os.listdir`. A skill the router cannot see is
+        a skill nobody follows, and nothing in the install output said so.
+
+        The merge is ADD-ONLY, by name. A host may have revised a factory skill,
+        promoted it, or recorded eval passes against it; overwriting that would
+        destroy exactly the curation the copy-if-absent rule exists to protect.
+
+        Origins are re-pinned against the HOST's own file rather than copied from
+        the kit, because `_content_digest` normalises line endings but the host's
+        checkout may still differ — a pin carried across machines is the defect
+        that turned this project's CI red for fourteen runs.
+        """
+        if not os.path.exists(kit_path):
+            raise SkillError(f"no factory registry at {kit_path}")
+        with open(kit_path, encoding="utf-8") as handle:
+            factory = {s["name"]: s for s in json.load(handle)["skills"]}
+
+        added, kept, unpinnable = [], [], []
+        for name, record in factory.items():
+            if name in self.skills:
+                kept.append(name)
+                continue
+            body = os.path.join(repo_root, record.get("path") or "")
+            if not os.path.exists(body):
+                # The record would name a file the host does not have, and
+                # `verify_origin` would report it as tampering forever.
+                unpinnable.append(name)
+                continue
+            self.skills[name] = dict(record)
+            self.pin_origin(name, repo_root=repo_root)
+            added.append(name)
+
+        return {"added": sorted(added), "kept": sorted(kept),
+                "skipped_missing_body": sorted(unpinnable),
+                "note": ("existing entries were not touched; a host may have "
+                         "revised or promoted a factory skill")}
+
     # -- lifecycle -----------------------------------------------------------
     def register_candidate(self, meta: dict, proposed_by: str) -> dict:
         for k in REQUIRED_METADATA:

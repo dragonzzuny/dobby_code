@@ -337,6 +337,51 @@ class TestShellInstallEndToEnd(_KitOnly):
         self.assertIn(stamps[0], second.stdout,
                       "a backup nobody can name is not a restore path")
 
+    def test_new_factory_skills_become_routable_not_just_present(self):
+        """A SKILL.md that the registry does not list is invisible to the router.
+
+        `.dobby/` is preserved on upgrade — right for a curated knowledge graph,
+        wrong for a factory skill record, and the registry is both. Measured in
+        two real hosts after shipping four new skills: every SKILL.md landed and
+        every one was orphaned, because progressive disclosure reads
+        `registry.index()` and not `os.listdir`. Nothing in the install output
+        mentioned it.
+        """
+        self._install()
+        host_registry = os.path.join(self.host, ".dobby", "registry",
+                                     "skills.json")
+        with open(host_registry, encoding="utf-8") as handle:
+            registered = {s["name"] for s in json.load(handle)["skills"]}
+        on_disk = {d for d in os.listdir(
+            os.path.join(self.host, ".claude", "skills"))
+            if os.path.isdir(os.path.join(self.host, ".claude", "skills", d))}
+        orphaned = sorted(on_disk - registered)
+        self.assertEqual(
+            orphaned, [],
+            f"skill files installed but the router cannot see them: {orphaned}")
+
+    def test_the_sync_is_add_only_and_keeps_a_host_revision(self):
+        """A host may have revised a factory skill. That must survive."""
+        self._install()
+        host_registry = os.path.join(self.host, ".dobby", "registry",
+                                     "skills.json")
+        with open(host_registry, encoding="utf-8") as handle:
+            data = json.load(handle)
+        target = next(s for s in data["skills"] if s["name"] == "ledgered-task")
+        target["description"] = "THE HOST EDITED THIS"
+        target["state"] = "monitored"
+        with open(host_registry, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=1)
+
+        self._install()
+
+        with open(host_registry, encoding="utf-8") as handle:
+            after = {s["name"]: s for s in json.load(handle)["skills"]}
+        self.assertEqual(after["ledgered-task"]["description"],
+                         "THE HOST EDITED THIS",
+                         "the sync overwrote a host's curated record")
+        self.assertEqual(after["ledgered-task"]["state"], "monitored")
+
     def test_backups_are_declared_runtime_state_so_they_never_travel(self):
         """A backup holds a previous engine, possibly one the host modified."""
         for path, label in ((INSTALL_SH, "install.sh"),

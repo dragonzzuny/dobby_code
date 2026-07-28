@@ -201,6 +201,27 @@ foreach ($f in Get-ChildItem (Join-Path $src 'docs') -Filter *.md) {
     else { Copy-Item -LiteralPath $f.FullName -Destination $dest -Force }
 }
 
+# A SKILL.md is only half a skill; the other half is its registry record, and the
+# registry lives in .dobby which is PRESERVED on upgrade. See install.sh for the
+# measurement. Add-only, so a host that revised a factory skill keeps its version.
+if (-not $DryRun) {
+    Push-Location $Target
+    try {
+        $syncOut = & $py -m dobby.cli skills `
+            --sync-from (Join-Path $src '.dobby\registry\skills.json') 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            if (($syncOut | Out-String) -match '"added": \[\]') {
+                Say "  skills registry already knows every factory skill"
+            } else {
+                Say "  skills registry updated with new factory skills"
+            }
+        } else {
+            Say "  WARN skills registry sync did not run; new skills will not be"
+            Say "       routable - run: $py -m dobby.cli skills --sync-from ..."
+        }
+    } finally { Pop-Location }
+}
+
 Say ""
 Say "entry points:"
 $pointer = "Agent harness: read AGENTS.md in this repository before any task (dobby)."

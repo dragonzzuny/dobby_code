@@ -200,6 +200,26 @@ for f in "$SRC"/docs/*.md; do
   run cp "$f" "$TARGET/docs/$base"
 done
 
+# The SKILL.md files above are only half of a skill. The other half is its
+# registry record, and the registry lives in `.dobby/`, which is PRESERVED on
+# upgrade — correct for a curated knowledge graph, wrong for a factory skill.
+#
+# Measured in two installed hosts after shipping four new skills: every file
+# landed and every one was invisible to the router, which reads the registry and
+# not the directory. The merge is add-only, so a host that revised or promoted a
+# factory skill keeps its version.
+if [ "$DRY" != "--dry" ]; then
+  SYNC_OUT="$(cd "$TARGET" && "$PY" -m dobby.cli skills \
+    --sync-from "$SRC/.dobby/registry/skills.json" 2>/dev/null || true)"
+  case "$SYNC_OUT" in
+    *'"added": []'*) say "  skills registry already knows every factory skill" ;;
+    *'"added"'*)     say "  skills registry updated with new factory skills" ;;
+    *)               say "  WARN skills registry sync did not run; new skills"
+                     say "       will not be routable — run:"
+                     say "       $PY -m dobby.cli skills --sync-from $SRC/.dobby/registry/skills.json" ;;
+  esac
+fi
+
 # ---- entry points: append a pointer, never overwrite ---------------------
 say ""
 say "entry points:"

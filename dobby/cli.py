@@ -978,6 +978,37 @@ def cmd_design(args):
     _out(validate_design_md(path))
 
 
+# -------------------------------------------------------------- skills ----
+def cmd_skills(args):
+    """List the registry, or merge factory skills the host has never seen.
+
+    The installer calls `--sync-from` on every upgrade. Without it the SKILL.md
+    files land and the router stays blind to them, because `.dobby/` is preserved
+    on upgrade and the registry lives inside it.
+    """
+    from .core.skills import SkillError, SkillRegistry
+    repo = _repo(args)
+    host = os.path.join(repo, ".dobby", "registry", "skills.json")
+    registry = SkillRegistry(host)
+
+    if args.sync_from:
+        try:
+            result = registry.merge_factory(os.path.abspath(args.sync_from),
+                                            repo_root=repo)
+        except SkillError as exc:
+            sys.exit(str(exc))
+        if result["added"]:
+            registry.save()
+        _out(result)
+        return
+
+    _out([{"name": entry["name"],
+           "state": registry.skills[entry["name"]].get("state"),
+           "path": registry.skills[entry["name"]].get("path"),
+           "origin_ok": registry.verify_origin(entry["name"], repo_root=repo)[0]}
+          for entry in registry.index()])
+
+
 # ---------------------------------------------------------------- hwp ----
 def cmd_hwp(args):
     """Read and edit 한글 documents, dispatching on the file's magic bytes.
@@ -1407,6 +1438,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="`run` spends money; without this it only shows the calls")
     p.add_argument("--timeout", type=int, default=300)
     p.set_defaults(fn=cmd_research)
+
+    p = sub.add_parser("skills", parents=[common],
+                       help="list registered skills; merge new factory ones")
+    p.add_argument("--sync-from", default=None,
+                   help="a kit registry to merge missing skills FROM (add-only)")
+    p.set_defaults(fn=cmd_skills)
 
     p = sub.add_parser("hwp", parents=[common],
                        help="read .hwp / .hwpx; edit .hwpx text")
