@@ -1,5 +1,6 @@
 # Runtime state: regenerated, machine-specific, may embed absolute paths
 .dobby/state/
+.dobby/backups/
 .dobby/knowledge/kg.bootstrap.json
 .dobby/inventory.json
 .dobby/memory/

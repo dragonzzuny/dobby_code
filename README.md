@@ -67,6 +67,18 @@ python -m dobby.cli review --reviewers 4 --risk security,reliability
 python -m dobby.cli slice --scenario SELF-CHECK
 ```
 
+The contract installs a door for each harness — `CLAUDE.md`, `GEMINI.md`,
+`QWEN.md`, and `AGENTS.md` which Codex and opencode read natively. Each harness
+reads only the file named for it, so a rule that exists in a form the running
+agent cannot find is worse than an absent one.
+
+Seven skills ship with it: `dobby` (the entry protocol), `ledgered-task`,
+`bootstrap-project`, `author-evals`, and three for the work this was built
+against — `contest-submission` (공모전: rubric, disqualification grounds, prior
+art *before* drafting), `prior-art-search` (특허·규제, official registry first,
+searched-and-empty kept apart from unsearched), and `paper-draft` (논문: claims
+priced, citations resolved, rigor gates, generated-prose signature removed).
+
 Inside Claude Code there is one entry point for all of it: type `/dobby` followed
 by what you want, in any language. It compiles the ask, asks the router which
 skill and which agency rung apply, fans the work out across independent providers

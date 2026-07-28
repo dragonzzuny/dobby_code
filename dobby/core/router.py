@@ -65,6 +65,17 @@ PRODUCING_KW = (
     "합치", "병합", "변환", "생성", "정리", "삭제", "제거", "배포", "설치",
     "구현", "추가", "이관", "롤백", "되돌",
     "작성", "만들", "제작", "번역", "고쳐", "고치",
+    # Loanword verbs. Korean engineering speech transliterates rather than
+    # translates, so the native-stem list above misses the vocabulary a developer
+    # actually types. Measured on eight matched pairs before these were added:
+    # 6 diverged, and NONE of 리팩터링/리팩토링/마이그레이션/머지/빌드/커밋/디버깅/
+    # 업데이트 was present in any list.
+    #
+    # Only the ones whose ENGLISH counterpart already routes as producing are
+    # added. `커밋` and `디버깅` are left out on purpose: `commit the changes` and
+    # `debug this module` both route level 2 here, so adding the Korean forms
+    # would break the parity they currently have rather than fix a gap.
+    "리팩터링", "리팩토링", "마이그레이션", "머지", "빌드",
 )
 
 #: Producing verbs that are ALSO ordinary nouns, or appear in read-only phrasing.
@@ -91,6 +102,9 @@ PRODUCING_KW = (
 AMBIGUOUS_PRODUCING_KW = (
     "make", "design", "update",
     "설계", "수정", "보완", "개선", "기획", "요약",
+    # The loanword for `update`, which is ambiguous in exactly the same way:
+    # `설정 업데이트해줘` produces, `업데이트 실패 원인 확인` inspects.
+    "업데이트",
 )
 
 INVESTIGATE_KW = ("why", "how many", "count", "check", "verify", "inspect",

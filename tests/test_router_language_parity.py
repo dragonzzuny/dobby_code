@@ -78,6 +78,17 @@ class MatchedPairsRouteAlike(_Routed):
         ("규정 개선안 설계", "design the regulation improvement"),
         ("테스트 코드 추가", "add tests"),
         ("이 파일 삭제", "delete this file"),
+        # Loanword verbs: Korean engineering speech transliterates rather than
+        # translates, and the native-stem list missed the vocabulary a developer
+        # actually types. 6 of 8 such pairs diverged before these were added.
+        ("이 함수 리팩터링해줘", "refactor this function"),
+        ("DB 마이그레이션 해줘", "migrate the database"),
+        ("브랜치 머지해줘", "merge the branch"),
+        ("프로젝트 빌드해줘", "build the project"),
+        ("설정 업데이트해줘", "update the config"),
+        # Deliberately absent, and NOT a gap: `commit the changes` and `debug
+        # this module` both route level 2 in English, so adding 커밋/디버깅 to
+        # the Korean list would create a divergence rather than close one.
         ("설정값 몇 개인지 세어봐", "count how many settings there are"),
     )
 
@@ -98,7 +109,9 @@ class KoreanAuthoringVerbsProduce(_Routed):
     def test_each_authoring_verb_reaches_a_producing_rung(self):
         for text in ("논문 초안 작성", "제안서 작성해줘", "포스터 만들어줘",
                      "발표자료 제작", "코드 수정해줘", "규정 개선안 설계",
-                     "이 문서 번역해줘", "핸들러 고쳐줘"):
+                     "이 문서 번역해줘", "핸들러 고쳐줘",
+                     "이 함수 리팩터링해줘", "DB 마이그레이션 해줘",
+                     "브랜치 머지해줘", "프로젝트 빌드해줘"):
             with self.subTest(text=text):
                 plan = self.plan(text)
                 self.assertGreaterEqual(
@@ -139,6 +152,7 @@ class AmbiguousVerbsDoNotOverEscalate(_Routed):
         "compare the two designs",
         "개선 사항 확인해줘",
         "설계 검토해줘",
+        "업데이트 실패 원인 확인",
         "수정된 파일 목록 확인",
         "요약본 있는지 찾아봐",
         "효과 분석 설명해줘",

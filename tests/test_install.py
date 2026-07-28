@@ -267,6 +267,86 @@ class TestShellInstallEndToEnd(_KitOnly):
             self.assertIn(name, os.listdir(dest),
                           f"slash command did not install: {name}")
 
+    def test_every_harness_gets_a_door_it_can_actually_open(self):
+        """One contract, four entry files.
+
+        Each harness reads only the file named for it: Claude Code takes
+        CLAUDE.md, Gemini CLI takes GEMINI.md, Qwen Code takes QWEN.md. Codex and
+        opencode read AGENTS.md natively, which is why no `.codex/` adapter is
+        written — that would duplicate the contract rather than extend its reach.
+
+        Measured before this existed: `claude`, `codex`, `gemini` and `agy`
+        binaries all present and usable on the authoring machine, while an
+        installed host contained AGENTS.md and CLAUDE.md and nothing else. Gemini
+        was a usable provider — with `web` capability, so `research run` selects
+        it — working in a project whose operating contract it had no way to find.
+        A rule that exists and is invisible is worse than an absent one.
+        """
+        self._install()
+        for entry in ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "QWEN.md"):
+            path = os.path.join(self.host, entry)
+            with self.subTest(entry=entry):
+                self.assertTrue(os.path.exists(path), f"{entry} did not install")
+                with open(path, encoding="utf-8") as handle:
+                    body = handle.read()
+                self.assertIn("AGENTS.md", body,
+                              f"{entry} does not point at the contract")
+
+    def test_an_adapter_the_host_already_wrote_is_not_overwritten(self):
+        """A host's own GEMINI.md outranks ours, exactly as AGENTS.md does."""
+        mine = "# my own gemini notes\n"
+        with open(os.path.join(self.host, "GEMINI.md"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(mine)
+        self._install()
+        with open(os.path.join(self.host, "GEMINI.md"), encoding="utf-8") as handle:
+            body = handle.read()
+        self.assertTrue(body.startswith(mine), "the host's own file was replaced")
+        self.assertIn("dobby", body, "no pointer was appended")
+
+    def test_an_upgrade_backs_the_engine_up_and_names_the_restore_path(self):
+        """Before this, an upgrade deleted the engine with no way back.
+
+        `rm -rf $TARGET/dobby` then copy: if the incoming engine was broken or
+        the copy died halfway, the working one was already gone. "Re-clone the
+        kit" is not a restore path when the host may have been running a version
+        the kit no longer has.
+        """
+        first = self._install()
+        self.assertEqual(first.returncode, 0)
+        backups = os.path.join(self.host, ".dobby", "backups")
+        self.assertFalse(os.path.isdir(backups),
+                         "a first install has nothing to back up")
+
+        # Plant a marker so the backup can be shown to hold the PREVIOUS engine.
+        marker = os.path.join(self.host, "dobby", "installed_marker.py")
+        with open(marker, "w", encoding="utf-8") as handle:
+            handle.write("# from the first install\n")
+
+        second = self._install()
+        self.assertEqual(second.returncode, 0)
+        self.assertTrue(os.path.isdir(backups), "the upgrade made no backup")
+        stamps = sorted(os.listdir(backups))
+        self.assertEqual(len(stamps), 1, f"expected one backup, got {stamps}")
+        saved = os.path.join(backups, stamps[0], "dobby", "installed_marker.py")
+        self.assertTrue(os.path.exists(saved),
+                        "the backup does not contain the engine it replaced")
+        self.assertFalse(os.path.exists(marker),
+                         "the upgrade should have replaced the engine")
+        self.assertIn("backed up", second.stdout)
+        self.assertIn(stamps[0], second.stdout,
+                      "a backup nobody can name is not a restore path")
+
+    def test_backups_are_declared_runtime_state_so_they_never_travel(self):
+        """A backup holds a previous engine, possibly one the host modified."""
+        for path, label in ((INSTALL_SH, "install.sh"),
+                            (INSTALL_PS1, "install.ps1")):
+            with self.subTest(installer=label):
+                with open(path, encoding="utf-8", errors="replace") as handle:
+                    text = handle.read()
+                self.assertIn("backups", text,
+                              f"{label} does not exclude .dobby/backups")
+
     def test_no_runtime_state_is_copied(self):
         """The leak: audit logs, trajectories, and sandbox captures travelled."""
         # Plant state in the source that must NOT reach the host.

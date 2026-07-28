@@ -77,7 +77,35 @@ say "dobby -> $TARGET"
 say ""
 
 # ---- engine: copy and overwrite -------------------------------------------
+# An upgrade deletes the installed engine before copying the new one. Until this
+# existed there was no way back: if the incoming engine was broken, or the copy
+# died halfway, the working one was already gone. "Re-clone the kit" is not a
+# restore path when the host may have been running a version the kit no longer
+# has.
+#
+# The backup is a plain directory copy under a timestamp, so recovery is `cp -R`
+# and needs no tool. It is skipped on a first install, where there is nothing to
+# lose, and the path is PRINTED — a backup nobody can name is not a restore path.
+STAMP="$(date +%Y-%m-%d-%H%M%S 2>/dev/null || echo manual)"
+BACKUP="$TARGET/.dobby/backups/$STAMP"
 say "engine (overwritten on upgrade):"
+NEEDS_BACKUP=""
+for dir in dobby mcp tests; do
+  [ -e "$TARGET/$dir" ] && NEEDS_BACKUP=1
+done
+if [ -n "$NEEDS_BACKUP" ]; then
+  if [ "$DRY" = "--dry" ]; then
+    say "  would back up the current engine to .dobby/backups/$STAMP/"
+  else
+    mkdir -p "$BACKUP"
+    for dir in dobby mcp tests; do
+      [ -e "$TARGET/$dir" ] && cp -R "$TARGET/$dir" "$BACKUP/$dir"
+    done
+    say "  previous engine backed up:"
+    say "    $BACKUP"
+    say "    restore with: rm -rf $TARGET/dobby && cp -R $BACKUP/dobby $TARGET/dobby"
+  fi
+fi
 for dir in dobby mcp tests; do
   say "  $dir/"
   run rm -rf "$TARGET/$dir"
@@ -95,7 +123,9 @@ done
 # machine's audit log, session trajectories, and — worst — `state/sandbox/*`,
 # which holds the captured stdout of arbitrary commands. Sandbox captures are
 # precisely the content that must not move between machines.
-RUNTIME_STATE="state knowledge/kg.bootstrap.json inventory.json memory \
+# `backups` holds a copy of a PREVIOUS engine, possibly one the host modified.
+# It is the most machine-specific thing under `.dobby/` and must never travel.
+RUNTIME_STATE="state backups knowledge/kg.bootstrap.json inventory.json memory \
 compression_guideline.json specialization.json"
 
 copy_data_excluding_state() {
@@ -174,7 +204,18 @@ done
 say ""
 say "entry points:"
 POINTER="Agent harness: read AGENTS.md in this repository before any task (dobby)."
-for f in AGENTS.md CLAUDE.md; do
+# One contract, four doors. Each harness reads only the file named for it:
+# Claude Code takes CLAUDE.md, Gemini CLI takes GEMINI.md, Qwen Code takes
+# QWEN.md, and Codex and opencode read AGENTS.md natively — which is why there is
+# no .codex/ adapter here. Writing one would duplicate the contract rather than
+# extend its reach.
+#
+# Measured on the authoring machine before this existed: `claude`, `codex`,
+# `gemini` and `agy` binaries all present and usable, and the installed host
+# contained AGENTS.md and CLAUDE.md and nothing else. Gemini was a usable
+# provider with `web` capability, running in a project whose operating contract
+# it had no way to find.
+for f in AGENTS.md CLAUDE.md GEMINI.md QWEN.md; do
   if [ ! -e "$TARGET/$f" ]; then
     say "  $f created"
     run cp "$SRC/$f" "$TARGET/$f"

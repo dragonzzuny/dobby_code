@@ -89,7 +89,30 @@ function CopyTree($from, $to) {
     Copy-Item -LiteralPath $from -Destination $to -Recurse -Force
 }
 
+# An upgrade deletes the installed engine before copying the new one, and until
+# this existed there was no way back - see install.sh for the reasoning. Skipped
+# on a first install; the path is printed, because a backup nobody can name is
+# not a restore path.
+$stamp = Get-Date -Format 'yyyy-MM-dd-HHmmss'
+$backup = Join-Path $Target ".dobby\backups\$stamp"
 Say "engine (overwritten on upgrade):"
+$existing = @('dobby', 'mcp', 'tests') |
+    Where-Object { Test-Path -LiteralPath (Join-Path $Target $_) }
+if ($existing.Count -gt 0) {
+    if ($DryRun) {
+        Say "  would back up the current engine to .dobby\backups\$stamp\"
+    } else {
+        New-Item -ItemType Directory -Path $backup -Force | Out-Null
+        foreach ($dir in $existing) {
+            Copy-Item -LiteralPath (Join-Path $Target $dir) `
+                      -Destination (Join-Path $backup $dir) -Recurse -Force
+        }
+        Say "  previous engine backed up:"
+        Say "    $backup"
+        Say "    restore with: Remove-Item -Recurse -Force $Target\dobby; " +
+            "Copy-Item -Recurse $backup\dobby $Target\dobby"
+    }
+}
 foreach ($dir in @('dobby', 'mcp', 'tests')) {
     Say "  $dir\"
     CopyTree (Join-Path $src $dir) (Join-Path $Target $dir)
@@ -102,8 +125,11 @@ foreach ($dir in @('dobby', 'mcp', 'tests')) {
 # Before this exclusion, a real install carried the source machine's audit log,
 # session trajectories, and state\sandbox\* - captured stdout of arbitrary
 # commands, which is exactly the content that must not move between machines.
-$RuntimeState = @('state', 'knowledge/kg.bootstrap.json', 'inventory.json',
-                  'memory', 'compression_guideline.json', 'specialization.json')
+# `backups` holds a copy of a PREVIOUS engine, possibly one the host modified.
+# It is the most machine-specific thing under .dobby and must never travel.
+$RuntimeState = @('state', 'backups', 'knowledge/kg.bootstrap.json',
+                  'inventory.json', 'memory', 'compression_guideline.json',
+                  'specialization.json')
 
 function CopyDataExcludingState($from, $to) {
     if ($DryRun) { Say "  would copy $from -> $to (runtime state excluded)"; return }
@@ -178,7 +204,9 @@ foreach ($f in Get-ChildItem (Join-Path $src 'docs') -Filter *.md) {
 Say ""
 Say "entry points:"
 $pointer = "Agent harness: read AGENTS.md in this repository before any task (dobby)."
-foreach ($f in @('AGENTS.md', 'CLAUDE.md')) {
+# One contract, four doors — see install.sh for the measurement. Codex and
+# opencode read AGENTS.md natively, so there is deliberately no .codex adapter.
+foreach ($f in @('AGENTS.md', 'CLAUDE.md', 'GEMINI.md', 'QWEN.md')) {
     $dest = Join-Path $Target $f
     if (-not (Test-Path -LiteralPath $dest)) {
         Say "  $f created"

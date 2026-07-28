@@ -171,6 +171,237 @@
     "path": ".claude/skills/author-evals/SKILL.md",
     "date": "2026-07-25"
    }
+  },
+  {
+   "name": "dobby",
+   "description": "Front door for a free-text request in any language: compile the ask, let the router pick the skill and the agency level, fan out to independent providers, verify",
+   "applicable_when": [
+    "/dobby",
+    "무엇부터|어디서부터|어떻게 시작",
+    "help me with|어떻게 해야"
+   ],
+   "not_applicable_when": [
+    "a single-command question, or an ask that already names its own acceptance check"
+   ],
+   "inputs": [
+    "the user's request, verbatim"
+   ],
+   "outputs": [
+    "a compiled brief",
+    "a routing decision",
+    "a verified result"
+   ],
+   "validation_commands": [
+    "{python} -m dobby.cli prompt \"<request>\"",
+    "{python} -m dobby.cli route \"<objective>\""
+   ],
+   "path": ".claude/skills/dobby/SKILL.md",
+   "version": "1.0",
+   "state": "active",
+   "created": "2026-07-28",
+   "proposed_by": "kit-author",
+   "approved_by": "kit-release",
+   "eval_passes": [],
+   "requires": {
+    "any_bins": [
+     "python3",
+     "python",
+     "py"
+    ]
+   },
+   "provenance": {
+    "source": "kit factory default",
+    "method": "curated",
+    "date": "2026-07-28",
+    "confidence": "strongly_supported"
+   },
+   "history": [
+    {
+     "to": "active",
+     "by": "kit-release",
+     "date": "2026-07-28"
+    }
+   ],
+   "origin": {
+    "pinned_sha256": "1852de220c915f8c3df7fcad322f31a55531955d58882cffbf2381ade6b95c4a",
+    "path": ".claude/skills/dobby/SKILL.md",
+    "date": "2026-07-28"
+   }
+  },
+  {
+   "name": "contest-submission",
+   "description": "Prepare a 공모전 / grant submission: read the 공고문, extract 심사기준 and 제외사유, check prior art BEFORE drafting, map sections to criteria, verify the form",
+   "applicable_when": [
+    "공모전|공고문|제안서|심사기준|출품",
+    "contest|call for proposals|grant application|rfp",
+    "제출 양식|접수 마감"
+   ],
+   "not_applicable_when": [
+    "internal documents with no rubric and no eligibility screen"
+   ],
+   "inputs": [
+    "the 공고문",
+    "the submission form",
+    "the idea"
+   ],
+   "outputs": [
+    "a criterion→section map",
+    "a prior-art verdict",
+    "a filled form written to a NEW file"
+   ],
+   "validation_commands": [
+    "{python} -m dobby.cli hwp tables \"<공고문>\"",
+    "{python} -m dobby.cli research run \"<idea>\" --yes",
+    "{python} -m dobby.cli hwp tables \"<제안서_v2>\""
+   ],
+   "path": ".claude/skills/contest-submission/SKILL.md",
+   "version": "1.0",
+   "state": "active",
+   "created": "2026-07-28",
+   "proposed_by": "kit-author",
+   "approved_by": "kit-release",
+   "eval_passes": [],
+   "requires": {
+    "any_bins": [
+     "python3",
+     "python",
+     "py"
+    ]
+   },
+   "provenance": {
+    "source": "kit factory default",
+    "method": "curated",
+    "date": "2026-07-28",
+    "confidence": "strongly_supported"
+   },
+   "history": [
+    {
+     "to": "active",
+     "by": "kit-release",
+     "date": "2026-07-28"
+    }
+   ],
+   "origin": {
+    "pinned_sha256": "4341079d29bfe87525e465027a0ceaabd69193bf754ee56a621ff378c487ccec",
+    "path": ".claude/skills/contest-submission/SKILL.md",
+    "date": "2026-07-28"
+   }
+  },
+  {
+   "name": "prior-art-search",
+   "description": "Search patents, regulations and published work for prior art with a reproducible log; keeps searched-and-empty apart from unsearched",
+   "applicable_when": [
+    "특허|선행기술|선행조사|지식재산",
+    "prior art|patent search|kipris|uspto",
+    "이미 있는지|기존 연구|규제 확인"
+   ],
+   "not_applicable_when": [
+    "a question about this repository's own code, which the knowledge graph answers without a web search"
+   ],
+   "inputs": [
+    "the idea or claim to check"
+   ],
+   "outputs": [
+    "a prior-art verdict",
+    "a query log with dates and counts",
+    "the citations that were opened"
+   ],
+   "validation_commands": [
+    "{python} -m dobby.cli research run \"<need>\" --yes",
+    "{python} -m dobby.cli research citations <refs.txt>"
+   ],
+   "path": ".claude/skills/prior-art-search/SKILL.md",
+   "version": "1.0",
+   "state": "active",
+   "created": "2026-07-28",
+   "proposed_by": "kit-author",
+   "approved_by": "kit-release",
+   "eval_passes": [],
+   "requires": {
+    "any_bins": [
+     "python3",
+     "python",
+     "py"
+    ]
+   },
+   "provenance": {
+    "source": "kit factory default",
+    "method": "curated",
+    "date": "2026-07-28",
+    "confidence": "strongly_supported"
+   },
+   "history": [
+    {
+     "to": "active",
+     "by": "kit-release",
+     "date": "2026-07-28"
+    }
+   ],
+   "origin": {
+    "pinned_sha256": "c0bba948d2b9359ba147d88df50e293293dea1ea77e581d0cf0685881f080603",
+    "path": ".claude/skills/prior-art-search/SKILL.md",
+    "date": "2026-07-28"
+   }
+  },
+  {
+   "name": "paper-draft",
+   "description": "Draft or revise an academic paper with claims priced, citations resolved, rigor gates run, and the generated-prose signature removed before submission",
+   "applicable_when": [
+    "논문|초록|원고|투고|학술",
+    "paper|manuscript|abstract|journal submission",
+    "심사 대응|리뷰어"
+   ],
+   "not_applicable_when": [
+    "a blog post or internal memo, where the rigor gates do not apply"
+   ],
+   "inputs": [
+    "the draft",
+    "the experiment record",
+    "the 서식"
+   ],
+   "outputs": [
+    "a claim/evidence table",
+    "a citation report",
+    "a style report",
+    "a filled 서식"
+   ],
+   "validation_commands": [
+    "{python} -m dobby.cli research claims --file <draft.md>",
+    "{python} -m dobby.cli style --file <draft.md>",
+    "{python} -m dobby.cli ml --file <experiment.json>"
+   ],
+   "path": ".claude/skills/paper-draft/SKILL.md",
+   "version": "1.0",
+   "state": "active",
+   "created": "2026-07-28",
+   "proposed_by": "kit-author",
+   "approved_by": "kit-release",
+   "eval_passes": [],
+   "requires": {
+    "any_bins": [
+     "python3",
+     "python",
+     "py"
+    ]
+   },
+   "provenance": {
+    "source": "kit factory default",
+    "method": "curated",
+    "date": "2026-07-28",
+    "confidence": "strongly_supported"
+   },
+   "history": [
+    {
+     "to": "active",
+     "by": "kit-release",
+     "date": "2026-07-28"
+    }
+   ],
+   "origin": {
+    "pinned_sha256": "161c662fac5481047a90c13fb1ed179b303a22ab772bd6996df4bea56270c6df",
+    "path": ".claude/skills/paper-draft/SKILL.md",
+    "date": "2026-07-28"
+   }
   }
  ]
 }

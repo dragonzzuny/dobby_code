@@ -1,0 +1,93 @@
+---
+name: paper-draft
+description: Draft or revise an academic paper — Korean or English — with the claims priced, the citations resolved, the rigor gates run, and the generated-prose signature removed before submission. Use for 논문 작성, 초록, 심사 대응, or any manuscript going to a journal or conference.
+---
+
+# paper-draft
+
+Three things sink a manuscript that a careful author can catch first: a claim
+stronger than its evidence, a citation that does not resolve, and prose that
+reads as machine-generated. Each has a command here.
+
+## 1. Price every claim before writing the section that carries it
+
+```
+python -m dobby.cli research claims --file <draft.md>
+```
+
+Claim strength sets the evidence bar: "may help" needs an example, "improves 40%"
+needs the measurement, "always" needs the proof. A claim whose bar you cannot
+meet gets weakened now — weakening it in review costs a round trip and the
+reviewer's trust.
+
+## 2. Resolve the citations, and know when you have not
+
+```
+python -m dobby.cli research citations <refs.txt> --corpus <retrieved.json>
+```
+
+Three severities, because three different things go wrong: `exact`,
+`metadata_mismatch` (the work exists, a field is wrong — correctable, NOT
+fabrication), and `unresolvable` (nothing matches; any claim resting on it
+currently has no support).
+
+With an empty corpus this reports **`NOT CHECKED`, never clean**. Fabricated
+references are stylistically perfect, so the only detection is resolution against
+independently retrieved records. Retrieve them:
+
+```
+python -m dobby.cli research run "<the literature question>" --yes
+```
+
+`NOTHING RETRIEVED` means these queries surfaced nothing — not that the
+literature is empty. See `.claude/skills/prior-art-search/SKILL.md`.
+
+## 3. Run the rigor gates on the experiment, not on the prose
+
+```
+python -m dobby.cli ml --file <experiment.json>
+```
+
+Leakage, reproducibility, and interpretation gates. A result that fails a leakage
+check is not a writing problem and no amount of rewriting fixes it — this is why
+it runs before the drafting, not after.
+
+## 4. Draft — then remove the signature
+
+```
+python -m dobby.cli style --file <draft.md>
+python -m dobby.cli style --file <draft.md> --rewritten <revised.md>
+```
+
+`style` detects the generated-prose signature in **Korean and English**: measured
+on this machine, `본 연구는 … 이를 통해 다양한 시사점을 도출하고자 한다` fires
+`phrase:를 통해` at S3. Uniform sentence length, comma density, hedge stacking,
+and bullet-heavy structure are the other signals.
+
+`--rewritten` scores a candidate revision against a change budget, so the fix
+does not become a rewrite of a paper that was already yours.
+
+The rule underneath: lead with the concrete thing — the measurement, the figure,
+the counterexample — and explain after it. Adjectives are what you write when the
+number is missing.
+
+## 5. Korean submission formats are tables
+
+Most Korean journals and conferences supply a 서식 as `.hwp` or `.hwpx`.
+
+```
+python -m dobby.cli hwp tables "<서식>"                      # what must be filled
+python -m dobby.cli hwp replace "<서식>" --text "<기존>" \
+       --with "<내용>" --out "<제출본>"
+python -m dobby.cli hwp tables "<제출본>"                    # verify the OUTPUT
+```
+
+`.hwp` (legacy binary) is read-only here; save as HWPX in 한글 to edit. `--out`
+is required — the blank 서식 is usually the only clean copy.
+
+## 6. Report what is not established
+
+State the claims that remain unsupported, the citations still `unresolvable` or
+`NOT CHECKED`, and the gates that did not run. A limitations section written from
+that list is both honest and the one reviewers read for whether you know your own
+work's boundary.
