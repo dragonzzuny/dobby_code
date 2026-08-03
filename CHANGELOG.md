@@ -9,6 +9,52 @@ though it were proven.
 
 ## [Unreleased]
 
+### Added — `.hwp` became editable, by asking 한글 to do it instead of parsing it
+
+`hwp5.py` reads HWP 5.0 and refuses to write it, for a reason that has not
+changed: the body is compressed records inside a compound file whose sector
+allocation would have to be rebuilt, and a half-correct writer produces damage
+that only appears when 한글 opens the document. `dobby/hwpcom.py` takes the
+other route — it drives an installed 한글 over COM, then reads the saved file
+back with `hwp5.py` to confirm the edit is there. Writer and verifier are
+different implementations; that is the only reason the confirmation is worth
+anything.
+
+New: `dobby hwp pages | export | shapes | edit`, and a Python API
+(`page_count`, `export`, `paragraph_shapes`, `replace`, `available`).
+`paragraph_shapes` reports font, size, weight, ratio, alignment and line
+spacing per paragraph, which is what makes "does this document match the
+template it was supposed to follow" a measurement rather than an opinion.
+
+Five failure modes are encoded as behaviour, each found by losing time to it:
+
+- `AllReplace` returns False and changes nothing on a build where `RepeatFind`
+  finds the same string, so replacement is manual — select, read back, delete,
+  insert.
+- Retyping a paragraph flattens its inline runs, so a bold lead-in disappears.
+  Edits are substring-precise and touch nothing outside the match.
+- 한글's internal character offset runs ahead of the offset computed on
+  extracted text, by an amount that grows with inline runs. The selection is
+  probed and accepted only on a byte-equal read-back; a 28-occurrence replace
+  lost 2 at a window of 8 and none at 40, which is now the default.
+- Some characters — the en dash among them — cannot be found through COM text
+  search at all, in strings `hwp5.py` locates without trouble. Patterns
+  containing them are refused at the boundary with `split_at_unmatchable()`
+  named, rather than reported as absent.
+- A replacement whose new text contains its old text makes a find-from-start
+  loop rediscover its own output forever. The scan advances past what it wrote.
+
+**What this does not establish.** It was measured on one machine, one 한글
+(2018, COM `10, 0, 0, 14454`), against one 15-page manuscript and its template:
+roughly 40 substring replacements across body text, a title table and a page
+header, each verified by reopening the saved file. It has not been run on
+another 한글 version, on documents with tracked changes, footnotes or embedded
+objects near the edit site, or on anything larger. The refusals are tested
+everywhere; the editing path is tested only where 한글 is drivable and a
+document is present, and skips — as a skip — otherwise. It also requires a
+security module registered under `HKCU\Software\HNC\HwpAutomation\Modules`,
+which `available()` detects and deliberately does not install.
+
 ### Fixed — the provider layer had never been executed, and it did not work
 
 Three defects, all found by running things that had only ever been described.

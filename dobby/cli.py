@@ -1035,15 +1035,42 @@ def cmd_hwp(args):
         sys.stdout.write(text + "\n")
         return
 
+    # These drive 한글 itself and so work on either format, including the
+    # binary one this file cannot write directly.
+    if args.action in ("pages", "export", "shapes", "edit"):
+        from . import hwpcom
+        try:
+            if args.action == "pages":
+                _out({"file": path, "pages": hwpcom.page_count(path)})
+            elif args.action == "export":
+                if not args.out:
+                    sys.exit("export needs --out (.pdf, .hwpx or .hwp)")
+                _out(hwpcom.export(path, args.out))
+            elif args.action == "shapes":
+                _out(hwpcom.paragraph_shapes(path, list_id=args.list))
+            else:
+                if args.text is None or args.with_ is None:
+                    sys.exit("edit needs --text and --with")
+                _out(hwpcom.replace(
+                    path, [(args.text, args.with_)], out=args.out,
+                    overwrite=args.overwrite, list_id=args.list,
+                    apply=not args.dry))
+        except hwpcom.HwpComError as exc:
+            sys.exit(str(exc))
+        return
+
     if kind != "hwpx":
         # Stated as a limit with its reason and a way forward, not as a bug.
         sys.exit(
-            f"{os.path.basename(path)} is HWP 5.0 (binary). This reads it "
-            f"(`dobby hwp text`) but cannot write it: the body is compressed "
-            f"records inside a compound file whose sector allocation would have "
-            f"to be rebuilt, and a half-correct writer corrupts documents in "
-            f"ways that only appear when 한글 opens them. Save it as HWPX in "
-            f"한글 and edit that.")
+            f"{os.path.basename(path)} is HWP 5.0 (binary). The reader here "
+            f"({os.path.basename(__file__)} → hwp5.py) will not write it: the "
+            f"body is compressed records inside a compound file whose sector "
+            f"allocation would have to be rebuilt, and a half-correct writer "
+            f"corrupts documents in ways that only appear when 한글 opens them. "
+            f"Two ways forward: `dobby hwp edit` drives 한글 over COM and edits "
+            f"this file as it is (Windows, 한글 installed — see `dobby hwp "
+            f"pages` to check the setup), or save it as HWPX in 한글 and use "
+            f"the actions here.")
 
     doc = hwpx.HwpxDocument(path)
     if args.action == "paragraphs":
@@ -1446,9 +1473,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(fn=cmd_skills)
 
     p = sub.add_parser("hwp", parents=[common],
-                       help="read .hwp / .hwpx; edit .hwpx text")
+                       help="read .hwp / .hwpx; edit .hwpx directly, .hwp via 한글")
     p.add_argument("action", choices=["info", "text", "paragraphs", "tables",
-                                      "find", "replace", "set"])
+                                      "find", "replace", "set",
+                                      "pages", "export", "shapes", "edit"])
     p.add_argument("file")
     p.add_argument("--text", default=None, help="needle, or the new text")
     p.add_argument("--with", dest="with_", default=None,
@@ -1459,6 +1487,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="destination; edits never overwrite the source")
     p.add_argument("--count", type=int, default=None,
                    help="stop after this many replacements")
+    p.add_argument("--list", type=int, default=0,
+                   help="text list for `shapes`/`edit`: 0 is the body; title "
+                        "blocks, page headers and table cells have their own")
+    p.add_argument("--dry", action="store_true",
+                   help="`edit`: locate and verify every occurrence, write nothing")
     p.add_argument("--overwrite", action="store_true",
                    help="permit --out to replace an existing file")
     p.add_argument("--all", action="store_true",
