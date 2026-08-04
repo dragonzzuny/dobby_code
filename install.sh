@@ -77,6 +77,28 @@ say "dobby -> $TARGET"
 say ""
 
 # ---- engine: copy and overwrite -------------------------------------------
+# ---- does the host already have data? MEASURED BEFORE ANYTHING IS WRITTEN ---
+# The answer is sampled HERE, above the backup, because the backup writes into
+# `$TARGET/.dobby/backups/` and therefore CREATES the very directory whose
+# absence is the signal to install the distribution defaults.
+#
+# Measured on a first install into a host that already had a `tests/` directory
+# — which is most Python projects, and enough on its own to trigger the backup.
+# The backup made `.dobby/`; the data step below then announced
+# ".dobby/ EXISTS — left untouched (your curated knowledge)" about a directory
+# holding nothing but a backup this script had written seconds earlier. The host
+# landed with no ontology.json, no config.json, no knowledge/ and no policies/,
+# and the installer's own verification died on
+# `FileNotFoundError: .dobby/ontology.json`.
+#
+# An installer cannot read its own output as evidence about the host. `evals` is
+# sampled the same way even though nothing writes there before the data step: a
+# rule applied to one of two branches is the shape this defect had.
+DOBBY_DATA_EXISTED=""
+EVALS_DATA_EXISTED=""
+if [ -e "$TARGET/.dobby" ]; then DOBBY_DATA_EXISTED=1; fi
+if [ -e "$TARGET/evals" ]; then EVALS_DATA_EXISTED=1; fi
+
 # An upgrade deletes the installed engine before copying the new one. Until this
 # existed there was no way back: if the incoming engine was broken, or the copy
 # died halfway, the working one was already gone. "Re-clone the kit" is not a
@@ -151,7 +173,11 @@ copy_data_excluding_state() {
 say ""
 say "project data (preserved if it already exists; runtime state never copied):"
 for dir in .dobby evals; do
-  if [ -e "$TARGET/$dir" ]; then
+  case "$dir" in
+    .dobby) existed="$DOBBY_DATA_EXISTED" ;;
+    *)      existed="$EVALS_DATA_EXISTED" ;;
+  esac
+  if [ -n "$existed" ]; then
     say "  $dir/ EXISTS — left untouched (your curated knowledge)"
   elif [ "$dir" = ".dobby" ]; then
     say "  $dir/ created from the distribution defaults (state/ excluded)"

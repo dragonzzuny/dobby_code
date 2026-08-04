@@ -89,6 +89,17 @@ function CopyTree($from, $to) {
     Copy-Item -LiteralPath $from -Destination $to -Recurse -Force
 }
 
+# Does the host already have data? MEASURED BEFORE ANYTHING IS WRITTEN.
+#
+# The answer is sampled HERE, above the backup, because the backup writes into
+# $Target\.dobby\backups\ and therefore CREATES the very directory whose absence
+# is the signal to install the distribution defaults. See install.sh for the
+# measurement: a first install into a host that merely owned a tests\ directory
+# left the project with no ontology.json and no config.json, because the
+# installer read its own backup as the host's curated knowledge.
+$dobbyDataExisted = Test-Path -LiteralPath (Join-Path $Target '.dobby')
+$evalsDataExisted = Test-Path -LiteralPath (Join-Path $Target 'evals')
+
 # An upgrade deletes the installed engine before copying the new one, and until
 # this existed there was no way back - see install.sh for the reasoning. Skipped
 # on a first install; the path is printed, because a backup nobody can name is
@@ -155,7 +166,8 @@ Say ""
 Say "project data (preserved if it already exists; runtime state never copied):"
 foreach ($dir in @('.dobby', 'evals')) {
     $dest = Join-Path $Target $dir
-    if (Test-Path -LiteralPath $dest) {
+    $existed = if ($dir -eq '.dobby') { $dobbyDataExisted } else { $evalsDataExisted }
+    if ($existed) {
         Say "  $dir\ EXISTS - left untouched (your curated knowledge)"
     } elseif ($dir -eq '.dobby') {
         Say "  $dir\ created from the distribution defaults (state\ excluded)"

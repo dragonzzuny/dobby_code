@@ -337,6 +337,59 @@ class TestShellInstallEndToEnd(_KitOnly):
         self.assertIn(stamps[0], second.stdout,
                       "a backup nobody can name is not a restore path")
 
+    def test_a_first_install_into_a_host_with_tests_still_gets_its_data(self):
+        """The installer's own backup is not evidence about the host.
+
+        The engine backup writes `$TARGET/.dobby/backups/$STAMP/`, and it fires
+        whenever the host already owns `dobby/`, `mcp/` or `tests/`. A `tests/`
+        directory alone is enough — which is most Python projects — so this is
+        the ordinary first install, not a corner case. That write CREATED
+        `.dobby/`, and the data step, which installs the defaults only when
+        `.dobby/` is ABSENT, then found it present.
+
+        Measured on a real host: the install announced
+        ".dobby/ EXISTS — left untouched (your curated knowledge)" about a
+        directory holding nothing but a backup made seconds earlier, and left
+        the project with no ontology.json, config.json, knowledge/ or
+        policies/. The verification step that follows died with
+        `FileNotFoundError: .dobby/ontology.json` and `dobby doctor` could not
+        run at all.
+
+        Every other end-to-end test here installs into a host with no `tests/`,
+        which is why the whole suite passed while the front door was broken for
+        anyone whose project has one.
+        """
+        os.makedirs(os.path.join(self.host, "tests"), exist_ok=True)
+        with open(os.path.join(self.host, "tests", "test_host_own.py"), "w",
+                  encoding="utf-8") as handle:
+            handle.write("def test_host_own():\n    assert True\n")
+
+        proc = self._install()
+        self.assertEqual(proc.returncode, 0, f"{proc.stdout}\n{proc.stderr}")
+
+        for rel in (".dobby/ontology.json", ".dobby/config.json",
+                    ".dobby/knowledge/kg.json", ".dobby/policies/policies.json",
+                    ".dobby/registry/capabilities.json"):
+            self.assertTrue(
+                os.path.exists(os.path.join(self.host, rel)),
+                f"a first install left the host without {rel}\n{proc.stdout}")
+
+        self.assertNotIn(
+            ".dobby/ EXISTS", proc.stdout,
+            "the installer reported its own backup as the host's curated data")
+
+        # The backup itself must survive the fix: the inference was wrong, the
+        # backup was not, and the host's own tests are the only copy of the
+        # engine directory this install replaced.
+        backups = os.path.join(self.host, ".dobby", "backups")
+        self.assertTrue(os.path.isdir(backups), "the engine backup went missing")
+        stamps = os.listdir(backups)
+        self.assertEqual(len(stamps), 1, f"expected one backup, got {stamps}")
+        self.assertTrue(
+            os.path.exists(os.path.join(backups, stamps[0], "tests",
+                                        "test_host_own.py")),
+            "the host's own tests/ was replaced without being backed up")
+
     def test_new_factory_skills_become_routable_not_just_present(self):
         """A SKILL.md that the registry does not list is invisible to the router.
 
@@ -464,6 +517,49 @@ class TestShellInstallEndToEnd(_KitOnly):
         self.assertIn("dobby repo itself", proc.stdout + proc.stderr)
 
 
+
+
+class TestDataExistenceIsSampledBeforeTheFirstWrite(_KitOnly):
+    """Both installers must answer "does the host have data?" before writing.
+
+    `install.ps1` cannot be executed on a POSIX runner, so its parity with
+    `install.sh` is asserted textually — the same technique the exclusion-list
+    and launcher-name tests use. The end-to-end test above proves the behaviour
+    for the shell installer; this proves the PowerShell one did not drift back.
+    """
+
+    def test_shell_installer_samples_before_it_writes_the_backup(self):
+        text = Path(INSTALL_SH).read_text(encoding="utf-8")
+        sample = text.find("DOBBY_DATA_EXISTED=")
+        backup = text.find('BACKUP="$TARGET/.dobby/backups')
+        self.assertNotEqual(sample, -1, "install.sh no longer samples .dobby")
+        self.assertNotEqual(backup, -1, "install.sh no longer names the backup")
+        self.assertLess(
+            sample, backup,
+            "install.sh decides whether the host has data after its own backup "
+            "has created .dobby/ — the data step will then skip the defaults")
+
+    def test_powershell_installer_samples_before_it_writes_the_backup(self):
+        text = Path(INSTALL_PS1).read_text(encoding="utf-8")
+        sample = text.find("$dobbyDataExisted")
+        backup = text.find(r'$backup = Join-Path $Target ".dobby\backups')
+        self.assertNotEqual(sample, -1, "install.ps1 no longer samples .dobby")
+        self.assertNotEqual(backup, -1, "install.ps1 no longer names the backup")
+        self.assertLess(
+            sample, backup,
+            "install.ps1 decides whether the host has data after its own backup "
+            "has created .dobby\\ — the data step will then skip the defaults")
+
+    def test_neither_installer_retests_the_directory_at_the_data_step(self):
+        """The sampled answer must be what the data step actually consults."""
+        # assertTrue, not assertIn: the haystack is a whole installer, and a
+        # failure that prints it buries the one line that matters.
+        sh = Path(INSTALL_SH).read_text(encoding="utf-8")
+        self.assertTrue('if [ -n "$existed" ]; then' in sh,
+                        "install.sh's data step is not reading the sample")
+        ps1 = Path(INSTALL_PS1).read_text(encoding="utf-8")
+        self.assertTrue("if ($existed) {" in ps1,
+                        "install.ps1's data step is not reading the sample")
 
 
 @unittest.skipUnless(
