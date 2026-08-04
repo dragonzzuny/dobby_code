@@ -402,6 +402,67 @@
     "path": ".claude/skills/paper-draft/SKILL.md",
     "date": "2026-07-28"
    }
+  },
+  {
+   "name": "agy-delegation",
+   "description": "Delegate a task to the Antigravity CLI (agy) instead of doing it here: live web search, image generation, whole-codebase architecture passes, or 15+ tool calls of mechanical work",
+   "applicable_when": [
+    "web search|latest version|CVE|최신|검색",
+    "image generation|mockup|이미지 생성|목업",
+    "codebase architecture|아키텍처|코드베이스 분석",
+    "a task estimated at more than 15 tool calls here",
+    "agy|antigravity|위임|delegate"
+   ],
+   "not_applicable_when": [
+    "under ~5 tool calls — the round trip costs more than the edit",
+    "the current context already holds the answer",
+    "the user asked this process specifically to do it"
+   ],
+   "inputs": [
+    "the task",
+    "an estimate of tool calls if done here",
+    "the absolute paths the delegate must read"
+   ],
+   "outputs": [
+    "a delegate/self verdict with its basis",
+    "the exact prompt and argv that were sent",
+    "the delegate's answer, with a truncation flag when capped"
+   ],
+   "validation_commands": [
+    "{python} -m dobby.cli agy check \"<task>\" --tool-calls <n>",
+    "{python} -m dobby.cli agy prompt \"<task>\" --template <t>",
+    "{python} -m dobby.cli agy caps"
+   ],
+   "path": ".claude/skills/agy-delegation/SKILL.md",
+   "version": "1.0",
+   "state": "active",
+   "created": "2026-08-04",
+   "proposed_by": "kit-author",
+   "approved_by": "kit-release",
+   "eval_passes": [],
+   "requires": {
+    "bins": [
+     "agy"
+    ]
+   },
+   "provenance": {
+    "source": "ported from github.com/SafeMantella/claude-code-agy-CLI-skill; flag surface re-measured from `agy --help` 1.1.8 on win32 (reports/AGY_FLAG_SURFACE.md)",
+    "method": "curated",
+    "date": "2026-08-04",
+    "confidence": "strongly_supported"
+   },
+   "history": [
+    {
+     "to": "active",
+     "by": "kit-release",
+     "date": "2026-08-04"
+    }
+   ],
+   "origin": {
+    "pinned_sha256": "85e9efe2a1f9d55f949efebd62b4d65dd4a289448e735cb41a478b398e74fbbd",
+    "path": ".claude/skills/agy-delegation/SKILL.md",
+    "date": "2026-08-04"
+   }
   }
  ]
 }

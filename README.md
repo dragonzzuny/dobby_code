@@ -108,6 +108,48 @@ python -m dobby.cli fleet            # who is here
 python -m dobby.cli fleet --probe    # prove it with one cheap real call each
 ```
 
+### Delegating to Antigravity — `dobby/agy.py`, `dobby agy`
+
+A fleet member you can hand a whole task to, with a gate in front of it. Ported
+from [claude-code-agy-CLI-skill](https://github.com/SafeMantella/claude-code-agy-CLI-skill),
+whose delegation policy is right and whose flag list was re-measured here rather
+than copied — `reports/AGY_FLAG_SURFACE.md` is the verbatim `agy --help` this
+lane is built on.
+
+```bash
+python -m dobby.cli agy check "search the web for Flask 3.x CVEs"   # spends nothing
+python -m dobby.cli agy prompt "review the launch path" --template review \
+      --file dobby/providers/run.py                                 # spends nothing
+python -m dobby.cli agy run "..." --template research --file f.py \
+      --skip-permissions --yes                                      # one real call
+```
+
+Most delegations should not happen, so the decision is a command of its own:
+under ~5 tool calls do it here, over ~15 delegate, and an exclusive capability
+(live web search, image generation, a browser, a science database) outranks the
+arithmetic. `check` returns the verdict **and its basis**; `basis: unknown`
+means no estimate was given, which is a missing decision rather than a default.
+
+Four things the lane encodes because each one cost real time:
+
+- **exit 0 with no output is a permission auto-deny, not a harness bug.**
+  `--print` mode cannot prompt, so any delegation that must touch the tree is
+  denied and exits successfully with nothing. Measured 2026-08-04 (agy 1.1.8):
+  0 characters in 18.6s; with permission granted, 334 characters and the right
+  answer. `run_provider` now reports the child's stderr instead of guessing
+  about output formats, and the lane warns *before* the call, not after.
+- **the print timeout must expire before the process ceiling**, or the harness
+  reaps a healthy call and blames interactive mode. Both come from one number.
+- **`--mode plan` is not containment, and the catalog used to say it was.**
+  Measured four ways — plan and accept-edits, each with and without
+  `--dangerously-skip-permissions`, each in a fresh temp directory, prompt
+  "create hello.txt" — the file appeared **four times out of four**. What
+  actually bounds a delegate is the working directory it is launched in, the
+  worktree isolation in `fanout.py`, and the instruction in the prompt. The flag
+  is still sent, exactly once, as a statement of intent.
+- **absolute paths, always.** A relative path in a delegated prompt resolves
+  against the delegate's cwd and produces a confident answer about another tree.
+
 ### Multi-agent that actually disagrees — `dobby/swarm/`
 
 Running N agents does not give N opinions. Dense interaction makes panels
@@ -445,6 +487,7 @@ DESIGN.md          the design system, machine-readable
 dobby/core/        proven engine: knowledge graph, router, policies, skills,
                    evaluator, trajectory, optimizer, improvement loop, evolution
 dobby/providers/   provider fleet + parallel fan-out
+dobby/agy.py       Antigravity delegation lane: gate, templates, flag guards
 dobby/memory/      six-tier memory + gates + compression
 dobby/swarm/       protocols, diversity metrics, grounding gate
 dobby/specialize.py  generalist → expert, dual-gated

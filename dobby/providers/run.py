@@ -172,11 +172,26 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
         # means the tool printed its answer to a TTY-only surface or refused the
         # prompt silently. Reporting it as a failure is correct — an empty answer
         # must not be synthesized as if it were a considered "no comment".
+        #
+        # STDERR IS THE DIAGNOSIS AND WAS BEING THROWN AWAY. Measured 2026-08-04,
+        # agy 1.1.8, a read-only research prompt naming one file:
+        #
+        #   rc=0  stdout=0 chars  stderr=301 chars
+        #   "no output produced — a tool required the "command" permission that
+        #    headless mode cannot prompt for, so it was auto-denied. ...
+        #    re-run with --dangerously-skip-permissions to auto-approve all tools."
+        #
+        # The tool said exactly what was wrong and this branch replaced it with a
+        # guess about output formats. Every delegated read of a file failed this
+        # way and the harness blamed the wrong subsystem each time.
+        detail = cap_output(redact_secrets(stderr), 600).strip()
         return ProviderResult(
             provider=spec.id, ok=False, text="", exit_code=0,
             duration_s=duration,
-            error="exit 0 but no stdout (tool produced no machine-readable "
-                  "answer; try its explicit output-format flag)",
+            error=("exit 0 but no stdout. " + (f"stderr: {detail}" if detail else
+                   "stderr was empty too — the tool may print only to a TTY, or "
+                   "it silently refused the prompt; try its explicit "
+                   "output-format flag")),
             meta=meta)
 
     return ProviderResult(provider=spec.id, ok=True, text=capped,

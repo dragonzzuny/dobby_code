@@ -73,6 +73,12 @@ A panel of one is a single call in a costume. Before claiming corroboration:
 - Read the `diversity` block. A `collapsed` verdict means the panel bought roughly
   one opinion — report that, do not report consensus.
 - A critic must never be the provider that authored the thing under review.
+- To hand a whole task to Antigravity instead of a panel, run
+  `dobby agy check "<task>" --tool-calls <n>` first. Most delegations lose:
+  under ~5 tool calls do it here, over ~15 delegate, and an exclusive capability
+  (live web search, image generation, a browser, a science database) decides
+  regardless. A delegated answer is a claim — validate it here before it is
+  reported, and never report it as an independent check of your own work.
 
 ## Ideation is gated
 

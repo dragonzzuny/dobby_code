@@ -12,6 +12,8 @@
     dobby friction-report               context-bloat / retry-loop signals
 
     dobby fleet [--probe]               provider availability (and live probe)
+    dobby agy check "task"              should this go to Antigravity at all?
+    dobby agy run "task" --yes          delegate it, with a template and a budget
     dobby panel "task" [--size N]       decorrelated multi-agent round
     dobby search "task" --score-command tree search, scored by a command
     dobby graph --changed FILE...       who depends on what changed
@@ -1009,6 +1011,80 @@ def cmd_skills(args):
           for entry in registry.index()])
 
 
+# ---------------------------------------------------------------- agy ----
+def cmd_agy(args):
+    """Delegate to Antigravity, or decide not to.
+
+    `check`, `prompt`, `caps`, `templates` and `triggers` spend nothing — they are
+    the whole point of the lane, because most delegations should not happen. `run`
+    makes a real call and therefore requires `--yes`, the same gate `research` and
+    `fleet --probe` use.
+    """
+    from . import agy as agy_mod
+
+    if args.action == "caps":
+        _out(agy_mod.capabilities())
+        return
+    if args.action == "templates":
+        _out(agy_mod.templates())
+        return
+    if args.action == "triggers":
+        _out(agy_mod.triggers())
+        return
+    if args.action == "models":
+        _out(agy_mod.models(timeout_s=args.timeout or 60))
+        return
+    if args.action == "agents":
+        _out(agy_mod.agents(timeout_s=args.timeout or 60))
+        return
+
+    if not args.task:
+        sys.exit(f"`dobby agy {args.action}` needs a task: "
+                 f"dobby agy {args.action} \"<task>\"")
+
+    if args.action == "check":
+        _out(agy_mod.assess(args.task,
+                            estimated_tool_calls=args.tool_calls).to_dict())
+        return
+
+    if args.action not in ("prompt", "run"):
+        sys.exit(f"unknown agy action {args.action!r}")
+
+    verdict = agy_mod.assess(args.task, estimated_tool_calls=args.tool_calls)
+    try:
+        envelope = agy_mod.delegate(
+            args.task,
+            template=args.template or verdict.template,
+            project_root=_repo(args),
+            files=args.file or (),
+            stack=args.stack or "",
+            requirements=[r for r in (args.require or "").split("|") if r.strip()],
+            model=args.model, effort=args.effort,
+            add_dirs=args.add_dir or (),
+            timeout_s=args.timeout,
+            allow_writes=args.write,
+            skip_permissions=args.skip_permissions,
+            continue_conversation=args.continue_conversation,
+            conversation=args.conversation,
+            output_format=args.output_format,
+            json_schema=args.json_schema,
+            sandbox=args.sandbox,
+            agent=args.agent,
+            cwd=_repo(args),
+            # `prompt` is the review surface: it builds and validates the whole
+            # call, including every flag value, and spends nothing.
+            dry_run=(args.action == "prompt" or not args.yes))
+    except agy_mod.AgyError as exc:
+        sys.exit(str(exc))
+
+    envelope["verdict"] = verdict.to_dict()
+    if args.action == "run" and not args.yes:
+        envelope["why_nothing_ran"] = (
+            "a delegation is a real provider call and costs money; re-run with "
+            "--yes. The prompt above is exactly what would be sent.")
+    _out(envelope)
+
+
 # ---------------------------------------------------------------- hwp ----
 def cmd_hwp(args):
     """Read and edit 한글 documents, dispatching on the file's magic bytes.
@@ -1471,6 +1547,59 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sync-from", default=None,
                    help="a kit registry to merge missing skills FROM (add-only)")
     p.set_defaults(fn=cmd_skills)
+
+    p = sub.add_parser(
+        "agy", parents=[common],
+        help="delegate to Antigravity (`agy`) — or find out you should not")
+    p.add_argument("action",
+                   choices=["check", "prompt", "run", "caps", "templates",
+                            "triggers", "models", "agents"])
+    p.add_argument("task", nargs="?", default=None)
+    p.add_argument("--template", default=None,
+                   help="research|investigate|review|generate|refactor|"
+                        "websearch|image|science (default: whatever the "
+                        "capability triggers picked)")
+    p.add_argument("--tool-calls", type=int, default=None,
+                   help="how many tool calls doing it HERE would take; this is "
+                        "the quantity the delegate/self decision turns on")
+    p.add_argument("--file", action="append", default=None,
+                   help="a file the delegate must look at (repeatable); made "
+                        "absolute, because a relative path resolves against the "
+                        "delegate's cwd, not yours")
+    p.add_argument("--add-dir", action="append", default=None,
+                   help="directory to add to the delegate's workspace "
+                        "(repeatable)")
+    p.add_argument("--stack", default=None)
+    p.add_argument("--require", default=None,
+                   help="pipe-separated numbered requirements")
+    p.add_argument("--model", default=None,
+                   help="one of `dobby agy models` — verbatim")
+    p.add_argument("--effort", default=None, choices=["low", "medium", "high"])
+    p.add_argument("--timeout", type=int, default=None,
+                   help="seconds; becomes --print-timeout, and the process "
+                        "ceiling is set above it so agy reports its own timeout")
+    p.add_argument("--write", action="store_true",
+                   help="allow the delegate to EDIT FILES (--mode accept-edits); "
+                        "off by default")
+    p.add_argument("--skip-permissions", action="store_true",
+                   help="--dangerously-skip-permissions: auto-approve every tool "
+                        "call the delegate makes, shell included")
+    p.add_argument("--sandbox", action="store_true",
+                   help="run the delegate with terminal restrictions")
+    p.add_argument("--continue", dest="continue_conversation",
+                   action="store_true", help="continue agy's most recent "
+                                             "conversation")
+    p.add_argument("--conversation", default=None, help="resume one by id")
+    p.add_argument("--output-format", default="text",
+                   choices=["text", "json", "stream-json"])
+    p.add_argument("--json-schema", default=None,
+                   help="schema string or path constraining the final result "
+                        "(requires --output-format json)")
+    p.add_argument("--agent", default=None, help="one of `dobby agy agents`")
+    p.add_argument("--yes", action="store_true",
+                   help="actually make the call (it costs money and leaves "
+                        "the machine)")
+    p.set_defaults(fn=cmd_agy)
 
     p = sub.add_parser("hwp", parents=[common],
                        help="read .hwp / .hwpx; edit .hwpx directly, .hwp via 한글")

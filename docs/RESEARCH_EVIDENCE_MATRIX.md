@@ -473,6 +473,89 @@ report`. Structural conditions are now evaluated against what the router compute
 `first run in a new repository` stays dead and is recorded as such, because the
 router has no repository-freshness signal and inventing one would be a guess.
 
+### A successful exit that means "denied" — 2026-08-04
+
+Building the Antigravity delegation lane (`dobby/agy.py`, ported from
+`SafeMantella/claude-code-agy-CLI-skill`), the first real delegation returned:
+
+    rc=0   stdout=0 chars   18.6s
+    stderr: no output produced — a tool required the "command" permission that
+            headless mode cannot prompt for, so it was auto-denied.
+
+The prompt was read-only and named one file. Re-run with
+`--dangerously-skip-permissions`, unchanged otherwise: rc=0, 334 characters, a
+correct answer citing the file's own line numbers. So `agy --print` denies any
+permissioned tool call and exits **successfully** — the same exit code as a
+finished job — for every delegation that must touch the tree.
+
+Two things were wrong at once, which is why it took a probe to separate them.
+The tool's report was accurate and on stderr; `run_provider` discarded stderr on
+the exit-0-empty path and substituted a guess — *"tool produced no
+machine-readable answer; try its explicit output-format flag"* — which points at
+output formats, a subsystem with nothing to do with it. A harness that overwrites
+a correct diagnosis with a plausible one costs more than a silent failure would:
+the plausible one gets investigated.
+
+Both halves are now behaviour: the child's stderr is carried into the error for
+every provider, and `dobby agy` states the remedy *before* the call, since the
+alternative is learning it after a full timeout.
+
+Three latent defects in existing code surfaced from the same work, none of which
+any test could have caught, because each was a silent downgrade rather than a
+failure: `agy` sat in the `implement` role with an empty `write_extra` (defined
+in its own docstring as a refusal), so it would have implemented nothing and
+reported a clean run; `_agy` allowed two `--mode` flags to reach the process; and
+a `--print-timeout` longer than the harness ceiling would have had the harness
+reap healthy calls and blame interactive mode.
+
+### `--mode plan` is not read-only — 2026-08-04
+
+Filling that empty `write_extra` needed the same standard codex's carries: an
+executed observation, not a line of `--help`. The probe was written to confirm
+`--mode accept-edits` enables writing, with a control arm to confirm `--mode
+plan` prevents it. Threshold declared first: plan must leave the directory empty.
+
+Prompt "create a file named hello.txt whose content is DOBBY_WRITE_OK", each run
+in its own fresh temp directory, agy 1.1.8 / win32:
+
+| `--mode` | `--dangerously-skip-permissions` | file created |
+|---|---|---|
+| plan | yes | **yes** |
+| accept-edits | yes | **yes** |
+| plan | no | **yes** |
+| accept-edits | no | **yes** |
+
+Four for four. The control arm falsified the assumption instead of confirming it:
+on this build `--mode` does not gate file writes at all, and `plan` — which
+`_agy` called "the same read-only default" as claude's `--permission-mode plan`,
+and which `test_providers` asserted under the name *"a scout must not silently
+edit the tree"* — contains nothing. The test kept passing throughout, because it
+checked that the string `plan` was in the argv, which was true and irrelevant.
+
+Two things made this hard to see. The flag is real, documented, and named exactly
+like the control it is not. And the first evidence pointed the wrong way: a
+prompt asking agy to READ a named file had been auto-denied for wanting the
+`command` permission, so the tool looked *more* locked down than its peers, not
+less. Reading a file needs a permission grant; creating one does not.
+
+What replaced it is not another flag. `cwd` is passed explicitly on every
+delegation, `fanout.py`'s worktree isolation already covers concurrent writers,
+and `dobby/agy.py` writes `Do NOT modify` into every read-only prompt
+unconditionally — no longer a second layer over the mode, but the only
+instruction-level control there is.
+
+**Not established:** whether `--sandbox` changes any of this (untested), and
+whether other builds of agy behave the same. The table above is one version on
+one platform, and `write_extra` for agy is now recorded as a declaration of
+intent rather than as a switch.
+
+**Not established by any of this:** the upstream capability matrix (Google Search
+grounding, image generation, `codebase_investigator`, Chrome DevTools, 40+
+science databases) is reproduced in `dobby agy caps` under
+`declared_upstream_not_verified_here` and has not been measured here. One
+template of eight (`research`) has been run against the live tool; no `--write`
+delegation has been run at all.
+
 ---
 
 ## How to extend this file

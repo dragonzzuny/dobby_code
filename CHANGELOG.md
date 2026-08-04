@@ -9,6 +9,94 @@ though it were proven.
 
 ## [Unreleased]
 
+### Added — a delegation lane for Antigravity, and the fact that made it necessary
+
+`dobby/agy.py` + `dobby agy` port
+[claude-code-agy-CLI-skill](https://github.com/SafeMantella/claude-code-agy-CLI-skill).
+What was taken is the judgment: delegate on an exclusive capability or on volume
+(under ~5 tool calls do it here, over ~15 delegate), phrase the prompt for a
+process that has no shared context, and validate what comes back. What was NOT
+taken is its flag list or its `/Users/pedroarfux/.local/bin/agy` path — the flag
+surface was re-measured from `agy --help` 1.1.8 on this machine and recorded
+verbatim in `reports/AGY_FLAG_SURFACE.md`. Copying a documented flag list would
+have shipped `--effort`, `--output-format`, `--json-schema` and `--mode` as
+absent when all four exist, and this kit's own catalog docstring as "agy: text
+only" when 1.1.8 speaks JSON.
+
+**The measurement that changed the design.** The upstream skill passes
+`--dangerously-skip-permissions` in most examples and never says why. It reads
+as carelessness. Running the first real delegation without it, prompt = "state
+in one sentence what dobby/agy.py is for":
+
+    rc=0   stdout=0 chars   18.6s
+    stderr: no output produced — a tool required the "command" permission that
+            headless mode cannot prompt for, so it was auto-denied.
+
+With permission granted: rc=0, 334 characters, a correct answer citing the file.
+So in `--print` mode every delegation that must touch the tree returns a
+**successful exit and nothing else** until permission is granted. The signature
+looks exactly like a harness defect, and `run.py` was making that worse — its
+exit-0-empty branch threw stderr away and guessed "try its explicit
+output-format flag". It now reports what the child actually said, for every
+provider, and `delegate()` states the remedy before the call rather than after
+a wasted timeout.
+
+Three defects the port exposed in code that was already here:
+
+- `agy` appeared in the `implement` role routing with **no `write_extra`**,
+  whose docstring defines empty as a refusal, so `swebench` would not run it as
+  an implementer at all. Now `("--mode", "accept-edits")` — the spelling `agy
+  --help` uses, not claude's `acceptEdits` — earned by execution, below.
+- `_agy` pinned `--mode plan` and let callers append a second `--mode`. The
+  default is now dropped when the caller supplies one, so exactly one `--mode`
+  reaches the process and the argv does not contradict itself.
+- A `--print-timeout` shorter than the harness's process ceiling makes the
+  harness reap a healthy call and report "the tool may have fallen back to
+  interactive mode". Both ceilings now come from one number, with the process one
+  strictly larger, so a slow answer is explained by the tool that knows why.
+
+**What this does not establish.** The upstream capability matrix — Google Search
+grounding, `generate_image`, `codebase_investigator`, Chrome DevTools, 40+
+science databases — is reproduced under `declared_upstream_not_verified_here`
+and is NOT measured by this repository. `dobby agy caps` keeps the two apart.
+One delegation was run end to end (research template, one file, permission
+granted, 13.8s, correct answer with line citations); no template other than
+`research` has been exercised against the live tool, and no `--write` delegation
+has been run at all.
+
+### Fixed — `--mode plan` was never read-only, and three places said it was
+
+Filling `write_extra` needed the standard codex's carries: an executed run, not a
+line of `--help`. The probe had a control arm — confirm `plan` PREVENTS a write —
+with the threshold declared first. The control arm is what fired.
+
+    prompt: create hello.txt containing DOBBY_WRITE_OK   (fresh temp dir each run)
+
+    --mode plan          --dangerously-skip-permissions   FILE CREATED
+    --mode accept-edits  --dangerously-skip-permissions   FILE CREATED
+    --mode plan          (no permission flag)             FILE CREATED
+    --mode accept-edits  (no permission flag)             FILE CREATED
+
+Four for four, agy 1.1.8 / win32. `--mode` does not gate file writes on this
+build. `catalog._agy` called `plan` "the same read-only default" as claude's;
+`test_providers` asserted it under the name *"a scout must not silently edit the
+tree"* and passed the whole time, because it checked that the string `plan`
+appeared in the argv — true, and irrelevant to the property it was named for.
+
+The flag is still sent, once, as a statement of intent. What replaced it as an
+actual boundary was already in the repository: explicit `cwd` on every call, the
+worktree isolation in `fanout.py`, and — new — an unconditional `Do NOT modify`
+line in every read-only prompt `dobby/agy.py` builds, which is now the only
+instruction-level control rather than a second layer over the mode.
+
+The misleading assertion in `test_providers` was narrowed to the providers where
+it holds, and the measured behaviour pinned in a test of its own. A check that
+keeps passing while its own name is untrue is worse than no check: it is where
+the next reader stops looking.
+
+**Not established:** whether `--sandbox` changes any of it (untested), or whether
+other builds of agy behave the same. One version, one platform.
+
 ### Added — `.hwp` became editable, by asking 한글 to do it instead of parsing it
 
 `hwp5.py` reads HWP 5.0 and refuses to write it, for a reason that has not

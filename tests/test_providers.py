@@ -69,11 +69,32 @@ class TestCatalogInvocations(unittest.TestCase):
             self.assertIn(nasty, argv)
 
     def test_read_only_default_for_file_capable_clis(self):
-        """A scout must not silently edit the tree."""
-        plan_markers = {"claude": "plan", "gemini": "plan", "agy": "plan"}
+        """A scout must not silently edit the tree.
+
+        `agy` is deliberately NOT in this list any more. The flag is still sent
+        (see the test below) but the property this test is named for was measured
+        false for it, and a check that keeps passing while its own claim is untrue
+        is worse than no check — it is where the next reader stops looking.
+        """
+        plan_markers = {"claude": "plan", "gemini": "plan"}
         for pid, marker in plan_markers.items():
             argv = registry().get(pid).build_argv("t", None, ())
             self.assertIn(marker, argv, f"{pid} lost its read-only default")
+
+    def test_agy_still_sends_plan_but_it_is_not_a_containment_control(self):
+        """Measured 2026-08-04, agy 1.1.8 / win32, four fresh temp directories:
+        `--mode plan` and `--mode accept-edits`, each with and without
+        `--dangerously-skip-permissions`, asked to create a file. All four
+        created it.
+
+        So the flag stays as a statement of intent and the catalog says so in
+        both `_agy` and the spec notes. What this test pins is that the intent is
+        still declared, and that nothing in the suite asserts containment from it.
+        """
+        argv = registry().get("agy").build_argv("t", None, ())
+        self.assertIn("plan", argv)
+        spec = registry().get("agy")
+        self.assertIn("NOT a containment control", spec.notes)
 
     def test_extra_appended_last_so_caller_can_override(self):
         argv = registry().get("claude").build_argv(

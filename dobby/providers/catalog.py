@@ -12,7 +12,7 @@ critical fact of its spec:
 | claude   | `-p/--print`                | `--output-format json`       |
 | codex    | `exec` subcommand           | `--json` (JSONL events)      |
 | gemini   | `-p/--prompt`               | `-o json`                    |
-| agy      | `--print`                   | (text only)                  |
+| agy      | `--print`                   | `--output-format json`       |
 | qwen     | `-p/--prompt`               | (text only)                  |
 | ollama   | `run <model> <prompt>`      | (text only)                  |
 
@@ -76,12 +76,48 @@ def _gemini(prompt: str, model: str | None, extra: Sequence[str]) -> list[str]:
 
 
 def _agy(prompt: str, model: str | None, extra: Sequence[str]) -> list[str]:
-    # Antigravity CLI: `--print` runs one prompt non-interactively. It also has
-    # `--mode plan`, used here for the same read-only default.
-    argv = ["agy", "--print", prompt, "--mode", "plan"]
+    # Antigravity CLI: `--print` runs one prompt non-interactively.
+    #
+    # `--mode plan` IS NOT A READ-ONLY GUARANTEE HERE, and this comment used to
+    # say it was. Measured 2026-08-04 on agy 1.1.8 / win32, prompt = "create a
+    # file named hello.txt whose content is DOBBY_WRITE_OK", each run in a fresh
+    # temp directory:
+    #
+    #     --mode plan          --dangerously-skip-permissions   FILE CREATED
+    #     --mode accept-edits  --dangerously-skip-permissions   FILE CREATED
+    #     --mode plan          (no permission flag)             FILE CREATED
+    #     --mode accept-edits  (no permission flag)             FILE CREATED
+    #
+    # Four for four. The flag is still sent, because it states the caller's
+    # intent and costs nothing, but NOTHING may be built on top of it as a
+    # containment control. What actually contains a delegate on this build is the
+    # working directory it is launched in (`cwd`), the worktree isolation in
+    # fanout.py, and the instruction in the prompt itself — which is why
+    # dobby/agy.py writes "Do NOT modify" into the prompt text rather than
+    # trusting the mode.
+    #
+    # Note the asymmetry that hid this: a prompt asking agy to READ a named file
+    # was auto-denied headlessly for wanting the "command" permission, so the
+    # first evidence pointed the other way — it looked more locked down than
+    # claude, not less. Writing a new file needs no such permission.
+    #
+    # The default is DROPPED when the caller supplies its own `--mode`, instead of
+    # being emitted and overridden. Every other builder here relies on extras
+    # coming last and winning, which is verified for claude; for agy it would have
+    # meant staking the difference between a read-only scout and one that rewrites
+    # the tree on an unverified property of somebody else's flag parser. One
+    # `--mode` reaches the process, always, and which one is decided here.
+    #
+    # Verbatim from `agy --help` 1.1.8 on win32: "--mode  Set the agent execution
+    # mode for this session (accept-edits, plan)". Note `accept-edits`, not
+    # claude's `acceptEdits` — see dobby/agy.py MODES.
+    extra = list(extra)
+    argv = ["agy", "--print", prompt]
+    if "--mode" not in extra:
+        argv += ["--mode", "plan"]
     if model:
         argv += ["--model", model]
-    return argv + list(extra)
+    return argv + extra
 
 
 def _qwen(prompt: str, model: str | None, extra: Sequence[str]) -> list[str]:
@@ -172,10 +208,27 @@ CATALOG: tuple[ProviderSpec, ...] = (
     ProviderSpec(
         id="agy", kind="cli", display="Antigravity CLI", binary="agy",
         argv=_agy, cost_tier="standard",
+        # ROLE_ROUTING has listed agy under "implement" since this table was
+        # written while the spec carried no write_extra at all, and `write_extra`
+        # documents itself as a refusal when empty — so `swebench` refused to run
+        # agy as an implementer at all.
+        #
+        # This value is EXECUTED, not read off `--help`: see `_agy` above for the
+        # four-configuration probe. It is the documented write mode and it is the
+        # right thing to send, but the probe also showed agy writes files without
+        # it, so unlike codex's `-s workspace-write` this flag is a declaration of
+        # intent rather than the switch that unlocks editing. An implementer role
+        # filled by agy will edit; a scout role filled by agy CAN ALSO edit, and
+        # only cwd/worktree isolation and the prompt stand between it and the tree.
+        write_extra=("--mode", "accept-edits"),
         capabilities=("files", "shell", "long_context"),
         timeout_s=900, mutates_worktree=True, verified_on=(WIN,),
         notes="Exposes several model families behind one CLI (`agy models`), "
-              "including a reasoning-effort dial (--effort).",
+              "including a reasoning-effort dial (--effort). `dobby agy` is the "
+              "delegation lane for it: templates, a cost-benefit gate, and a "
+              "print-timeout that outlives the process ceiling. Its `--mode plan` "
+              "is NOT a containment control — measured to write files in all four "
+              "mode/permission combinations.",
     ),
     ProviderSpec(
         id="qwen", kind="cli", display="Qwen Code CLI", binary="qwen",

@@ -55,17 +55,39 @@ class TestWriteModeIsPerProvider(unittest.TestCase):
         self.assertGreater(argv.index("acceptEdits"), argv.index("plan"))
 
     def test_a_provider_with_no_established_write_mode_is_refused(self):
-        for pid in ("agy", "gemini", "qwen", "ollama"):
+        """`agy` left this list on 2026-08-04 by being RUN, not by being read.
+
+        The bar is an executed observation, the same one codex's `-s
+        workspace-write` carries. Four configurations in fresh temp directories,
+        prompt "create hello.txt containing DOBBY_WRITE_OK", agy 1.1.8 / win32:
+        plan and accept-edits, each with and without
+        `--dangerously-skip-permissions` — the file was created in all four.
+
+        That is enough to stop refusing agy as an implementer, and it also means
+        the flag is a declaration rather than a gate. `_agy` in the catalog
+        carries the full table; nothing may treat `--mode plan` as containment.
+        """
+        for pid in ("gemini", "qwen", "ollama"):
             with self.assertRaises(SweBenchError, msg=pid) as caught:
                 write_extra_for(pid)
             self.assertIn("no verified write mode", str(caught.exception))
 
     def test_the_refusal_explains_why_silence_would_be_worse(self):
         with self.assertRaises(SweBenchError) as caught:
-            write_extra_for("agy")
+            write_extra_for("gemini")
         message = str(caught.exception)
         self.assertIn("read-only", message)
         self.assertIn("look like a harness failure", message)
+
+    def test_agy_now_has_one_and_it_reaches_the_argv_intact(self):
+        extra = write_extra_for("agy")
+        self.assertEqual(extra, ("--mode", "accept-edits"))
+        argv = registry().get("agy").build_argv("p", None, extra)
+        # The builder drops its own `--mode plan` rather than being overridden,
+        # so the process sees one mode and it is the one asked for.
+        self.assertEqual(argv.count("--mode"), 1)
+        self.assertIn("accept-edits", argv)
+        self.assertNotIn("plan", argv)
 
     def test_an_api_provider_is_refused_for_a_different_reason(self):
         with self.assertRaises(SweBenchError) as caught:
