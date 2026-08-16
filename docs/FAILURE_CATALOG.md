@@ -26,3 +26,9 @@ instances (real incidents beat generic taxonomy — see author-evals skill).
 | Silent Assumption | proceeding on an unstated interpretation | L1 assumptions must be recorded in ledger + report with a verification route |
 | Infinite Investigation | exploring past the point where a decision changes | hypothesis-ledger stop rule; 3-dead-checks re-derivation |
 | Non-Reproducible Experiment | ad-hoc numbers nobody can regenerate | load-bearing numbers from repeatable commands recorded in reports |
+| Recalled-Rule Override | answering a rules question from memory while the authoritative document sits in the repo | open the source before advising; P-EVIDENCE treats recall as orientation, never as the citation |
+| Source-Verified Output | checking the input artifact and reporting the generated one as fixed; silent when a pipeline rewrites only part of its target | P-VALIDATE-OUTPUT names the shipped file; know which regions the generator does not touch |
+| Blind Checker | a checker reporting zero because it cannot see, not because nothing is there — wildcard `.` in a regex, substring matches inside longer tokens, a tokenizer wrong for the language | exercise the checker on a known positive before trusting a zero; disagreeing methods make both suspect |
+| Addition Regression | a change that only adds breaks a gate that was passing | add one unit at a time and re-run the whole gate; revision rounds are mostly additions, so this is where their defects come from |
+| Ambient-State Collision | driving an application that is already running, so the work lands in whatever document or session happens to be active | assert the ambient state before the first call and refuse rather than proceed |
+| Paraphrase-for-Transcription | summarising where the deliverable requires the source text verbatim — forms, response letters, quoted requirements | classify each field transcribe-or-summarise before filling it |

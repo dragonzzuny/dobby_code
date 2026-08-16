@@ -82,10 +82,60 @@ python -m dobby.cli hwp replace "<서식>" --text "<기존>" \
 python -m dobby.cli hwp tables "<제출본>"                    # verify the OUTPUT
 ```
 
-`.hwp` (legacy binary) is read-only here; save as HWPX in 한글 to edit. `--out`
-is required — the blank 서식 is usually the only clean copy.
+`--out` is required — the blank 서식 is usually the only clean copy.
 
-## 6. Report what is not established
+Legacy `.hwp` is not read-only. `text`, `paragraphs`, `tables` and `find` read it
+directly; `pages`, `shapes`, `export` and `edit` drive 한글 itself over COM, which
+writes the binary format the library cannot. Two preconditions, both measured:
+
+- **한글 must not be running.** COM attaches to the live instance, so `Open` adds
+  a document to the session the user is looking at and the edits land in whichever
+  one is active. Symptoms are baffling — a document that reads back as two
+  characters, replacements that appear in the wrong file. Check first, refuse
+  rather than proceed.
+- **The security module must be registered**, or 한글 refuses file access from
+  automation. `python -c "from dobby import hwpcom, json; print(hwpcom.available())"`
+  names what is missing.
+
+Table cells are separate text lists, not part of the body. `--list 0` is the body;
+`hwp shapes --list <n>` walks the rest, which is how you find the cell to write
+into and how you confirm a caption is a real table rather than shrunken body text.
+
+## 6. 심사 대응 — the answer letter is its own artifact, with its own failures
+
+A revision round is almost entirely *addition*, which is where its defects come
+from. Four things, in this order.
+
+**Classify each reviewer item before drafting.** Two properties decide the
+answer. First, does this field want the reviewer's words transcribed or your
+summary? Response forms usually reproduce the 심사의견 verbatim beside the reply,
+and summarising there reads as editing the reviewer. Second, which way does the
+request run — strengthen, soften, correct, or confirm? A reviewer asking that a
+finding be given *more* weight, answered with its limitations, has been refused
+without being told so. Write the direction down before writing the reply.
+
+**Answer the item, not around it.** An aside that says a point is *not* a problem
+wants acknowledgement, not a defence. Volunteered scope is what turns a minor
+revision into a new round.
+
+**Check every claim in the letter against the shipped file.** "We added X to 5.2"
+is a claim about the submission, not about the markdown you edited — and a
+generator that rewrites the body from the chapter-1 heading onward leaves the
+abstract and front matter untouched, silently.
+
+```
+python -m dobby.cli hwp text "<제출본>"     # then grep the letter's claims against this
+python -m dobby.cli hwp pages "<제출본>"    # length limits are enforced by page, and cost money
+```
+
+**Re-derive any number the reviewer quotes.** If a fresh run disagrees with the
+reported value, the fresh run wins, the manuscript is corrected, and the letter
+says so in one clause — a reviewer who quoted `RMSEA(0.092)` will notice `0.091`
+arriving unannounced. Reported statistics should each have had a reproduction
+command *before* review; deriving one under review is how a stale digit survives
+to print.
+
+## 7. Report what is not established
 
 State the claims that remain unsupported, the citations still `unresolvable` or
 `NOT CHECKED`, and the gates that did not run. A limitations section written from
