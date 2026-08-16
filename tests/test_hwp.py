@@ -360,23 +360,44 @@ class Hwp5RecordDecoding(unittest.TestCase):
 # ------------------------------------------------------------------------
 # Real documents, where they exist. A skip is a skip, never a pass.
 # ------------------------------------------------------------------------
-def _real(pattern: str) -> list[str]:
+def _real(pattern: str, kind: str) -> list[str]:
+    """Documents that MEASURE as `kind`, not merely ones named like it.
+
+    The extension is a claim, which is the rule the rest of this file tests. A
+    download folder collects counterexamples: the file that first broke this was
+    a JPEG saved as `.hwp`. A corpus test that trips over one is reporting what
+    is in the folder, not what the parser does, so the filter goes here rather
+    than a skip going into each test.
+
+    The cap applies after filtering — twelve real documents, not twelve
+    candidates of which some are not documents at all.
+    """
     roots = [os.path.expanduser("~/Downloads"), os.path.expanduser("~/Documents")]
     found: list[str] = []
     for root in roots:
         if os.path.isdir(root):
             found.extend(glob.glob(os.path.join(root, "**", pattern),
                                    recursive=True))
-    return sorted(set(found))[:12]
+    measured: list[str] = []
+    for path in sorted(set(found)):
+        try:
+            if hwpx.detect_format(path) != kind:
+                continue
+        except (hwpx.HwpxError, OSError):
+            continue                      # not a 한글 document of any kind
+        measured.append(path)
+        if len(measured) == 12:
+            break
+    return measured
 
 
 class RealDocuments(unittest.TestCase):
     """Runs only where 한글 documents are present; otherwise reports a skip."""
 
     def test_every_real_hwpx_reads_and_survives_a_no_op_save(self):
-        files = _real("*.hwpx")
+        files = _real("*.hwpx", "hwpx")
         if not files:
-            self.skipTest("no .hwpx documents on this machine")
+            self.skipTest("no real .hwpx documents on this machine")
         scratch = tempfile.mkdtemp(prefix="dobby_hwpx_real_")
         self.addCleanup(lambda: __import__("shutil").rmtree(scratch, True))
         for index, path in enumerate(files):
@@ -391,9 +412,9 @@ class RealDocuments(unittest.TestCase):
                         self.assertEqual(a.read(name), b.read(name), name)
 
     def test_every_real_hwp_reads(self):
-        files = _real("*.hwp")
+        files = _real("*.hwp", "hwp5")
         if not files:
-            self.skipTest("no .hwp documents on this machine")
+            self.skipTest("no real legacy .hwp documents on this machine")
         for path in files:
             with self.subTest(document=os.path.basename(path)):
                 facts = hwp5.info(path)
@@ -409,9 +430,9 @@ class RealDocuments(unittest.TestCase):
             import olefile
         except ImportError:
             self.skipTest("olefile is not installed; no oracle available")
-        files = _real("*.hwp")
+        files = _real("*.hwp", "hwp5")
         if not files:
-            self.skipTest("no .hwp documents on this machine")
+            self.skipTest("no real legacy .hwp documents on this machine")
         for path in files:
             with self.subTest(document=os.path.basename(path)):
                 with open(path, "rb") as handle:
