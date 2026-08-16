@@ -89,6 +89,14 @@ PERMANENT_FAILURE = "PERMANENT_FAILURE"
 
 ATTEMPT_OUTCOMES = (STARTED, FINISHED, RETRYABLE_FAILURE, PERMANENT_FAILURE)
 
+#: The detail written when an attempt is closed because the process holding it
+#: died. A CONSTANT rather than prose in two places: `metrics` counts recovered
+#: runs by matching it, and the first version of that match looked for a word
+#: the runner never wrote — so `recovery_success_rate` reported "nothing has
+#: been interrupted" for a store that contained an interrupted run.
+INTERRUPTED_DETAIL = ("the process holding this attempt was interrupted before "
+                      "it finished; recovered on resume")
+
 
 class GraphError(ValueError):
     """A graph that cannot be executed, or a transition that must not happen."""

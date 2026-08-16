@@ -88,11 +88,34 @@ class RunBudget:
                     f"node {node.node_id!r} is EXTERNAL_IRREVERSIBLE and this "
                     f"run is allowed {self.max_irreversible}")
 
+    def reserve(self, node) -> None:
+        """Admit AND take the slot, in one step. Raises `BudgetExceeded`.
+
+        Checking and spending have to be the same operation. When they were
+        separate — `admit` at scheduling time, `charge` when the node actually
+        started — a batch admitted together all saw the same remaining count,
+        so a ceiling of two admitted three nodes. Measured on the diamond graph
+        with `max_parallel=4`: `max_attempts=2` produced 3 attempts.
+        """
+        self.admit(node)
+        self.charge(node)
+
     def charge(self, node, *, cost_usd: float = 0.0) -> None:
         self.attempts_spent += 1
         self.cost_spent += cost_usd
         if node.contract.side_effect_class == EXTERNAL_IRREVERSIBLE:
             self.irreversible_spent += 1
+
+    def refund(self, node) -> None:
+        """Give back a reservation the node never used.
+
+        A node that was reserved and then could not be leased — another process
+        took it — has spent nothing. Without this, a run that loses a race to a
+        sibling process burns budget on work it did not do.
+        """
+        self.attempts_spent = max(0, self.attempts_spent - 1)
+        if node.contract.side_effect_class == EXTERNAL_IRREVERSIBLE:
+            self.irreversible_spent = max(0, self.irreversible_spent - 1)
 
     def to_dict(self) -> dict:
         return {"max_attempts": self.max_attempts,
@@ -188,7 +211,7 @@ class Scheduler:
                               f"approved; approve it explicitly to proceed"})
                 continue
             try:
-                self.budget.admit(node)
+                self.budget.reserve(node)
             except BudgetExceeded as exc:
                 deferred.append({"node_id": node.node_id,
                                  "reason": f"budget {exc.which}: {exc.detail}"})
