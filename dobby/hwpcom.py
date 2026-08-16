@@ -335,15 +335,21 @@ def available() -> dict:
         info["missing"].append("neither powershell nor pwsh is on PATH")
         return info
 
+    # The registered path is frequently non-ASCII (a Korean directory name).
+    # PowerShell emits UTF-8 on the redirected stream, so `text=True` decodes it
+    # with the ANSI code page and raises inside subprocess's reader thread; the
+    # except below would then swallow it and report a registered module as
+    # missing. Pin the encoding on both ends instead of guessing.
     probe = (
+        "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;"
         "$ErrorActionPreference='SilentlyContinue';"
         f"(Get-ItemProperty -Path '{_REG_PATH}').FilePathCheckerModule"
     )
     try:
         out = subprocess.run(
             [info["powershell"], "-NoProfile", "-NonInteractive", "-Command", probe],
-            capture_output=True, text=True, timeout=60,
-        ).stdout.strip()
+            capture_output=True, timeout=60,
+        ).stdout.decode("utf-8", "replace").strip()
     except Exception:                                    # noqa: BLE001
         out = ""
     info["security_module"] = out or None
@@ -398,11 +404,15 @@ def _run(mode: str, path: str, **kw) -> dict:
         if kw.get("apply"):
             argv.append("-Apply")
 
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=_TIMEOUT)
+        # Same decoding hazard as the probe above: a 한글 error message on these
+        # streams is UTF-8, and letting Python guess turns the diagnostic into a
+        # UnicodeDecodeError that hides what actually went wrong.
+        proc = subprocess.run(argv, capture_output=True, timeout=_TIMEOUT)
         if not os.path.exists(out):
+            tail = (proc.stderr or proc.stdout or b"").decode("utf-8", "replace")
             raise HwpComError(
                 f"한글 driver produced no result (exit {proc.returncode}): "
-                f"{(proc.stderr or proc.stdout or '').strip()[:400]}")
+                f"{tail.strip()[:400]}")
         with open(out, encoding="utf-8") as fh:
             data = json.load(fh)
         if not data.get("ok"):
