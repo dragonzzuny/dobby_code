@@ -193,6 +193,20 @@ class ArtifactContract:
     input_refs: list[str] = field(default_factory=list)
     #: Bumped by hand when the same node id should be allowed to act again.
     effect_version: str = "1"
+    #: The grounded layer: does the quoted evidence exist, and does a
+    #: recomputation agree with the reported number. See `verify.ground`.
+    #:
+    #:     {"claims_at": "claims",
+    #:      "evidence_files": ["reports/measurements.md"],
+    #:      "recompute": [{"field": "total", "command": "...", "tolerance": 0}]}
+    grounding: dict = field(default_factory=dict)
+    #: True when this node's output is a MODEL'S OPINION. Advisory artifacts are
+    #: promoted like any other — they are a real product of a real step — but
+    #: they are labelled everywhere they travel, and `.dobby/ontology.json`
+    #: forbids a model assertion from counting as verification. A downstream
+    #: node sees the label in its inputs and can decide; nothing lets an
+    #: advisory verdict silently become the evidence that a gate passed.
+    advisory: bool = False
 
     def __post_init__(self):
         if self.side_effect_class not in SIDE_EFFECT_CLASSES:

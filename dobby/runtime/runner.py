@@ -39,8 +39,11 @@ from .contracts import (Artifact, ArtifactContract, PROMOTED, REJECTED,
                         SCHEMAS, VERIFIED, artifact_path, idempotency_key)
 from .failures import (DEFAULT_POLICY, Failure, REPAIR, RETRY_ELSEWHERE,
                        RETRY_SAME, TRANSIENT_PROVIDER, WAIT, backoff_delay)
+from .placement import ConcurrencyLimiter, ProviderPlacement
 from .scheduler import BudgetExceeded, RunBudget, Scheduler
 from .store import RunStore
+from .trace import (AGENT_GENERATION, NODE, RUN, SCHEDULER_DECISION, TOOL_CALL,
+                    VERIFIER, Tracer)
 from .verify import Verifier, promotable
 from .workers import WorkerRegistry
 
@@ -93,12 +96,27 @@ class Runner:
     def __init__(self, repo: str, *, data_dir: str | None = None,
                  workers: WorkerRegistry | None = None,
                  policy: dict | None = None,
+                 max_parallel: int = 1,
+                 allow_network: bool = False,
                  sleep=time.sleep):
+        import threading
         self.repo = os.path.abspath(repo)
         self.data_dir = data_dir or os.path.join(self.repo, ".dobby")
         self.store = RunStore(self.data_dir)
         self.workers = workers or WorkerRegistry()
         self.policy = policy or DEFAULT_POLICY
+        #: Nodes run at once. Defaults to 1 — sequential is the right default
+        #: for a graph whose steps mostly depend on each other, and raising it
+        #: only helps a graph with a genuine fan-out.
+        self.max_parallel = max(1, max_parallel)
+        self.placement = ProviderPlacement(self.store,
+                                           allow_network=allow_network)
+        self.limiter = ConcurrencyLimiter(total=self.max_parallel,
+                                          per_provider=max(1, self.max_parallel))
+        #: The budget is read-modify-write from several threads once
+        #: `max_parallel > 1`. Without this two nodes admitted at the same
+        #: instant both see the same remaining count.
+        self._budget_lock = threading.Lock()
         #: Injected so tests do not pay real backoff seconds. A retry policy
         #: nobody tests because the test is slow is a retry policy nobody tests.
         self._sleep = sleep
@@ -140,21 +158,70 @@ class Runner:
             self.store.set_run_state(run_id, G.RUNNING,
                                      reason="runner attached")
 
+        tracer = Tracer(self.store, run_id)
         deferred: list[dict] = []
-        for _ in range(max_steps):
-            self._skip_unreachable(run_id, task_graph)
-            if task_graph.done():
-                break
-            decisions, deferred = scheduler.next_nodes(task_graph, limit=1)
-            if not decisions:
-                break
-            self._execute_node(run_id, task_graph,
-                               task_graph.nodes[decisions[0].node_id], budget)
+        with tracer.span(RUN, f"run:{run_id}", task=state["task"],
+                         max_parallel=self.max_parallel) as root:
+            for _ in range(max_steps):
+                self._skip_unreachable(run_id, task_graph)
+                if task_graph.done():
+                    break
+                decisions, deferred = scheduler.next_nodes(
+                    task_graph, limit=self.max_parallel)
+                if not decisions:
+                    break
+                for decision in decisions:
+                    tracer.event(SCHEDULER_DECISION,
+                                 f"admit:{decision.node_id}",
+                                 candidates=[d.node_id for d in decisions],
+                                 chosen=decision.node_id,
+                                 reason=decision.reason,
+                                 deferred=[d["node_id"] for d in deferred])
+                self._dispatch(run_id, task_graph, decisions, budget,
+                               tracer.child_of(root.span_id))
 
         self._skip_unreachable(run_id, task_graph)
         final = self._finalize(run_id, task_graph, deferred)
         return self._report(run_id, task_graph, deferred, budget, notes,
                             state=final)
+
+    def _dispatch(self, run_id: str, task_graph: "G.TaskGraph", decisions,
+                  budget: RunBudget, tracer) -> None:
+        """Run this batch of nodes — one thread each when parallelism is on.
+
+        Threads and not processes for the same reason `providers/fanout.py`
+        uses them: every unit of work here is a child process the parent waits
+        on, so the GIL is released for essentially the whole call.
+
+        A node that raises does not lose the batch. Its exception is turned into
+        a permanent failure for that node by `_execute_node` itself; anything
+        escaping that is a bug in the runner, and it is recorded against the run
+        rather than allowed to kill the sibling that was about to succeed.
+        """
+        if len(decisions) == 1 or self.max_parallel == 1:
+            self._execute_node(run_id, task_graph,
+                               task_graph.nodes[decisions[0].node_id], budget,
+                               tracer)
+            return
+
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(
+                max_workers=self.max_parallel) as pool:
+            futures = {
+                pool.submit(self._execute_node, run_id, task_graph,
+                            task_graph.nodes[d.node_id], budget,
+                            tracer.child_of(None)): d.node_id
+                for d in decisions}
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    future.result()
+                except Exception as exc:      # noqa: BLE001 - runner defect
+                    node_id = futures[future]
+                    self.store.set_node_state(
+                        run_id, node_id, G.NODE_FAILED,
+                        reason=f"runner error: {type(exc).__name__}: {exc}",
+                        enforce=False)
+                    task_graph.nodes[node_id].state = G.NODE_FAILED
 
     # -- crash reconciliation ----------------------------------------------
     def _reconcile(self, run_id: str, task_graph: "G.TaskGraph") -> list[str]:
@@ -170,8 +237,7 @@ class Runner:
             self.store.finish_attempt(
                 run_id, row["node_id"], row["attempt"],
                 outcome=G.RETRYABLE_FAILURE, failure_class=TRANSIENT_PROVIDER,
-                detail="the process holding this attempt exited before it "
-                       "finished; recovered on resume")
+                detail=G.INTERRUPTED_DETAIL)
             node = task_graph.nodes.get(row["node_id"])
             if node is not None and node.state not in G.NODE_TERMINAL:
                 self._set_node(run_id, task_graph, node, G.READY,
@@ -190,13 +256,16 @@ class Runner:
 
     # -- one node ----------------------------------------------------------
     def _execute_node(self, run_id: str, task_graph: "G.TaskGraph", node,
-                      budget: RunBudget) -> None:
+                      budget: RunBudget, tracer) -> None:
         if node.state == G.PENDING:
             self._set_node(run_id, task_graph, node, G.READY,
                            reason="dependencies satisfied")
         if not self.store.lease_node(run_id, node.node_id, holder=str(os.getpid())):
             # Another process took it. Reload so this one is not deciding from
-            # a stale graph.
+            # a stale graph, and give back the budget slot the scheduler
+            # reserved — this run did not do the work.
+            with self._budget_lock:
+                budget.refund(node)
             node.state = self.store.load_run(run_id)["graph"].nodes[
                 node.node_id].state
             return
@@ -206,10 +275,19 @@ class Runner:
         self.store.start_attempt(run_id, node.node_id, attempt,
                                  worker=node.worker)
         node.attempts = attempt
+        # The budget was already taken by `Scheduler.reserve` when this node was
+        # admitted. Charging again here would double-count every attempt.
         self._set_node(run_id, task_graph, node, G.NODE_RUNNING,
                        reason=f"attempt {attempt}")
-        budget.charge(node)
 
+        with tracer.span(NODE, f"node:{node.node_id}", node_id=node.node_id,
+                         attempt=attempt, node_kind=node.kind,
+                         worker=node.worker) as node_span:
+            self._run_attempt(run_id, task_graph, node, budget, attempt,
+                              tracer.child_of(node_span.span_id), node_span)
+
+    def _run_attempt(self, run_id: str, task_graph: "G.TaskGraph", node,
+                     budget: RunBudget, attempt: int, tracer, node_span) -> None:
         started = time.monotonic()
         claimed_key = self._claim_effect(run_id, node, attempt)
         if claimed_key is False:
@@ -223,23 +301,66 @@ class Runner:
                            reason="effect already applied")
             self._set_node(run_id, task_graph, node, G.NODE_SUCCEEDED,
                            reason="idempotent no-op")
+            node_span.attributes["outcome"] = "idempotent_no_op"
+            return
+
+        placement = self._place(node, tracer)
+        if placement is not None and placement.provider is None:
+            self._fail_attempt(
+                run_id, task_graph, node, attempt,
+                Failure("CAPACITY", placement.reason,
+                        {"candidates": placement.candidates}),
+                round(time.monotonic() - started, 2))
             return
 
         context = {"repo": self.repo, "attempt": attempt,
                    "inputs": self._promoted_inputs(run_id, task_graph, node),
                    "run_id": run_id}
+        provider = node.config.get("provider") if node.worker == "provider" \
+            else None
+        span_kind = AGENT_GENERATION if provider else TOOL_CALL
+        span_attrs = ({"provider": provider, "model": node.config.get("model"),
+                       "node_kind": node.kind}
+                      if provider else
+                      {"tool": node.config.get("command", node.worker),
+                       "effect_class": node.contract.side_effect_class,
+                       "node_kind": node.kind})
+
+        acquired = provider is not None and self.limiter.acquire(
+            provider, timeout=node.config.get("queue_timeout_s", 300))
+        if provider is not None and not acquired:
+            self._fail_attempt(
+                run_id, task_graph, node, attempt,
+                Failure("CAPACITY",
+                        f"waited past the queue timeout for a {provider} slot"),
+                round(time.monotonic() - started, 2))
+            return
         try:
-            result = self.workers.get(node.worker).run(node, context)
-        except Exception as exc:  # noqa: BLE001 - an adapter bug is a run event
-            result = None
-            failure = Failure("NON_RETRYABLE",
-                              f"worker {node.worker!r} raised "
-                              f"{type(exc).__name__}: {exc}")
-        else:
-            failure = result.failure
+            with tracer.span(span_kind, f"{node.worker}:{node.node_id}",
+                             node_id=node.node_id, attempt=attempt,
+                             **span_attrs) as work_span:
+                try:
+                    result = self.workers.get(node.worker).run(node, context)
+                except Exception as exc:  # noqa: BLE001 - adapter bug is a run event
+                    result = None
+                    failure = Failure("NON_RETRYABLE",
+                                      f"worker {node.worker!r} raised "
+                                      f"{type(exc).__name__}: {exc}")
+                else:
+                    failure = result.failure
+                    work_span.attributes.update(result.meta or {})
+                if result is None or not result.ok:
+                    work_span.end("ERROR",
+                                  failure_class=failure.failure_class
+                                  if failure else "UNKNOWN")
+        finally:
+            if acquired and provider is not None:
+                self.limiter.release(provider)
 
         duration = round(time.monotonic() - started, 2)
         if result is None or not result.ok:
+            if provider:
+                self.placement.record_outcome(provider, False)
             self._fail_attempt(run_id, task_graph, node, attempt, failure,
                                duration)
             return
@@ -247,6 +368,9 @@ class Runner:
         if claimed_key:
             self.store.confirm_effect(claimed_key,
                                       result_digest=str(len(result.raw)))
+            tracer.event(TOOL_CALL, "effect.confirmed", key=claimed_key,
+                         tool=node.worker,
+                         effect_class=node.contract.side_effect_class)
 
         # -- the gate ------------------------------------------------------
         self._set_node(run_id, task_graph, node, G.VERIFYING,
@@ -254,8 +378,18 @@ class Runner:
         verifier = Verifier(self.repo,
                             log_dir=os.path.join(self.data_dir, "state",
                                                  "runtime", run_id, "logs"))
-        verdict = verifier.verify(node.contract, result.payload,
-                                  node_id=node.node_id)
+        with tracer.span(VERIFIER, f"verify:{node.node_id}",
+                         node_id=node.node_id, attempt=attempt,
+                         checks=len(node.contract.acceptance_checks),
+                         passed=False) as gate_span:
+            verdict = verifier.verify(node.contract, result.payload,
+                                      node_id=node.node_id)
+            gate_span.attributes["passed"] = verdict.passed
+            gate_span.attributes["failed_requirements"] = \
+                verdict.failed_requirements[:10]
+            gate_span.attributes["not_run"] = verdict.not_run
+        if provider:
+            self.placement.record_outcome(provider, verdict.passed)
         artifact = self._store_artifact(run_id, node, result, verdict)
 
         if not promotable(node.contract, verdict):
@@ -329,6 +463,36 @@ class Runner:
                        enforce=False)
 
     # -- helpers -----------------------------------------------------------
+    def _place(self, node, tracer):
+        """Choose a provider for a provider-worker node, and record the argument.
+
+        Returns None for nodes that do not use a provider, so a command node
+        never pays for a scorecard read.
+
+        The chosen provider is written back onto `node.config` for this attempt.
+        That is deliberate and it is the only mutation of the node the runner
+        makes: the next attempt re-places from scratch, because the reason to
+        re-place — a provider that just failed, a breaker that just tripped — is
+        exactly what the last attempt discovered.
+        """
+        if node.worker != "provider":
+            return None
+        avoid = set(node.config.get("avoid_providers") or ())
+        placement = self.placement.choose(node, avoid=avoid)
+        tracer.event(SCHEDULER_DECISION, f"place:{node.node_id}",
+                     candidates=placement.candidates,
+                     chosen=placement.provider or "(none)",
+                     reason=placement.reason,
+                     provisional=placement.provisional,
+                     scores=placement.scores,
+                     node_kind=node.kind)
+        if placement.provider:
+            node.config = dict(node.config)
+            node.config["provider"] = placement.provider
+            if placement.hedge_with:
+                node.config["hedge_with"] = placement.hedge_with
+        return placement
+
     def _claim_effect(self, run_id: str, node, attempt: int):
         """Returns a key (claimed), False (already applied), or None (no effect)."""
         if not node.contract.needs_idempotency_key:
@@ -350,10 +514,23 @@ class Runner:
                 continue
             latest = rows[-1]
             payload = self._read_payload(latest["path"])
-            if payload is not None:
+            if payload is None:
+                continue
+            dep_node = task_graph.nodes[dep]
+            if dep_node.contract.advisory:
+                # Labelled where it travels. A model's opinion is a real product
+                # of a real step and it is not evidence; the consumer sees which
+                # one it was handed instead of having to know.
+                inputs[dep] = {"advisory": True,
+                               "not_verification": (
+                                   "a model judgment. It may inform this step "
+                                   "and may not be cited as proof that "
+                                   "anything passed"),
+                               "payload": payload}
+            else:
                 inputs[dep] = payload
-                node.contract.input_refs = sorted(
-                    set(node.contract.input_refs) | {latest["artifact_id"]})
+            node.contract.input_refs = sorted(
+                set(node.contract.input_refs) | {latest["artifact_id"]})
         return inputs
 
     @staticmethod
@@ -375,6 +552,7 @@ class Runner:
             # "reproducible inputs" would be a property of one process's memory.
             evidence={"verdict": verdict.to_dict(), "worker": node.worker,
                       "input_refs": list(node.contract.input_refs),
+                      "advisory": node.contract.advisory,
                       "meta": result.meta})
         self._write_artifact_file(run_id, artifact)
         return artifact

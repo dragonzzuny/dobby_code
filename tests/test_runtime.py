@@ -537,9 +537,19 @@ class AKilledProcess(unittest.TestCase):
                              f"{node_id} ran more than once")
 
     def test_a_process_killed_mid_node_leaves_a_recoverable_run(self):
-        slow = (f'{sys.executable} -c "import time;'
+        # The node's command blocks until the test releases it, rather than
+        # sleeping. That makes the kill deterministic: killing the whole tree
+        # let taskkill reach the CHILD first often enough to be flaky — the
+        # runner then saw its worker exit, recorded the attempt as failed, and
+        # died with nothing open, so the test's premise was gone. Killing only
+        # the parent, while the child is still blocked, guarantees the attempt
+        # is open at the moment the process dies.
+        release = os.path.join(self.tmp.name, "release.txt")
+        slow = (f'{sys.executable} -c "import os, time;'
                 f' open(r\'{self.marker}\', \'a\', encoding=\'utf-8\')'
-                f'.write(\'ran\\n\'); time.sleep(30)"')
+                f'.write(\'ran\\n\');'
+                f' [time.sleep(0.05) for _ in range(1200)'
+                f'  if not os.path.exists(r\'{release}\')]"')
         script = _CRASH_SCRIPT.format(
             repo=REPO, repo_dir=self.tmp.name, data=self.data, command=slow,
             idfile=self.idfile, steps=10,
@@ -549,14 +559,20 @@ class AKilledProcess(unittest.TestCase):
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               **popen_extra) as proc:
             try:
-                deadline = time.monotonic() + 60
+                deadline = time.monotonic() + 120
                 while self._marker_lines() < 1 and time.monotonic() < deadline:
                     time.sleep(0.1)
                 self.assertGreaterEqual(self._marker_lines(), 1,
                                         "the first node never started")
             finally:
-                _kill_tree(proc)
+                # The PARENT only, and while its worker is still blocked.
+                proc.kill()
                 proc.wait(timeout=30)
+                # Now let the orphaned worker finish, so it stops holding the
+                # temp directory as its working directory on Windows.
+                with open(release, "w", encoding="utf-8") as handle:
+                    handle.write("go")
+                _kill_tree(proc)
 
         with open(self.idfile, encoding="utf-8") as handle:
             run_id = handle.read().strip()

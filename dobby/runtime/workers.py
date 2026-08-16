@@ -334,6 +334,72 @@ class ProviderWorker(WorkerAdapter):
         return "\n".join(parts)
 
 
+class AdvisoryJudgeWorker(WorkerAdapter):
+    """The semantic verifier layer — as an ordinary node, and always advisory.
+
+    Model judgment is not moved inside the gate. It runs as a node, which means
+    it costs a visible provider call, appears in the trace, and is subject to
+    the same budget as everything else. A semantic verdict that arrived free and
+    unbudgeted inside `Verifier.verify` would be consulted on every artifact and
+    nobody would see the bill.
+
+    It is ADVISORY without exception. `dobby/judge.py` stamps `advisory=True` on
+    every record it returns precisely so a caller cannot mistake it for a
+    measurement, and `.dobby/ontology.json` forbids a model assertion from
+    counting as verification. This adapter therefore never fails a node on the
+    judge's opinion: a FAIL verdict is recorded as data, not raised as an error.
+    Where a deterministic check exists it outranks this; where none exists, this
+    is a second opinion, which is a different thing from a result.
+
+    `config`:
+
+        criterion    {"id": ..., "description": "what to grade"}
+        judge_of     node id whose promoted payload is the artifact
+        provider     optional; otherwise the catalog's `critic` role
+        exclude      providers that must not judge — the author, above all
+    """
+
+    name = "judge"
+
+    def run(self, node, context: dict) -> WorkerResult:
+        from ..judge import judge_criterion
+
+        criterion = node.config.get("criterion") or {
+            "id": node.node_id,
+            "description": node.instruction or "does this satisfy the request?"}
+        source = node.config.get("judge_of")
+        inputs = context.get("inputs") or {}
+        artifact = inputs.get(source) if source else inputs
+        if artifact is None:
+            return WorkerResult(False, failure=Failure(
+                "NON_RETRYABLE",
+                f"node {node.node_id!r} judges {source!r}, which produced no "
+                f"promoted artifact — there is nothing to grade"))
+
+        exclude = set(node.config.get("exclude") or ())
+        record = judge_criterion(
+            criterion,
+            json.dumps(artifact, ensure_ascii=False, indent=1, default=str),
+            provider_id=node.config.get("provider"),
+            exclude=exclude,
+            cwd=context.get("repo"))
+
+        # A judge that could not run is NOT a pass and NOT a fail. It is an
+        # unrun check, and `judge.py` already says so in `evidence`. Reporting
+        # it as a verdict is the failure this whole module is built against.
+        if record.get("verdict_token") is None and record.get("evidence"):
+            return WorkerResult(
+                False, raw=str(record.get("evidence")),
+                failure=Failure("POLICY_BLOCKED", str(record["evidence"]),
+                                {"criterion": criterion.get("id")}),
+                meta={"advisory": True})
+
+        return WorkerResult(True, payload=record,
+                            raw=json.dumps(record, ensure_ascii=False),
+                            meta={"advisory": True,
+                                  "judge_provider": record.get("judge_provider")})
+
+
 class StaticWorker(WorkerAdapter):
     """Return a payload from the node's own config.
 
@@ -371,7 +437,8 @@ class WorkerRegistry:
 
     def __init__(self, adapters: dict | None = None):
         self.adapters: dict[str, WorkerAdapter] = dict(adapters or {})
-        for adapter in (CommandWorker(), ProviderWorker(), StaticWorker()):
+        for adapter in (CommandWorker(), ProviderWorker(), StaticWorker(),
+                        AdvisoryJudgeWorker()):
             self.adapters.setdefault(adapter.name, adapter)
 
     def get(self, name: str) -> WorkerAdapter:

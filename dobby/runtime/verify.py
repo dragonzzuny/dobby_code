@@ -28,6 +28,7 @@ nothing except run the whole node again.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -116,6 +117,21 @@ class Verifier:
                     "paths are the ones that did not match"),
                 failure=failure)
 
+        # The grounded layer runs BEFORE the commands, on cost alone. Both are
+        # deterministic and both block promotion; one is lexical matching over
+        # text already in memory and the other can be a full test suite, so
+        # failing on the cheap one first saves the expensive one.
+        grounded = self.ground(contract, payload)
+        if grounded and not grounded["passed"]:
+            return VerifierResult(
+                passed=False,
+                failed_requirements=grounded["failed"],
+                evidence_refs=grounded["evidence_refs"],
+                repair_hint=grounded["repair_hint"],
+                failure=classify_verifier_failure(grounded["failed"]),
+                records=[CheckRecord(f"grounding:{name}", ok)
+                         for name, ok in grounded["by_check"].items()])
+
         records: list[CheckRecord] = []
         not_run: list[str] = []
         for check in contract.acceptance_checks:
@@ -140,6 +156,118 @@ class Verifier:
                 "read the failing output below and change the artifact, not the "
                 "check: " + detail[:400]),
             failure=classify_verifier_failure(failed))
+
+    # -- the grounded layer ------------------------------------------------
+    def ground(self, contract: ArtifactContract, payload) -> dict | None:
+        """Does the quoted evidence exist, and does the number survive a re-run?
+
+        Returns None when the contract declares no grounding, so a node that
+        makes no claims pays nothing.
+
+        Two checks, because they catch the two ways a confident output is wrong:
+
+        **Claims against a corpus.** Reuses `dobby/research.verify_claim`, whose
+        matching is lexical overlap. That is a SCREEN and it is labelled as one
+        there: it reliably finds "nothing in the corpus speaks to this" and
+        cannot adjudicate a subtle mismatch. Used as a gate it therefore fails
+        only the unsupported case, which is the case worth failing
+        automatically.
+
+        **Numbers against a re-run.** A reported figure is verified by producing
+        it again, not by reading it again. The command's stdout is parsed as a
+        number and compared within a tolerance the contract states. A figure the
+        run cannot reproduce is the defect that survives to print.
+        """
+        spec = contract.grounding or {}
+        if not spec:
+            return None
+
+        failed: list[str] = []
+        evidence_refs: list[str] = []
+        by_check: dict[str, bool] = {}
+        hints: list[str] = []
+
+        claims = _dig(payload, spec.get("claims_at", ""))
+        if claims:
+            corpus = self._corpus(spec)
+            if not corpus:
+                failed.append("grounding: claims were declared and no evidence "
+                              "corpus could be read")
+                by_check["corpus"] = False
+                hints.append("point `evidence_files` at something that exists; "
+                             "an unread corpus is not an empty one")
+            else:
+                from ..research import Claim, verify_claim
+                for i, raw in enumerate(claims):
+                    text = raw.get("claim") if isinstance(raw, dict) else str(raw)
+                    if not text:
+                        continue
+                    verdict = verify_claim(Claim(text=text), corpus)
+                    by_check[f"claim[{i}]"] = verdict.supported
+                    if verdict.supported:
+                        evidence_refs.extend(verdict.matched_evidence)
+                    else:
+                        failed.append(f"claim[{i}] unsupported: {text[:80]}")
+                        hints.append(verdict.note)
+
+        for rule in spec.get("recompute", []):
+            name = rule.get("field", "?")
+            ok, detail = self._recompute(payload, rule)
+            by_check[f"recompute:{name}"] = ok
+            if ok:
+                evidence_refs.append(f"recompute:{name}")
+            else:
+                failed.append(f"recompute {name}: {detail}")
+                hints.append("the fresh run wins; correct the artifact and say "
+                             "so, rather than keeping the reported value")
+
+        return {"passed": not failed, "failed": failed,
+                "evidence_refs": evidence_refs, "by_check": by_check,
+                "repair_hint": " | ".join(hints[:3])}
+
+    def _corpus(self, spec: dict) -> list[dict]:
+        """Evidence records, read from files or taken inline."""
+        corpus = list(spec.get("evidence") or [])
+        for rel in spec.get("evidence_files") or []:
+            path = os.path.join(self.repo, rel)
+            if not os.path.exists(path):
+                continue
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                corpus.append({"id": rel, "text": handle.read()})
+        return corpus
+
+    def _recompute(self, payload, rule: dict) -> tuple[bool, str]:
+        """Run the command, parse a number, compare to the reported one."""
+        reported = _dig(payload, rule.get("field", ""))
+        if reported is None:
+            return False, f"the payload has no field {rule.get('field')!r}"
+        command = resolve_command(rule.get("command", ""))
+        if not command:
+            return False, "no command to reproduce this number with"
+        try:
+            proc = subprocess.run(
+                command, shell=True, cwd=self.repo, capture_output=True,
+                text=True, encoding="utf-8", errors="replace",
+                env=child_env(), timeout=rule.get("timeout_s", self.timeout_s))
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            return False, f"could not re-derive it here: {exc}"
+        if proc.returncode != 0:
+            return False, (f"the reproduction command exited "
+                           f"{proc.returncode}: "
+                           f"{(proc.stderr or '').strip()[-200:]}")
+        fresh = _first_number(proc.stdout or "")
+        if fresh is None:
+            return False, ("the reproduction command printed no number; its "
+                           "stdout is the measurement and must contain one")
+        try:
+            reported_value = float(reported)
+        except (TypeError, ValueError):
+            return False, f"the reported value {reported!r} is not a number"
+        tolerance = float(rule.get("tolerance", 0.0))
+        if abs(fresh - reported_value) <= tolerance:
+            return True, f"{reported_value} reproduced as {fresh}"
+        return False, (f"reported {reported_value}, re-derived {fresh} "
+                       f"(tolerance {tolerance})")
 
     def _run_check(self, check: str, *, env_extra: dict | None = None,
                    node_id: str = "") -> CheckRecord:
@@ -175,6 +303,40 @@ class Verifier:
         path = os.path.join(self.log_dir, f"{safe}.checks.log")
         with open(path, "a", encoding="utf-8") as handle:
             handle.write(f"\n$ {check}\nexit {code}\n{output}\n")
+
+
+_NUMBER = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+
+
+def _first_number(text: str) -> float | None:
+    """The first number in a command's stdout, or None.
+
+    First and not last: a measurement command should print its result, and a
+    convention that reads the last number silently picks up a trailing line
+    count or a timing suffix.
+    """
+    match = _NUMBER.search(text or "")
+    return float(match.group(0)) if match else None
+
+
+def _dig(payload, path: str):
+    """`a.b[0].c` against nested dicts and lists. None when absent."""
+    if not path:
+        return None
+    cursor = payload
+    for part in path.replace("[", ".").replace("]", "").split("."):
+        if part == "":
+            continue
+        if isinstance(cursor, dict):
+            cursor = cursor.get(part)
+        elif isinstance(cursor, list) and part.isdigit():
+            index = int(part)
+            cursor = cursor[index] if index < len(cursor) else None
+        else:
+            return None
+        if cursor is None:
+            return None
+    return cursor
 
 
 def promotable(contract: ArtifactContract, verdict: VerifierResult) -> bool:
