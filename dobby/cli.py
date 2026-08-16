@@ -25,6 +25,11 @@
     dobby research plan "need"          decomposed search plan
     dobby design validate               DESIGN.md token check
 
+    dobby runtime run "task"            a durable run: plan/execute/verify/report
+    dobby runtime resume <run_id>       continue it; finished nodes are not re-run
+    dobby runtime status <run_id>       nodes, attempts, artifacts, integrity
+    dobby runtime list                  every run in this project
+
 Almost every command prints JSON on stdout so the output is consumable by another
 process without parsing prose. The exceptions are deliberate and are named here,
 because a blanket promise that two commands break is worse than an accurate one —
@@ -1340,6 +1345,76 @@ def cmd_prompt(args):
     _out(out)
 
 
+def cmd_runtime(args):
+    """Durable execution: a run that survives the process that started it.
+
+    `run` creates a `TaskRun` and drives it. `resume` attaches to an existing
+    one and continues from what the store says already happened — the same code
+    path, deliberately, because a recovery route that differs from the normal
+    one only ever executes when it is least affordable for it to be wrong.
+    """
+    from .runtime import RunBudget, Runner, RunStore, default_graph
+
+    repo = _repo(args)
+    data = _data(args)
+
+    if args.action == "list":
+        _out({"runs": RunStore(data).list_runs(limit=args.limit)})
+        return
+
+    if args.action == "status":
+        store = RunStore(data)
+        state = store.load_run(args.run_id)
+        _out({"run_id": state["run_id"], "task": state["task"],
+              "state": state["state"], "graph": state["graph"].summary(),
+              "attempts": store.attempts(args.run_id),
+              "artifacts": store.artifacts(args.run_id),
+              "effects": store.effects(args.run_id),
+              "integrity": store.rebuild(args.run_id)})
+        return
+
+    if args.action == "events":
+        _out({"run_id": args.run_id,
+              "events": RunStore(data).events(args.run_id)})
+        return
+
+    runner = Runner(repo, data_dir=data)
+    approvals = {a for a in (args.approve or "").split(",") if a.strip()}
+
+    if args.action == "resume":
+        result = runner.run(args.run_id, approvals=approvals,
+                            max_steps=args.max_steps)
+        _out(result.to_dict())
+        return
+
+    # `run`
+    checks = [c for c in (args.check or "").split("|") if c.strip()]
+    graph = default_graph(args.task, provider=args.provider,
+                          execute_command=args.execute,
+                          acceptance_checks=checks,
+                          static=not (args.provider or args.execute))
+    route = {}
+    if not args.no_route:
+        from .core.router import Router
+        _, kg, policies, registry, config = _load_stack(repo)
+        plan = Router(policies, registry, kg, config).route(args.task)
+        route = {"level": plan.level, "model_tier": plan.model_tier,
+                 "policies": plan.policies, "skills": plan.skills,
+                 "justification": plan.justification}
+        budget = RunBudget.from_router_budgets(
+            plan.budgets, max_irreversible=args.allow_irreversible)
+    else:
+        budget = RunBudget(max_irreversible=args.allow_irreversible)
+
+    run_id = runner.start(args.task, graph, budget=budget, route=route)
+    result = runner.run(run_id, budget=budget, approvals=approvals,
+                        max_steps=args.max_steps)
+    payload = result.to_dict()
+    payload["route"] = route
+    payload["resume_with"] = f"dobby runtime resume {run_id}"
+    _out(payload)
+
+
 # --------------------------------------------------------------- main ----
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="dobby",
@@ -1711,7 +1786,50 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--context", default=None,
                    help="pipe-separated established facts")
     p.set_defaults(fn=cmd_prompt)
+
+    p = sub.add_parser("runtime", parents=[common],
+                       help="durable runs: plan -> execute -> verify -> report,"
+                            " resumable after a crash")
+    p.add_argument("action",
+                   choices=["run", "resume", "status", "list", "events"])
+    p.add_argument("task", nargs="?", default="",
+                   help="the task (for `run`), or the run id (resume/status/"
+                        "events)")
+    p.add_argument("--provider", default=None,
+                   help="agent CLI for the plan/execute/report nodes")
+    p.add_argument("--execute", default=None,
+                   help="a deterministic command for the execute node")
+    p.add_argument("--check", default=None,
+                   help="pipe-separated acceptance checks the verify node must "
+                        "pass before anything is promoted")
+    p.add_argument("--approve", default=None,
+                   help="comma-separated node ids a human approves; required "
+                        "before any EXTERNAL_IRREVERSIBLE node runs")
+    p.add_argument("--allow-irreversible", type=int, default=0,
+                   help="how many irreversible nodes this run may perform "
+                        "(default 0: the right is granted, never inherited)")
+    p.add_argument("--max-steps", type=int, default=100)
+    p.add_argument("--limit", type=int, default=25)
+    p.add_argument("--no-route", action="store_true",
+                   help="skip the router (budgets come from defaults)")
+    p.set_defaults(fn=_runtime_dispatch)
     return ap
+
+
+def _runtime_dispatch(args):
+    """`task` carries a run id for every action except `run`.
+
+    One positional, because `dobby runtime resume <id>` and
+    `dobby runtime run "<task>"` are the two things anybody types, and a
+    required `--run-id` flag on one of them would be noise.
+    """
+    args.run_id = args.task
+    if args.action == "run" and not args.task:
+        _die("dobby runtime run needs a task: dobby runtime run \"<task>\"")
+    if args.action in ("resume", "status", "events") and not args.run_id:
+        _die(f"dobby runtime {args.action} needs a run id — "
+             f"`dobby runtime list` shows them")
+    cmd_runtime(args)
 
 
 def main(argv=None) -> None:
