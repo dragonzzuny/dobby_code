@@ -46,7 +46,10 @@ import uuid
 from . import graph as G
 from .contracts import Artifact
 
-SCHEMA_VERSION = 1
+#: 2 added the `spans` table. Every table is `CREATE TABLE IF NOT EXISTS`, so an
+#: existing store gains it on the next open without a migration step; runs
+#: recorded before it simply have no spans, which is the truth about them.
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -114,6 +117,28 @@ CREATE TABLE IF NOT EXISTS artifacts (
 );
 CREATE INDEX IF NOT EXISTS artifacts_run ON artifacts(run_id, node_id);
 
+-- The observation model. Separate from `events` on purpose: an event is a fact
+-- about state ("this node became READY"), a span is an INTERVAL with a parent
+-- ("this generation took 12s inside this node inside this run"). Collapsing
+-- them loses the tree, and the tree is what answers "where did the time go".
+CREATE TABLE IF NOT EXISTS spans (
+    span_id        TEXT PRIMARY KEY,
+    trace_id       TEXT NOT NULL,
+    parent_span_id TEXT,
+    kind           TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    run_id         TEXT NOT NULL,
+    node_id        TEXT,
+    attempt        INTEGER,
+    started_ms     REAL NOT NULL,
+    ended_ms       REAL,
+    duration_ms    REAL,
+    status         TEXT NOT NULL,
+    attributes     TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS spans_run ON spans(run_id, started_ms);
+CREATE INDEX IF NOT EXISTS spans_kind ON spans(kind, started_ms);
+
 -- One row per external effect, keyed by identity rather than by content, so a
 -- reworded retry of the same effect collides instead of duplicating.
 CREATE TABLE IF NOT EXISTS effects (
@@ -149,6 +174,30 @@ def store_path(data_dir: str) -> str:
     return os.path.join(data_dir, "state", "runtime", "runs.sqlite3")
 
 
+def _strict_spec(node) -> str:
+    """Serialize a node spec, refusing anything that cannot round-trip.
+
+    Deliberately WITHOUT `default=str`, which every other write here uses. The
+    difference is that those are records — a report of what happened, where a
+    stringified object is ugly and harmless — and this is EXECUTABLE DATA. The
+    runner runs the graph it loaded, not the one it was handed, so a value that
+    goes in as an object and comes back as its `str()` changes what the code
+    does and changes nothing visible.
+
+    Measured while writing the injection tests: a `Failure` in `config` came
+    back as a string, the fault never fired, and four tests reported a healthy
+    system. Refusing at `start()` puts the error where the fix is one line.
+    """
+    try:
+        return json.dumps(node.to_dict(), ensure_ascii=False)
+    except (TypeError, ValueError) as exc:
+        raise StoreError(
+            f"node {node.node_id!r} has a spec that is not JSON: {exc}. The "
+            f"runner executes the graph it LOADS from this store, so a config "
+            f"value that cannot round-trip would silently become its str() and "
+            f"change what the node does") from exc
+
+
 class RunStore:
     """Durable state for every run in one project.
 
@@ -160,6 +209,10 @@ class RunStore:
     def __init__(self, data_dir: str):
         self.data_dir = data_dir
         self.path = store_path(data_dir)
+        #: Spans that could not be written. Reported rather than raised — see
+        #: `record_span` — so a metrics table can say it is short instead of
+        #: presenting a partial sum as a whole.
+        self.span_write_failures: list[str] = []
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         with self._tx() as conn:
             conn.executescript(_SCHEMA)
@@ -233,9 +286,7 @@ class RunStore:
                 conn.execute(
                     "INSERT INTO nodes(run_id, node_id, spec, state, attempts,"
                     " updated) VALUES(?,?,?,?,?,?)",
-                    (run_id, node.node_id,
-                     json.dumps(node.to_dict(), ensure_ascii=False,
-                                default=str),
+                    (run_id, node.node_id, _strict_spec(node),
                      node.state, node.attempts, now))
             self._append_event(conn, run_id, "run_created",
                                {"task": task, "budget": budget or {},
@@ -405,6 +456,55 @@ class RunStore:
                 "SELECT * FROM attempts WHERE run_id=? AND outcome=? "
                 "ORDER BY node_id, attempt", (run_id, G.STARTED)).fetchall()
         return [dict(r) for r in rows]
+
+    # -- spans -------------------------------------------------------------
+    def record_span(self, span) -> None:
+        """Write one span. `INSERT OR REPLACE` so a re-ended span updates.
+
+        Never raises into the caller's control flow: an observation that breaks
+        the thing it observes is worse than a missing observation. A store error
+        here is swallowed and counted, and `span_write_failures` reports it —
+        silence would make the metrics quietly wrong instead of visibly short.
+        """
+        row = span.to_dict()
+        try:
+            with self._tx() as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO spans(span_id, trace_id,"
+                    " parent_span_id, kind, name, run_id, node_id, attempt,"
+                    " started_ms, ended_ms, duration_ms, status, attributes)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (row["span_id"], row["trace_id"], row["parent_span_id"],
+                     row["kind"], row["name"], row["run_id"], row["node_id"],
+                     row["attempt"], row["started_ms"], row["ended_ms"],
+                     row["duration_ms"], row["status"],
+                     json.dumps(row["attributes"], ensure_ascii=False,
+                                default=str)))
+        except sqlite3.Error as exc:      # pragma: no cover - defensive
+            self.span_write_failures.append(f"{row['span_id']}: {exc}")
+
+    def spans(self, run_id: str | None = None, *, kind: str | None = None,
+              limit: int = 5000) -> list[dict]:
+        query = "SELECT * FROM spans"
+        clauses, params = [], []
+        if run_id:
+            clauses.append("run_id=?")
+            params.append(run_id)
+        if kind:
+            clauses.append("kind=?")
+            params.append(kind)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY started_ms LIMIT ?"
+        params.append(limit)
+        with self._tx() as conn:
+            rows = conn.execute(query, params).fetchall()
+        out = []
+        for row in rows:
+            record = dict(row)
+            record["attributes"] = json.loads(record["attributes"])
+            out.append(record)
+        return out
 
     # -- artifacts ---------------------------------------------------------
     def put_artifact(self, artifact: Artifact, *, path: str = "") -> None:
