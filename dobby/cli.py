@@ -1378,7 +1378,52 @@ def cmd_runtime(args):
               "events": RunStore(data).events(args.run_id)})
         return
 
-    runner = Runner(repo, data_dir=data)
+    if args.action == "metrics":
+        from .runtime.metrics import report as metrics_report
+        _out(metrics_report(RunStore(data)))
+        return
+
+    if args.action == "scorecard":
+        from .runtime.metrics import scorecard
+        card = scorecard(RunStore(data))
+        _out({"scorecard": card,
+              "note": ("empty means no provider node has run yet. An unmeasured "
+                       "provider is not a bad one — placement tries it, which is "
+                       "how the first row gets written")
+              if not card else ""})
+        return
+
+    if args.action == "harvest":
+        from .runtime.flywheel import report as flywheel_report
+        _out(flywheel_report(RunStore(data), data, write=args.write))
+        return
+
+    if args.action == "bench":
+        from .runtime import bench as bench_mod
+        corpus = (bench_mod.load_corpus(args.corpus) if args.corpus
+                  else bench_mod.example_corpus())
+        outcomes = bench_mod.run_corpus(repo, data, corpus)
+        payload = bench_mod.report(outcomes)
+        if not args.corpus:
+            payload["warning"] = (
+                "no --corpus given, so this ran the EXAMPLE shape: two "
+                "trivially satisfiable tasks that exist to exercise the "
+                "harness. Its numbers are not a benchmark result")
+        payload["written_to"] = bench_mod.save_report(data, payload)
+        _out(payload)
+        return
+
+    if args.action == "trace":
+        from .runtime.trace import render_timeline, to_otlp
+        spans = RunStore(data).spans(args.run_id)
+        if args.otlp:
+            _out(to_otlp(spans))
+            return
+        print("\n".join(render_timeline(spans)))
+        return
+
+    runner = Runner(repo, data_dir=data, max_parallel=args.parallel,
+                    allow_network=_allow_network(args))
     approvals = {a for a in (args.approve or "").split(",") if a.strip()}
 
     if args.action == "resume":
@@ -1787,11 +1832,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="pipe-separated established facts")
     p.set_defaults(fn=cmd_prompt)
 
-    p = sub.add_parser("runtime", parents=[common],
+    p = sub.add_parser("runtime", parents=[common, net],
                        help="durable runs: plan -> execute -> verify -> report,"
                             " resumable after a crash")
     p.add_argument("action",
-                   choices=["run", "resume", "status", "list", "events"])
+                   choices=["run", "resume", "status", "list", "events",
+                            "trace", "metrics", "scorecard", "harvest",
+                            "bench"])
     p.add_argument("task", nargs="?", default="",
                    help="the task (for `run`), or the run id (resume/status/"
                         "events)")
@@ -1810,6 +1857,16 @@ def build_parser() -> argparse.ArgumentParser:
                         "(default 0: the right is granted, never inherited)")
     p.add_argument("--max-steps", type=int, default=100)
     p.add_argument("--limit", type=int, default=25)
+    p.add_argument("--parallel", type=int, default=1,
+                   help="nodes to run at once; only helps a graph with a real "
+                        "fan-out, so the default is sequential")
+    p.add_argument("--otlp", action="store_true",
+                   help="trace: emit OpenTelemetry JSON instead of a timeline")
+    p.add_argument("--write", action="store_true",
+                   help="harvest: persist the golden-task candidates")
+    p.add_argument("--corpus", default=None,
+                   help="bench: JSON file of tasks. Without it the example "
+                        "SHAPE runs, whose numbers are not a result")
     p.add_argument("--no-route", action="store_true",
                    help="skip the router (budgets come from defaults)")
     p.set_defaults(fn=_runtime_dispatch)
@@ -1826,7 +1883,7 @@ def _runtime_dispatch(args):
     args.run_id = args.task
     if args.action == "run" and not args.task:
         _die("dobby runtime run needs a task: dobby runtime run \"<task>\"")
-    if args.action in ("resume", "status", "events") and not args.run_id:
+    if args.action in ("resume", "status", "events", "trace") and not args.run_id:
         _die(f"dobby runtime {args.action} needs a run id — "
              f"`dobby runtime list` shows them")
     cmd_runtime(args)

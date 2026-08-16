@@ -184,15 +184,22 @@ Recorded so they are not mistaken for oversights.
 - **HWPX paragraph insert/delete** (`dobby/hwpx.py` replaces text only):
   both need new markup, which reintroduces the namespace-rewrite problem the
   byte-splice design exists to avoid.
-- **Provider scheduling** (`dobby/runtime/scheduler.py` orders by dependency,
-  then by declaration): a utility over quality, cost and p95 latency needs
-  per-node outcome data that no run has produced yet. The store records it now;
-  nothing consumes it. Hedged execution is in the same position — `hedgeable`
-  exists as a predicate and nothing consults it.
-- **Parallel node execution**: the node lease is atomic, so two processes can
-  safely work one run, but `Runner.run` drives one node at a time.
+- **Hedged execution**: `dobby/runtime/placement.py` computes a hedge partner
+  for a read-only node that asks for one, and nothing races the two calls yet.
+  The decision is recorded; the second call is not made.
 - **Cost in `RunBudget`**: `max_cost_usd` is enforced against `cost_spent`, and
-  nothing charges it. `spend.py` measures agent *time*, not money.
+  nothing charges it, because this engine cannot see money — CLI providers do
+  not report token usage. `metrics.cost_per_verified_task` returns `None` with
+  that reason rather than a figure, and `agent_seconds_per_verified_task` is the
+  measurable neighbour.
+- **A benchmark corpus**: `dobby/runtime/bench.py` runs three conditions paired
+  and refuses a comparison below eight tasks, and this repository ships no
+  corpus to run it on. `example_corpus()` is a shape, labelled as one. So the
+  question the harness exists to answer — does the runtime finish more tasks
+  verified — is UNANSWERED here, not answered weakly.
+- **Semantic verification beyond a single advisory judge**: the verifier has its
+  deterministic and grounded layers; the third is one `judge` node, and it is
+  advisory by construction. No panel, no cross-examination.
 - **Korean `와`/`과` as a multi-requirement signal**: three detection rules were
   measured and all produced 7–9 false positives out of 10 on sentences where the
   syllable sits inside one word (`결과`, `효과`, `성과`, `학과`). Nothing was

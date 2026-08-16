@@ -9,6 +9,106 @@ though it were proven.
 
 ## [Unreleased]
 
+### Added — observation, placement, and the two things that refuse to overclaim
+
+`dobby/runtime/{trace,metrics,placement,flywheel,bench}.py` +
+`dobby runtime trace|metrics|scorecard|harvest|bench`, `--parallel N`.
+
+The runtime could execute durably and could not say anything about itself. Four
+subsystems recorded valuable things in four incompatible shapes — the spend
+ledger knew agent seconds, the trajectory knew decisions, `ProviderResult.meta`
+knew durations, the run store knew attempts — and none shared a correlation id,
+so *which model made this run expensive* had to be reconstructed by a human
+matching timestamps.
+
+**One trace per run.** OpenTelemetry-shaped spans with `trace_id`,
+`parent_span_id`, `run_id`/`node_id`/`attempt`, `policy_version`,
+`prompt_version`, `provider`/`model`. Each kind declares the attributes without
+which it cannot answer its own question and `Tracer` enforces them at write
+time; a violating span is still written with the violation inside it, because
+losing an observation to enforce a rule about observations is its own defect.
+`to_otlp()` exists so "OTel-compatible" is checkable rather than a docstring
+word. Nothing is sent anywhere.
+
+**The clock, which was wrong.** `time.time()` resolves to ~15.6ms on Windows —
+longer than most spans in a run. Measured on the first traced run: the root
+`run` span and the first event inside it received the SAME timestamp, so
+`ORDER BY started_ms` returned a child before its own parent and the rendered
+timeline showed the run starting after the work it contained. Timestamps are now
+a wall-clock anchor advanced by `perf_counter`.
+
+**Placement, separate from the router.** The router answers a policy question
+once and should not change because a provider is throttled this afternoon;
+placement answers a runtime question every time a node starts and must.
+`U = wq·q̂ − wc·ĉ − wl·l̂ − wr·r̂`, where `q̂` is the share of that provider's
+attempts on that node kind that survived the **verifier** — not that exited
+zero, because optimising for exit codes selects for providers that answer fast
+and wrongly. Plus a circuit breaker (3 consecutive failures, 120s, one half-open
+probe; kept in memory on purpose, since the failures that trip it are usually
+local) and two concurrency ceilings acquired both-or-neither.
+
+Three design defects the placement tests found and that are fixed here, each of
+which had passed review by reading:
+
+- An unmeasured provider scored **zero latency**, making "never tried" the best
+  possible latency and stacking a second advantage on top of the optimistic
+  quality prior. A provider with no record beat one with a 0.9 success rate and
+  a p95 five times better than the field. Unmeasured now scores the *typical*
+  measured latency; exploration comes from the prior alone.
+- A separate "should I explore" branch compared a **fully penalised utility**
+  against a bare quality term — apples to oranges — so a candidate could lose
+  the ranking and win the tie-break. There is now one comparison over all
+  candidates.
+- The budget was **checked at admission and spent at execution**. A batch
+  admitted together all saw the same remaining count: measured on a diamond
+  graph with `--parallel 4`, a ceiling of two admitted three nodes. `reserve()`
+  makes checking and spending one operation, with `refund()` for a node that
+  loses the lease race.
+
+**Parallel nodes.** `--parallel N` runs independent nodes concurrently; the
+tracer's span stack is thread-local, because a shared one makes one thread's
+span the parent of another's — a tree that is not merely wrong but plausible.
+
+**Metrics that say `None`.** Six operational metrics, each returning `None` with
+a reason rather than 0 when nothing was measured. Cost per verified task is
+reported as unmeasurable *and named*, because a metrics table missing the cost
+row reads as "cost is fine"; `agent_seconds_per_verified_task` is the honest
+neighbour.
+
+**The verifier's second and third layers.** Grounded: claims checked against a
+corpus via `research.verify_claim`, and reported numbers **re-derived** by
+running a command and comparing within a stated tolerance — a figure the run
+cannot reproduce is the defect that survives to print. Semantic: one `judge`
+node, advisory by construction, run as an ordinary node so it costs a visible
+provider call, and labelled wherever the artifact travels.
+
+**The flywheel.** Failures that recur become *candidates*, never golden tasks: a
+repeated `QUALITY_FAILURE` is a real defect, a broken check, or a task nobody
+should have asked for, and those look identical from here. Writes merge so a
+human's rejection survives. Its signature grouping had the same class of bug the
+rest of this entry is about — `\b\d+\b` refuses `120s` and takes only the `0`
+from `0.03s`, so two runs of one failure that merely took different amounts of
+time were counted as unrelated.
+
+**The benchmark.** Three paired conditions (`baseline`, `gated`, `runtime`), a
+seeded bootstrap interval, and two refusals: no verdict below eight paired
+tasks, and none when the interval spans zero. It ships **no corpus**.
+
+**A silent-corruption path closed.** The runner executes the graph it LOADS, so
+a node spec must round-trip as JSON. `default=str` meant an object in `config`
+came back as its `str()` — the code took a different branch and four injection
+tests reported a healthy system. `RunStore` now refuses a non-serialisable spec
+at `start()`.
+
+**What this does NOT establish.** No benchmark result: the harness exists and no
+corpus does, so whether the runtime finishes more tasks verified than the
+primitives did is unanswered here rather than answered weakly. The scorecard on
+this machine is empty — placement has never chosen between measured providers in
+anger, and its behaviour is established by tests against a fake fleet, not by
+production. The hedge is computed and never raced. Recorded in
+`docs/RUNTIME.md` and in the known-gaps section of
+`docs/RESEARCH_EVIDENCE_MATRIX.md`.
+
 ### Added — an execution runtime, because every primitive existed and no loop closed over them
 
 `dobby/runtime/` + `dobby runtime run|resume|status|events|list`.

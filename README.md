@@ -1,7 +1,7 @@
 # dobby
 
 [![ci](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml/badge.svg)](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-1235-3fb950)](tests/)
+[![tests](https://img.shields.io/badge/tests-1326-3fb950)](tests/)
 [![python](https://img.shields.io/badge/python-3.10%2B-4c8eda)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/dependencies-PyYAML%20only-4c8eda)](#install)
 [![platforms](https://img.shields.io/badge/platforms-linux%20%7C%20macos%20%7C%20windows-4c8eda)](.github/workflows/ci.yml)
@@ -135,11 +135,40 @@ Four guarantees, each tested against a real killed process rather than asserted:
   identical model cannot fix a shape; a failing test wants a repair step holding
   the failure text; a missing approval wants a human and costs no attempts.
 
-What it deliberately does not do yet — no provider scoring, no hedging, no
-parallel node execution, no cost accounting — is listed with its reasons in
-[docs/RUNTIME.md](docs/RUNTIME.md). The short version: a selection policy fitted
-to no outcome data is a random policy with a formula in front of it, and the
-store now records exactly the data such a policy will need.
+Above that sits one correlated trace per run, and a placement policy that reads
+it:
+
+```bash
+python -m dobby.cli runtime trace <run_id>     # a waterfall of where time went
+python -m dobby.cli runtime metrics            # and what it says about health
+python -m dobby.cli runtime scorecard          # per provider, per node kind
+python -m dobby.cli runtime harvest --write    # failures that recur -> candidates
+python -m dobby.cli runtime bench --corpus t.json
+```
+
+- **Placement is measured, not configured.** `U = wq·quality − wc·cost −
+  wl·p95 − wr·recent-failures`, where *quality* is the share of that provider's
+  attempts on that kind of node that survived the **verifier** — not that exited
+  zero. Optimising for exit codes selects for providers that answer fast and
+  wrongly. A provider with no record competes on an optimistic prior, which is
+  the entire exploration policy: there is no bandit, because a policy fitted to
+  zero samples is a random policy with a formula in front of it.
+- **Metrics say `None`, never 0, when nothing was measured.** Zero is a
+  measurement; absence is not, and collapsing them is how a dashboard reports
+  0% success for a system nobody has run. Cost per verified task is reported as
+  *unmeasurable here* with the reason, because CLI providers do not report token
+  usage and a tier is not a price.
+- **Recurring failures become candidates, never golden tasks.** A repeated
+  failure is evidence that something recurs — a real defect, a broken check and
+  a task nobody should have asked for all look identical. A human promotes; the
+  file merges, so that decision survives the next harvest.
+- **The benchmark ships no corpus and refuses to rank fewer than eight paired
+  tasks.** A benchmark whose tasks come with the tool measures its authors'
+  imagination.
+
+What it deliberately does not do — the hedge is decided and never raced, no cost
+accounting, no benchmark result, one advisory judge rather than a panel — is
+listed with reasons in [docs/RUNTIME.md](docs/RUNTIME.md).
 
 ### Multi-provider fleet — `dobby/providers/`
 
@@ -566,7 +595,7 @@ dobby/style.py     the generated-prose signature (English + Korean)
 .claude/skills/    procedures
 mcp/               optional MCP gateway: 4 meta-tools, allowlisted, no network
 evals/             retrieval gold (dev / val / holdout)
-tests/             1235 tests
+tests/             1326 tests
 docs/              architecture, operating manual, failure catalog, threat
                    model, research evidence matrix
 ```
@@ -574,7 +603,7 @@ docs/              architecture, operating manual, failure catalog, threat
 ## Verify it yourself
 
 ```bash
-python -m unittest discover -s tests -q      # 1235 tests
+python -m unittest discover -s tests -q      # 1326 tests
 python -m dobby.cli slice --scenario SELF-CHECK
 python -m dobby.cli doctor
 ```

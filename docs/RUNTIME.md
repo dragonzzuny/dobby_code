@@ -144,30 +144,138 @@ python -m dobby.cli runtime list
 Without `--provider` or `--execute` the graph runs on the `static` worker: a dry
 run that exercises the kernel — leases, promotion, resume — and spends nothing.
 
+## Observation: one trace per run
+
+Every span carries the ids that let it be joined to every other — `trace_id`
+(the run), `parent_span_id`, `run_id`/`node_id`/`attempt`, `policy_version`,
+`prompt_version`, `provider`/`model`. Field names follow OpenTelemetry, and
+`to_otlp()` renders the OTLP JSON shape so "OTel-compatible" is checkable rather
+than a word in a docstring. Nothing is sent anywhere: the engine makes no
+network calls.
+
+| span kind | the question it exists to answer |
+|---|---|
+| `orchestrator.plan` | why did this task go to N steps? |
+| `scheduler.decision` | why was this node admitted, and this provider chosen? |
+| `agent.generation` | which model, how long? |
+| `tool.call` | which tool failed or looped? |
+| `retrieval` | did the wrong answer start here? |
+| `verifier` | which acceptance criterion breaks most? |
+
+Each kind declares the attributes without which it cannot answer its question,
+and `Tracer` enforces them at write time. A span that violates is still written,
+with the violation recorded in it — losing an observation to enforce a rule
+about observations would be its own defect.
+
+**The clock.** `time.time()` has ~15.6ms resolution on Windows, which is longer
+than most spans in a run. Measured on the first traced run here: the root `run`
+span and the first event inside it got the same timestamp, so `ORDER BY
+started_ms` put a child before its own parent. Timestamps are now a wall-clock
+anchor advanced by `perf_counter`, which keeps the absolute value real and makes
+two spans a microsecond apart distinguishable.
+
+## Placement: which provider, from what was measured
+
+Separate from the router on purpose. The router answers a policy question once —
+how much agency, which tier, what budget — and should not change because a
+provider is rate-limited this afternoon. Placement answers a runtime question
+every time a node starts, and must.
+
+    U(p|n) = wq·q̂(p,n) − wc·ĉ(p) − wl·l̂(p,n) − wr·r̂(p,n)
+
+`q̂` is the share of that provider's attempts on that node kind that survived the
+**verifier** — not that exited zero. Optimising for exit codes selects for
+providers that answer fast and wrongly. `ĉ` is the catalog's cost tier
+normalised, an ordering and never money. `l̂` is p95 against the slowest
+candidate. `r̂` is the recent-failure signal the circuit breaker also reads.
+
+An unmeasured provider scores the optimistic prior (`UNKNOWN_PRIOR = 0.75`) for
+quality and the *typical* measured latency — not zero. Scoring it zero made
+"never tried" the best possible latency, stacking a second advantage on the
+prior; measured on the placement tests, a provider with no record beat one with
+a 0.9 success rate and a p95 five times better. Exploration comes from the prior
+alone, and there is exactly one comparison over all candidates rather than a
+separate "should I explore" branch.
+
+**Circuit breaker.** Three consecutive verifier-failing attempts open it for
+120s, then one half-open probe. Held in memory, not in the store: the failures
+that trip it are usually local (auth, a proxy, a rate-limit window tied to one
+machine), and persisting would turn one process's bad afternoon into a
+project-wide ban.
+
+**Concurrency.** Two ceilings — global (protects the machine) and per-provider
+(protects the run from a rate limiter that turns excess parallelism into
+serialized, billed retries). Acquired both-or-neither, because taking the global
+slot then waiting on the provider slot is how a fan-out deadlocks itself.
+
+**Hedging** is computed only for a node whose contract touches nothing outside
+the run and which asks for it. Racing a node with side effects sends the email
+twice.
+
+## Metrics
+
+`dobby runtime metrics`. The rule every function follows: **a metric with no
+data returns `None` and says why.** Zero is a measurement; `None` is the absence
+of one, and collapsing them is how a dashboard shows 0% success for a system
+nobody has run.
+
+| metric | alarm |
+|---|---|
+| Task Success@Verifier | 7-day mean 5pp below baseline |
+| p50/p95 completion latency | p95 past 1.5× the SLO |
+| Cost per verified task | **unmeasurable here, and it says so** |
+| Retry amplification | above 1.3 |
+| Recovery success rate | anything below 1.0 is a P0 |
+| Side-effect duplicate rate | anything but 0 stops everything |
+
+## The flywheel
+
+`dobby runtime harvest`. Failures that recur become **candidates** for golden
+tasks — never golden tasks. A repeated failure is evidence that something
+recurs, not that the system is wrong: the three most common causes of a repeated
+`QUALITY_FAILURE` are a real defect, a broken check, and a task nobody should
+have asked for. Promoting automatically would enshrine the second and third as
+requirements, and a golden set with a wrong entry is worse than a small one.
+
+Grouping is by `(node_kind, failure_class, signature)`, where the signature has
+paths, hashes, times and numbers removed — `timeout after 120s` and `timeout
+after 300s` are one failure mode, and counting them separately makes twenty
+identical problems look like twenty unrelated ones. Writes MERGE, so a human's
+"rejected: the check was wrong" survives the next harvest.
+
+## The benchmark
+
+`dobby runtime bench --corpus <file>`. Three conditions, paired per task:
+
+    baseline   one node, no contract, no gate
+    gated      the same step WITH the contract and the checks
+    runtime    the full graph, retries classified, artifacts promoted
+
+The middle arm exists because a difference between two arms has at least three
+explanations. **It ships no corpus** — a benchmark whose tasks come with the tool
+measures its authors' imagination — and it refuses a verdict below eight paired
+tasks or when the bootstrap interval spans zero.
+
 ## What this does NOT do
 
 Stated rather than implied, because a runtime that quietly does less than its
 diagram is worse than a smaller diagram.
 
-- **No provider scoring or scheduling.** Selection is dependency order, then
-  declaration order. A utility function over quality, cost and p95 latency needs
-  per-node outcome data that does not exist until runs have been recorded, and a
-  policy fitted to no data is a random policy with a formula in front of it. The
-  store now records exactly what such a policy will need.
-- **No hedged execution.** The `hedgeable` predicate exists and nothing consults
-  it yet.
-- **No parallel node execution.** The lease is atomic and two processes can
-  safely work one run, but the loop itself runs one node at a time.
+- **The hedge is decided and never raced.** `Placement.hedge_with` names a
+  partner; nothing starts the second call.
 - **No cost accounting.** `RunBudget.max_cost_usd` is enforced against
-  `cost_spent`, and nothing charges it yet — `spend.py` measures agent *time*,
-  not money.
-- **No semantic verifier layer.** Deterministic and grounded checks only. Model
-  judgment stays where `docs/EVAL_DESIGN.md` puts it: advisory, invoked as an
-  ordinary node so it costs a visible provider call.
-- **Only the linear default graph is built.** `TaskGraph` is a general DAG and
-  `default_graph` produces four nodes in a line. Parallel implement-A /
-  implement-B with a merge node is expressible today and is not yet assembled by
-  anything.
+  `cost_spent` and nothing charges it, because this engine cannot see money.
+- **No benchmark result.** The harness exists; no corpus does. Whether the
+  runtime finishes more tasks verified than the primitives did is UNANSWERED
+  here, not answered weakly.
+- **The semantic layer is one advisory judge.** No panel, no cross-examination.
+  Model judgment stays where `docs/EVAL_DESIGN.md` puts it: advisory, invoked as
+  an ordinary node so it costs a visible provider call, and labelled wherever
+  the artifact travels.
+- **Only the linear default graph is assembled.** `TaskGraph` is a general DAG
+  and runs nodes in parallel when asked (`--parallel N`), but `default_graph`
+  still produces four nodes in a line. Parallel implement-A / implement-B with a
+  merge node is expressible and nothing builds it.
 
 ## Evidence
 
@@ -187,3 +295,22 @@ happy run succeeds:
   is promoted.
 - `test_an_external_effect_is_performed_once_across_two_runs`,
   `test_a_claimed_but_unconfirmed_effect_is_reported_not_repeated`.
+
+`tests/test_runtime_injection.py` injects the four faults a runtime has to
+survive — provider timeout, worker crash, verify failure, duplicate callback —
+and asserts in each that **no external effect is performed twice**. The
+invariant is asserted per-fault rather than once, because the point is that it
+holds on every path and not on the happy one.
+
+`tests/test_runtime_observability.py` and `tests/test_runtime_placement.py`
+cover the trace tree (including that two threads do not become each other's
+parents), the metrics' refusal to report zero for absent data, the circuit
+breaker's cooldown, and that two independent nodes actually overlap in time
+under `--parallel 2`.
+
+One property worth naming because breaking it is silent: **a node spec must
+round-trip through the store as JSON**, since the runner executes the graph it
+LOADED and not the one passed to `start()`. An object placed in `config` used to
+come back as its `str()`; four injection tests then reported a healthy system.
+`RunStore` now refuses a non-serialisable spec at `start()`, where the fix is
+one line.
