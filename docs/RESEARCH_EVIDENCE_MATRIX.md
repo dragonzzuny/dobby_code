@@ -184,6 +184,15 @@ Recorded so they are not mistaken for oversights.
 - **HWPX paragraph insert/delete** (`dobby/hwpx.py` replaces text only):
   both need new markup, which reintroduces the namespace-rewrite problem the
   byte-splice design exists to avoid.
+- **Provider scheduling** (`dobby/runtime/scheduler.py` orders by dependency,
+  then by declaration): a utility over quality, cost and p95 latency needs
+  per-node outcome data that no run has produced yet. The store records it now;
+  nothing consumes it. Hedged execution is in the same position — `hedgeable`
+  exists as a predicate and nothing consults it.
+- **Parallel node execution**: the node lease is atomic, so two processes can
+  safely work one run, but `Runner.run` drives one node at a time.
+- **Cost in `RunBudget`**: `max_cost_usd` is enforced against `cost_spent`, and
+  nothing charges it. `spend.py` measures agent *time*, not money.
 - **Korean `와`/`과` as a multi-requirement signal**: three detection rules were
   measured and all produced 7–9 false positives out of 10 on sentences where the
   syllable sits inside one word (`결과`, `효과`, `성과`, `학과`). Nothing was

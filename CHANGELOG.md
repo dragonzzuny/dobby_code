@@ -9,6 +9,92 @@ though it were proven.
 
 ## [Unreleased]
 
+### Added — an execution runtime, because every primitive existed and no loop closed over them
+
+`dobby/runtime/` + `dobby runtime run|resume|status|events|list`.
+
+The harness could route a task, fan work out to several providers, isolate
+mutating agents in worktrees, judge an output and record a trajectory. What
+connected those was a person reading JSON between commands. That is a fine
+orchestrator until the work outlasts the person's attention, at which point the
+run has no state anybody can resume and no record of what it already did — so
+recovery means starting over, paying for the finished half twice and hoping the
+side effects were idempotent.
+
+**Why this is a database.** Every other record here is append-only JSONL and
+that is right for a record. Two things a resumable state machine needs are not
+expressible in an append: `(run_id, node_id, attempt)` recordable exactly once
+(a uniqueness constraint, which a file does not have), and leasing a node —
+check `READY`, then claim — atomic against a second `dobby` process.
+`core/jsonl.py` makes each *append* atomic, which is weaker: two processes can
+both read `READY` and both append a lease. `sqlite3` is stdlib, so the
+PyYAML-only dependency claim still holds. The event log is the truth and is
+never updated; the tables are a projection written in the same transaction, and
+`RunStore.rebuild()` recomputes one from the other so that claim is testable
+rather than asserted. The JSONL trajectory is untouched — a record you can read
+and a state you can resume are different jobs.
+
+**What the tests establish**, and it is the reason this landed before any of the
+scheduling work: a real process is killed and a second one resumes it. Three
+nodes each append one line to a file; a subprocess runs two and calls
+`os._exit(1)`; a second process resumes; the file has **three** lines and every
+node has exactly one recorded attempt. A separate test kills a process *while* a
+node is running and asserts the next runner closes the open attempt, frees the
+lease and says so. Line count is the measurement because work that ran twice
+cannot hide from it.
+
+**Artifact contracts.** `PROPOSED → VERIFIED → PROMOTED`, and a node reads only
+its dependencies' promoted payloads — enforced where the prompt is built, not
+requested inside it. The machine promotion rule is fixed and not configurable at
+runtime: schema clean, every acceptance check passed, and no check that failed
+to run. A check that could not run *here* blocks promotion, which is stricter
+than a linter needs and correct for the case that matters — a machine missing
+the test runner would otherwise promote an unverified patch and report it as
+verified. One defect this found in its own first run: the artifact file was
+written before the promotion transition, so disk said `PROPOSED` while the store
+said `PROMOTED`. Two answers to the one question the gate exists to answer.
+
+**Failure classes, not a retry counter.** `retry_count` answers "how many times
+has this broken" and never "is trying again the thing that could work". A 429
+wants the same provider after a wait; a schema violation wants a different
+approach, because resending the identical prompt to the identical model cannot
+fix a shape; a failing test wants a repair step holding the failure text; a
+missing approval wants a human and consumes no attempts. An *unrecognised*
+provider failure is classified `NON_RETRYABLE` — matching on error prose is
+fragile, and it fails safe this way: the run stops with the provider's own words
+instead of spending three attempts on a permanently broken call. Authentication
+is never transient.
+
+**Side effects.** `idempotency_key = sha256(run_id, node_id, effect_version)` —
+identity, not content, so a reworded retry collides. Claimed *before* the
+effect: a crash in the claim-to-act window leaves a visible unconfirmed claim
+that the run reports and a human resolves, where the other ordering leaves an
+invisible duplicate. `EXTERNAL_IRREVERSIBLE` needs an explicit approval *and*
+budget; `max_irreversible` defaults to 0, because a run acquires that right, it
+does not inherit it from having been started.
+
+**What this does NOT establish.** It does not make any run better. Nothing here
+was compared against the previous hand-driven sequence on any task corpus, and
+no such comparison is claimed. There is no provider scoring, no hedging, no
+parallel node execution and no cost accounting — a selection policy fitted to no
+outcome data is a random policy with a formula in front of it, so the store
+records what one will need and nothing consumes it yet. Only the linear
+`plan → execute → verify → report` graph is assembled by anything; `TaskGraph`
+is a general DAG and the parallel implement/merge shape is expressible and
+unbuilt. The verifier has its deterministic and grounded layers only; model
+judgment stays advisory and stays an ordinary node, so it costs a visible
+provider call. Recorded in `docs/RUNTIME.md` and in the known-gaps section of
+`docs/RESEARCH_EVIDENCE_MATRIX.md`.
+
+### Fixed — a re-pin that the commit which changed the body did not make
+
+`ca624ea` revised `.claude/skills/paper-draft/SKILL.md` and left
+`.dobby/registry/skills.json` at the previous content hash, so five tests failed
+on `main` with "body hash differs from pinned origin". The change was reviewed
+and legitimate; the pin is now what a review of it produced, and the skill is at
+`1.1`. Nothing about the pin mechanism changed — this is the mechanism working
+and the commit not finishing.
+
 ### Added — a delegation lane for Antigravity, and the fact that made it necessary
 
 `dobby/agy.py` + `dobby agy` port

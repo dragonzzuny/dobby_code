@@ -127,7 +127,9 @@ criteria, or holdout sets. Never promote on one lucky example or your own approv
 
 ## Map
 
-`.dobby/` project knowledge · `dobby/core/` engine · `dobby/providers/` fleet ·
+`.dobby/` project knowledge · `dobby/core/` engine · `dobby/runtime/` durable
+runs (task graph, event log, artifact contracts, verifier gate, resume;
+`docs/RUNTIME.md`) · `dobby/providers/` fleet ·
 `dobby/memory/` tiers and gates · `dobby/swarm/` protocols, diversity, grounding ·
 `dobby/review.py` · `dobby/mlops.py` · `dobby/tokens.py` · `dobby/research.py` ·
 `dobby/hwpx.py` and `dobby/hwp5.py` 한글 documents (HWPX is editable; HWP 5.0 is

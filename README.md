@@ -1,7 +1,7 @@
 # dobby
 
 [![ci](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml/badge.svg)](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-1034-3fb950)](tests/)
+[![tests](https://img.shields.io/badge/tests-1235-3fb950)](tests/)
 [![python](https://img.shields.io/badge/python-3.10%2B-4c8eda)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/dependencies-PyYAML%20only-4c8eda)](#install)
 [![platforms](https://img.shields.io/badge/platforms-linux%20%7C%20macos%20%7C%20windows-4c8eda)](.github/workflows/ci.yml)
@@ -65,6 +65,11 @@ python -m dobby.cli review --reviewers 4 --risk security,reliability
 
 # 5. Prove it works before you say it works
 python -m dobby.cli slice --scenario SELF-CHECK
+
+# 6. Run it durably — and kill the process to see that it resumes
+python -m dobby.cli runtime run "add rate limiting to the upload endpoint" \
+    --execute "pytest -q tests/test_ratelimit.py" --check "pytest -q"
+python -m dobby.cli runtime resume <run_id>
 ```
 
 The contract installs a door for each harness — `CLAUDE.md`, `GEMINI.md`,
@@ -89,6 +94,52 @@ Both install into a host project.
 ---
 
 ## What is actually in here
+
+### Runs that survive the process that started them — `dobby/runtime/`
+
+Every primitive below existed before this, and nothing closed a loop over them.
+The connective tissue was a person: run a command, read the JSON, decide, run
+the next one. That works until the work outlasts the person's attention — at
+which point the run has no state anybody can resume and no record of what it
+already did.
+
+A `TaskRun` is a DAG of nodes with an append-only event log behind it (SQLite,
+standard library, no new dependency). Kill the process at any point and
+`runtime resume` continues from what actually happened:
+
+```bash
+python -m dobby.cli runtime run "migrate the auth module" --provider claude \
+    --execute "pytest -q" --check "pytest -q|ruff check ."
+python -m dobby.cli runtime resume 20260816-134052-3bf951
+python -m dobby.cli runtime status 20260816-134052-3bf951
+```
+
+Four guarantees, each tested against a real killed process rather than asserted:
+
+- **Finished work is not repeated.** `(run_id, node_id, attempt)` is recordable
+  exactly once — a uniqueness constraint, which is why this is a database and
+  not another JSONL file. The test runs three nodes that each append one line,
+  kills the process after two, resumes, and counts **three** lines.
+- **An unverified artifact is never an input.** `PROPOSED → VERIFIED →
+  PROMOTED`, and a node reads only its dependencies' *promoted* payloads. The
+  promotion rule is fixed: schema clean, every acceptance check passed, and no
+  check that failed to run. A gate a failing run can lower is not a gate.
+- **An external effect happens at most once.** The idempotency key is derived
+  from identity, not content, and is claimed *before* the effect — so a
+  reworded retry collides, and a crash leaves a visible unconfirmed claim rather
+  than an invisible duplicate. `EXTERNAL_IRREVERSIBLE` nodes need an explicit
+  approval and a budget that allows them; `max_irreversible` defaults to 0.
+- **A failure is classified before it is retried.** `retry_count` answers the
+  wrong question. A 429 wants the same provider after a wait; a schema violation
+  wants a different approach, because resending the identical prompt to the
+  identical model cannot fix a shape; a failing test wants a repair step holding
+  the failure text; a missing approval wants a human and costs no attempts.
+
+What it deliberately does not do yet — no provider scoring, no hedging, no
+parallel node execution, no cost accounting — is listed with its reasons in
+[docs/RUNTIME.md](docs/RUNTIME.md). The short version: a selection policy fitted
+to no outcome data is a random policy with a formula in front of it, and the
+store now records exactly the data such a policy will need.
 
 ### Multi-provider fleet — `dobby/providers/`
 
@@ -486,6 +537,8 @@ DESIGN.md          the design system, machine-readable
 
 dobby/core/        proven engine: knowledge graph, router, policies, skills,
                    evaluator, trajectory, optimizer, improvement loop, evolution
+dobby/runtime/     durable execution: task graph, event-log store, artifact
+                   contracts, verifier gate, failure classes, resume
 dobby/providers/   provider fleet + parallel fan-out
 dobby/agy.py       Antigravity delegation lane: gate, templates, flag guards
 dobby/memory/      six-tier memory + gates + compression
@@ -513,7 +566,7 @@ dobby/style.py     the generated-prose signature (English + Korean)
 .claude/skills/    procedures
 mcp/               optional MCP gateway: 4 meta-tools, allowlisted, no network
 evals/             retrieval gold (dev / val / holdout)
-tests/             1034 tests
+tests/             1235 tests
 docs/              architecture, operating manual, failure catalog, threat
                    model, research evidence matrix
 ```
@@ -521,7 +574,7 @@ docs/              architecture, operating manual, failure catalog, threat
 ## Verify it yourself
 
 ```bash
-python -m unittest discover -s tests -q      # 1034 tests
+python -m unittest discover -s tests -q      # 1235 tests
 python -m dobby.cli slice --scenario SELF-CHECK
 python -m dobby.cli doctor
 ```
