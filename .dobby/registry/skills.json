@@ -371,11 +371,11 @@
     "{python} -m dobby.cli ml --file <experiment.json>"
    ],
    "path": ".claude/skills/paper-draft/SKILL.md",
-   "version": "1.0",
+   "version": "1.1",
    "state": "active",
    "created": "2026-07-28",
    "proposed_by": "kit-author",
-   "approved_by": "kit-release",
+   "approved_by": "maintainer",
    "eval_passes": [],
    "requires": {
     "any_bins": [
@@ -395,12 +395,18 @@
      "to": "active",
      "by": "kit-release",
      "date": "2026-07-28"
+    },
+    {
+     "to": "active",
+     "by": "maintainer",
+     "date": "2026-08-16",
+     "note": "body re-pinned after ca624ea (review-response section; legacy .hwp no longer read-only)"
     }
    ],
    "origin": {
-    "pinned_sha256": "161c662fac5481047a90c13fb1ed179b303a22ab772bd6996df4bea56270c6df",
+    "pinned_sha256": "ce0c8dd04da14e0d3a119833e236f5ddafa98223f734f3719976f0adefe7fc70",
     "path": ".claude/skills/paper-draft/SKILL.md",
-    "date": "2026-07-28"
+    "date": "2026-08-16"
    }
   },
   {
