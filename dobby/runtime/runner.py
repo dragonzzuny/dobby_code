@@ -37,15 +37,22 @@ from dataclasses import dataclass, field
 from . import graph as G
 from .contracts import (Artifact, ArtifactContract, PROMOTED, REJECTED,
                         SCHEMAS, VERIFIED, artifact_path, idempotency_key)
-from .failures import (DEFAULT_POLICY, Failure, REPAIR, RETRY_ELSEWHERE,
-                       RETRY_SAME, TRANSIENT_PROVIDER, WAIT, backoff_delay)
+from .failures import (DEFAULT_POLICY, Failure, POLICY_BLOCKED, REPAIR,
+                       RETRY_ELSEWHERE, RETRY_SAME, TRANSIENT_PROVIDER, WAIT,
+                       backoff_delay)
 from .placement import ConcurrencyLimiter, ProviderPlacement
 from .scheduler import BudgetExceeded, RunBudget, Scheduler
-from .store import RunStore
+from .store import (EFFECT_CLAIMED, EFFECT_CONFIRMED, RunStore,
+                    worker_identity)
 from .trace import (AGENT_GENERATION, NODE, RUN, SCHEDULER_DECISION, TOOL_CALL,
                     VERIFIER, Tracer)
 from .verify import Verifier, promotable
-from .workers import WorkerRegistry
+from .workers import DEFAULT_NODE_TIMEOUT_S, WorkerRegistry
+
+#: Added to a node's own timeout to get its lease TTL. Slack for the verifier
+#: and the store writes that follow the worker, so a lease never expires under a
+#: node that is still legitimately finishing.
+LEASE_MARGIN_S = 300.0
 
 
 @dataclass
@@ -225,15 +232,28 @@ class Runner:
 
     # -- crash reconciliation ----------------------------------------------
     def _reconcile(self, run_id: str, task_graph: "G.TaskGraph") -> list[str]:
-        """Close attempts that started and never finished, and free their nodes.
+        """Close attempts whose holder is gone, and free only those nodes.
 
-        This is the whole of crash recovery, and it is three lines of intent:
-        an attempt with no finish means the process died holding it; the node
-        goes back to READY; the attempt is recorded as a retryable failure so
-        the count is honest. Nothing is re-run that finished.
+        An attempt with no finish means one of two things, and they want
+        opposite treatment: the process died holding it (recover), or another
+        worker is running it right now (leave it alone). The lease record is
+        what tells them apart. Recovering indiscriminately — which is what an
+        open attempt alone justifies — hands a second worker the node the first
+        is still executing, which is the duplicate the lease exists to prevent,
+        reintroduced by the code that repairs crashes.
+
+        Nothing is re-run that finished, and nothing is taken from a worker that
+        is demonstrably alive.
         """
         notes: list[str] = []
         for row in self.store.open_attempts(run_id):
+            lease = self.store.node_lease(run_id, row["node_id"])
+            if lease["held"]:
+                notes.append(
+                    f"{row['node_id']}: attempt {row['attempt']} is open and "
+                    f"its lease is still held by {lease['owner']}, which is "
+                    f"running. Left alone.")
+                continue
             self.store.finish_attempt(
                 run_id, row["node_id"], row["attempt"],
                 outcome=G.RETRYABLE_FAILURE, failure_class=TRANSIENT_PROVIDER,
@@ -249,9 +269,56 @@ class Runner:
         for effect in self.store.unconfirmed_effects(run_id):
             notes.append(
                 f"{effect['node_id']}: an external effect was claimed and never "
-                f"confirmed (key {effect['idempotency_key'][:12]}…). It will NOT "
-                f"be attempted again. Check the outside world before deciding "
-                f"the run succeeded.")
+                f"confirmed (key {effect['idempotency_key'][:12]}…). Whether it "
+                f"reached the outside world is UNKNOWN, so the node is blocked "
+                f"rather than repeated or reported done. Resolve it with "
+                f"`confirm_effect` (it happened) or `release_effect` (it did "
+                f"not), then resume.")
+        notes.extend(self._unblock_resolved_effects(run_id, task_graph))
+        return notes
+
+    def _unblock_resolved_effects(self, run_id: str,
+                                  task_graph: "G.TaskGraph") -> list[str]:
+        """Return nodes to READY once the effect that blocked them is resolved.
+
+        Resume is the only moment an operator's decision can take effect, and
+        without this it never would: the node parks in BLOCKED_ON_APPROVAL and
+        nothing reads the store to notice that `confirm_effect` or
+        `release_effect` has since been called.
+
+        The gate is an EVENT, not the effect's current status, and that is the
+        whole care in this method. A node blocked because a human has not
+        approved an irreversible action also carries an idempotency key, and its
+        effect is likewise "not currently CLAIMED" — status alone would unblock
+        it and walk straight past the approval. Only a recorded resolution of
+        THIS node's effect counts.
+        """
+        resolved = {event["node_id"] for event in self.store.events(run_id)
+                    if event["kind"] in ("effect_confirmed", "effect_released")
+                    and event["node_id"]}
+        notes: list[str] = []
+        for node in task_graph.nodes.values():
+            if node.state != G.BLOCKED_ON_APPROVAL:
+                continue
+            if node.node_id not in resolved:
+                continue
+            if not node.contract.needs_idempotency_key:
+                continue
+            key = idempotency_key(run_id, node.node_id,
+                                  node.contract.effect_version)
+            status = self.store.effect_status(key)
+            if status == EFFECT_CLAIMED:
+                continue                    # resolved once, claimed again since
+            self._set_node(
+                run_id, task_graph, node, G.READY,
+                reason=("the external effect that blocked this node was "
+                        + ("confirmed; the node will finish without repeating "
+                           "it" if status == EFFECT_CONFIRMED else
+                           "released; the node will perform it")))
+            notes.append(
+                f"{node.node_id}: unblocked — its external effect was "
+                f"{'confirmed' if status == EFFECT_CONFIRMED else 'released'} "
+                f"by an operator")
         return notes
 
     # -- one node ----------------------------------------------------------
@@ -260,7 +327,10 @@ class Runner:
         if node.state == G.PENDING:
             self._set_node(run_id, task_graph, node, G.READY,
                            reason="dependencies satisfied")
-        if not self.store.lease_node(run_id, node.node_id, holder=str(os.getpid())):
+        ttl = float(node.config.get("timeout_s") or DEFAULT_NODE_TIMEOUT_S)
+        if not self.store.lease_node(run_id, node.node_id,
+                                     holder=worker_identity(),
+                                     ttl_s=ttl + LEASE_MARGIN_S):
             # Another process took it. Reload so this one is not deciding from
             # a stale graph, and give back the budget slot the scheduler
             # reserved — this run did not do the work.
@@ -289,10 +359,11 @@ class Runner:
     def _run_attempt(self, run_id: str, task_graph: "G.TaskGraph", node,
                      budget: RunBudget, attempt: int, tracer, node_span) -> None:
         started = time.monotonic()
-        claimed_key = self._claim_effect(run_id, node, attempt)
-        if claimed_key is False:
-            # The effect is already done. The node is finished by definition:
-            # re-running it would be the duplicate this key exists to prevent.
+        effect_state, claimed_key = self._claim_effect(run_id, node, attempt)
+        if effect_state == EFFECT_CONFIRMED:
+            # The effect is already done, and CONFIRMED means observed rather
+            # than assumed. The node is finished by definition: re-running it
+            # would be the duplicate this key exists to prevent.
             self.store.finish_attempt(
                 run_id, node.node_id, attempt, outcome=G.FINISHED,
                 detail="external effect already performed under this "
@@ -302,6 +373,28 @@ class Runner:
             self._set_node(run_id, task_graph, node, G.NODE_SUCCEEDED,
                            reason="idempotent no-op")
             node_span.attributes["outcome"] = "idempotent_no_op"
+            return
+        if effect_state == EFFECT_CLAIMED:
+            # Claimed by an earlier attempt that never came back to confirm it.
+            # The claim is written BEFORE the effect, so this says the effect
+            # may have happened and may not — and there is nothing on this
+            # machine that can decide which. Both automatic answers are wrong:
+            # repeating it risks a second real-world effect, and calling it done
+            # reports a success nobody observed. So it blocks, and a human or an
+            # effect-provider lookup resolves it.
+            node_span.attributes["outcome"] = "effect_unreconciled"
+            self._fail_attempt(
+                run_id, task_graph, node, attempt,
+                Failure(POLICY_BLOCKED,
+                        "an external effect was claimed by an earlier attempt "
+                        "and never confirmed; whether it reached the outside "
+                        "world is unknown. Confirm it or release it, then "
+                        "resume.",
+                        {"idempotency_key": claimed_key,
+                         "effect_class": node.contract.side_effect_class,
+                         "resolve_with": ["RunStore.confirm_effect",
+                                          "RunStore.release_effect"]}),
+                round(time.monotonic() - started, 2))
             return
 
         placement = self._place(node, tracer)
@@ -494,15 +587,22 @@ class Runner:
         return placement
 
     def _claim_effect(self, run_id: str, node, attempt: int):
-        """Returns a key (claimed), False (already applied), or None (no effect)."""
+        """`(state, key)` — what this node's external effect has already done.
+
+        `state` is one of: None (this node has no external effect, or it is
+        being claimed now for the first time), EFFECT_CONFIRMED (it happened),
+        EFFECT_CLAIMED (an earlier attempt recorded the intent and never came
+        back). The caller must branch on all three; the whole point of the
+        middle one is that it is not the other two.
+        """
         if not node.contract.needs_idempotency_key:
-            return None
+            return None, None
         key = idempotency_key(run_id, node.node_id,
                               node.contract.effect_version)
         if self.store.claim_effect(key, run_id, node.node_id,
                                    node.contract.effect_version):
-            return key
-        return False
+            return None, key
+        return self.store.effect_status(key), key
 
     def _promoted_inputs(self, run_id: str, task_graph: "G.TaskGraph",
                          node) -> dict:

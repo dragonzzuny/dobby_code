@@ -39,17 +39,37 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import socket
 import sqlite3
 import time
 import uuid
 
+from ..core.platform import process_alive
 from . import graph as G
 from .contracts import Artifact
 
 #: 2 added the `spans` table. Every table is `CREATE TABLE IF NOT EXISTS`, so an
 #: existing store gains it on the next open without a migration step; runs
 #: recorded before it simply have no spans, which is the truth about them.
-SCHEMA_VERSION = 2
+#:
+#: 3 added `lease_owner`/`lease_expires` to `nodes`. Columns, unlike tables, do
+#: NOT appear on an existing database from a CREATE IF NOT EXISTS — so this one
+#: needs the ALTER in `_migrate`. A store written by version 2 opens with both
+#: columns empty, which reads as "no lease recorded" and recovers exactly as it
+#: did before.
+SCHEMA_VERSION = 3
+
+#: How long a lease is honoured without renewal. A node cannot legitimately run
+#: longer than its own timeout, so the runner sets this from the node's timeout
+#: plus a margin rather than from a global heartbeat: a heartbeat thread would
+#: be a second liveness mechanism to keep correct, and the node's own wall clock
+#: already bounds the truth this needs.
+DEFAULT_LEASE_TTL_S = 3600.0
+
+#: The node states in which a worker is actively holding the node. The whole set
+#: matters: an attempt stays open across all three, so a state missing from here
+#: is a window in which recovery sees an open attempt with no holder.
+LEASE_HOLDING_STATES = (G.LEASED, G.NODE_RUNNING, G.VERIFYING)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -80,13 +100,20 @@ CREATE TABLE IF NOT EXISTS runs (
     repo     TEXT NOT NULL DEFAULT ''
 );
 
+-- `lease_owner` and `lease_expires` are what make a lease auditable rather than
+-- merely atomic. The claim was always a single compare-and-swap, so two workers
+-- never both won it; without a recorded owner, though, nothing could tell an
+-- abandoned lease from one a live worker is still holding, and crash recovery
+-- had to assume every open attempt was abandoned.
 CREATE TABLE IF NOT EXISTS nodes (
-    run_id   TEXT NOT NULL,
-    node_id  TEXT NOT NULL,
-    spec     TEXT NOT NULL,
-    state    TEXT NOT NULL,
-    attempts INTEGER NOT NULL DEFAULT 0,
-    updated  TEXT NOT NULL,
+    run_id       TEXT NOT NULL,
+    node_id      TEXT NOT NULL,
+    spec         TEXT NOT NULL,
+    state        TEXT NOT NULL,
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    updated      TEXT NOT NULL,
+    lease_owner  TEXT NOT NULL DEFAULT '',
+    lease_expires REAL NOT NULL DEFAULT 0,
     PRIMARY KEY (run_id, node_id)
 );
 
@@ -152,6 +179,13 @@ CREATE TABLE IF NOT EXISTS effects (
 """
 
 
+#: The three answers `effect_status` can give. Constants rather than literals
+#: because the runner branches on them and a typo'd branch would silently take
+#: the "never claimed" path, which is the one that repeats the effect.
+EFFECT_CLAIMED = "CLAIMED"
+EFFECT_CONFIRMED = "CONFIRMED"
+
+
 class StoreError(RuntimeError):
     """The store refused an operation that would corrupt a run's history."""
 
@@ -172,6 +206,78 @@ def new_run_id() -> str:
 
 def store_path(data_dir: str) -> str:
     return os.path.join(data_dir, "state", "runtime", "runs.sqlite3")
+
+
+@contextlib.contextmanager
+def transaction(path: str):
+    """One transaction, on a connection that is CLOSED afterwards.
+
+    `with sqlite3.connect(...) as conn` is a transaction context manager and
+    not a closing one — it commits, and leaves the handle open. On POSIX that is
+    a leak nobody notices; on Windows an open handle makes `shutil.rmtree` fail
+    with PermissionError, so every temp-directory cleanup in the test suite
+    raised. Same class of defect as the one `cli._read_json` was written for, in
+    a place that holds a lock as well as a handle.
+
+    Module-level so a second store over the same file — `project/store.py` keeps
+    its tables in this database, which is what makes a work item joinable to the
+    run that satisfied it — does not have to reach into a private method to get
+    the same guarantees.
+    """
+    conn = sqlite3.connect(path, timeout=30.0, isolation_level="IMMEDIATE")
+    conn.row_factory = sqlite3.Row
+    try:
+        # WAL so a reader (a status command) never blocks the running worker.
+        # Set outside the transaction: sqlite refuses a journal-mode change from
+        # inside one.
+        conn.execute("PRAGMA journal_mode=WAL")
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
+def worker_identity() -> str:
+    """Who this process is, as a lease owner: `host/pid`.
+
+    The host half is not decoration. Liveness can only be checked for a PID on
+    this machine, so an owner has to say where it lives — otherwise a second
+    host reading the same store would test its own process table against a
+    stranger's PID and get a confident wrong answer.
+    """
+    return f"{socket.gethostname()}/{os.getpid()}"
+
+
+def lease_is_held(owner: str, expires: float, *, now: float | None = None
+                  ) -> bool:
+    """True only when a LIVE worker demonstrably still holds this lease.
+
+    The default is False, and that asymmetry is the whole design: this answer
+    decides whether crash recovery may take a node back, so every case where
+    the evidence is absent or unreadable must fall to "not held" — a run that
+    stalls because nobody dared reclaim an abandoned node is a worse failure
+    than one that reclaims a node whose owner cannot be identified.
+
+    True requires an owner string this runtime wrote and a lease that has not
+    expired, and then either: the owner names THIS host and that PID is running,
+    or it names another host, whose process table cannot be read from here and
+    whose unexpired lease is therefore the only evidence available.
+    """
+    if not owner:
+        return False
+    if (now or time.time()) >= (expires or 0):
+        # Expired beats liveness on purpose. It is the bound on PID reuse and on
+        # a process that reports alive for a reason this code cannot see.
+        return False
+    host, _, pid_text = owner.rpartition("/")
+    if not host or not pid_text.isdigit():
+        return False        # not a string this runtime wrote
+    if host != socket.gethostname():
+        # Another machine's PID cannot be probed from here, so the unexpired
+        # lease is the only evidence there is — and it is evidence FOR the
+        # holder. Recovery waits out the TTL rather than guessing.
+        return True
+    return process_alive(int(pid_text)) is True
 
 
 def _strict_spec(node) -> str:
@@ -216,34 +322,34 @@ class RunStore:
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         with self._tx() as conn:
             conn.executescript(_SCHEMA)
+            self._migrate(conn)
             conn.execute(
                 "INSERT OR IGNORE INTO meta(key, value) VALUES('schema', ?)",
                 (str(SCHEMA_VERSION),))
+            conn.execute("UPDATE meta SET value=? WHERE key='schema'",
+                         (str(SCHEMA_VERSION),))
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """Add columns an older store predates. Idempotent, and column-driven.
+
+        Driven by what the table actually has rather than by the recorded
+        version number, because the version is a claim about the schema and the
+        schema is the schema — a store hand-copied between machines, or written
+        by a branch that bumped the number without the column, has to open
+        rather than fail.
+        """
+        have = {row["name"] for row in
+                conn.execute("PRAGMA table_info(nodes)").fetchall()}
+        for column, ddl in (("lease_owner", "TEXT NOT NULL DEFAULT ''"),
+                            ("lease_expires", "REAL NOT NULL DEFAULT 0")):
+            if column not in have:
+                conn.execute(f"ALTER TABLE nodes ADD COLUMN {column} {ddl}")
 
     @contextlib.contextmanager
     def _tx(self):
-        """One transaction, on a connection that is CLOSED afterwards.
-
-        `with sqlite3.connect(...) as conn` is a transaction context manager and
-        not a closing one — it commits, and leaves the handle open. On POSIX
-        that is a leak nobody notices; on Windows an open handle makes
-        `shutil.rmtree` fail with PermissionError, so every temp-directory
-        cleanup in the test suite raised. Same class of defect as the one
-        `cli._read_json` was written for, in a place that holds a lock as well
-        as a handle.
-        """
-        conn = sqlite3.connect(self.path, timeout=30.0,
-                               isolation_level="IMMEDIATE")
-        conn.row_factory = sqlite3.Row
-        try:
-            # WAL so a reader (a status command) never blocks the running
-            # worker. Set outside the transaction: sqlite refuses a journal-mode
-            # change from inside one.
-            conn.execute("PRAGMA journal_mode=WAL")
-            with conn:
-                yield conn
-        finally:
-            conn.close()
+        with transaction(self.path) as conn:
+            yield conn
 
     # -- events ------------------------------------------------------------
     def _append_event(self, conn: sqlite3.Connection, run_id: str, kind: str,
@@ -355,32 +461,84 @@ class RunStore:
                 raise StoreError(f"no node {node_id!r} in run {run_id!r}")
             if enforce:
                 G.check_node_transition(row["state"], to_state)
+            # A node outside the working states is not being worked on, so it
+            # must not still name an owner. Left behind, a stale owner is worse
+            # than no owner at all: it makes `lease_is_held` answer for a lease
+            # nobody holds, and recovery believes it.
+            #
+            # VERIFYING is a working state and dropping it here was a real bug
+            # for the length of one edit: the attempt is still open while the
+            # acceptance checks run, so a lease released at VERIFYING left a
+            # window in which another worker saw an open attempt with no holder
+            # and recovered a node that was mid-verification.
+            holds = to_state in LEASE_HOLDING_STATES
             conn.execute(
-                "UPDATE nodes SET state=?, updated=? WHERE run_id=? AND node_id=?",
+                "UPDATE nodes SET state=?, updated=?" +
+                ("" if holds else ", lease_owner='', lease_expires=0") +
+                " WHERE run_id=? AND node_id=?",
                 (to_state, time.strftime("%Y-%m-%dT%H:%M:%S"), run_id, node_id))
             self._append_event(conn, run_id, "node_state",
                                {"from": row["state"], "to": to_state,
                                 "reason": reason}, node_id=node_id)
 
-    def lease_node(self, run_id: str, node_id: str, *, holder: str) -> bool:
+    def lease_node(self, run_id: str, node_id: str, *, holder: str,
+                   ttl_s: float = DEFAULT_LEASE_TTL_S) -> bool:
         """Claim a READY node atomically. False means somebody else has it.
 
         The check and the claim are one UPDATE with the expected state in the
         WHERE clause, so two processes racing for the same node produce one
         winner and one `False` — rather than two workers running the same node
         and two sets of side effects.
+
+        The owner and the expiry are written in the SAME statement as the state.
+        Recording them afterwards would leave a window in which a node is LEASED
+        by nobody, and that window is precisely when a crash makes the record
+        matter.
+        """
+        expires = time.time() + max(1.0, float(ttl_s))
+        with self._tx() as conn:
+            cur = conn.execute(
+                "UPDATE nodes SET state=?, updated=?, lease_owner=?, "
+                "lease_expires=? WHERE run_id=? AND node_id=? AND state=?",
+                (G.LEASED, time.strftime("%Y-%m-%dT%H:%M:%S"), holder, expires,
+                 run_id, node_id, G.READY))
+            if cur.rowcount != 1:
+                return False
+            self._append_event(conn, run_id, "node_leased",
+                               {"holder": holder, "expires": expires},
+                               node_id=node_id)
+            return True
+
+    def renew_lease(self, run_id: str, node_id: str, *, holder: str,
+                    ttl_s: float = DEFAULT_LEASE_TTL_S) -> bool:
+        """Extend a lease this holder already owns. False if it does not own it.
+
+        Not called on the happy path — a node's own timeout already bounds how
+        long it may legitimately hold one. It exists for a worker that knows it
+        will exceed that (a long build behind a raised `timeout_s`) and can say
+        so instead of having the node taken from it.
         """
         with self._tx() as conn:
             cur = conn.execute(
-                "UPDATE nodes SET state=?, updated=? "
-                "WHERE run_id=? AND node_id=? AND state=?",
-                (G.LEASED, time.strftime("%Y-%m-%dT%H:%M:%S"), run_id, node_id,
-                 G.READY))
-            if cur.rowcount != 1:
-                return False
-            self._append_event(conn, run_id, "node_leased", {"holder": holder},
-                               node_id=node_id)
-            return True
+                "UPDATE nodes SET lease_expires=?, updated=? WHERE run_id=? "
+                "AND node_id=? AND lease_owner=? AND state IN "
+                "(" + ",".join("?" * len(LEASE_HOLDING_STATES)) + ")",
+                (time.time() + max(1.0, float(ttl_s)),
+                 time.strftime("%Y-%m-%dT%H:%M:%S"), run_id, node_id, holder,
+                 *LEASE_HOLDING_STATES))
+            return cur.rowcount == 1
+
+    def node_lease(self, run_id: str, node_id: str) -> dict:
+        """The lease record for one node: state, owner, expiry, and `held`."""
+        with self._tx() as conn:
+            row = conn.execute(
+                "SELECT state, lease_owner, lease_expires FROM nodes "
+                "WHERE run_id=? AND node_id=?", (run_id, node_id)).fetchone()
+        if row is None:
+            raise StoreError(f"no node {node_id!r} in run {run_id!r}")
+        return {"state": row["state"], "owner": row["lease_owner"],
+                "expires": row["lease_expires"],
+                "held": lease_is_held(row["lease_owner"], row["lease_expires"])}
 
     # -- attempts ----------------------------------------------------------
     def next_attempt_number(self, run_id: str, node_id: str) -> int:
@@ -559,6 +717,49 @@ class RunStore:
             self._append_event(conn, run_id, "effect_claimed",
                                {"key": key, "effect_version": effect_version},
                                node_id=node_id)
+            return True
+
+    def effect_status(self, key: str) -> str | None:
+        """None (never claimed), CLAIMED, or CONFIRMED.
+
+        The distinction the runtime turns on. CONFIRMED means the effect
+        provably happened and repeating it would be a duplicate. CLAIMED means
+        the intent was recorded and the process did not survive to say what came
+        of it — the effect may have happened, or may not. Collapsing CLAIMED
+        into CONFIRMED reports a success nobody observed; collapsing it into
+        None repeats an effect that may already be out in the world. It is its
+        own state because it is its own situation.
+        """
+        with self._tx() as conn:
+            row = conn.execute(
+                "SELECT result_digest FROM effects WHERE idempotency_key=?",
+                (key,)).fetchone()
+        if row is None:
+            return None
+        return EFFECT_CONFIRMED if row["result_digest"] else EFFECT_CLAIMED
+
+    def release_effect(self, key: str, *, reason: str) -> bool:
+        """Drop a CLAIMED effect so the node may perform it after all.
+
+        The operator half of reconciliation: for when the outside world has been
+        checked and the effect did NOT happen. Refuses to touch a CONFIRMED
+        effect — releasing one of those is how the same mail gets sent twice,
+        and no `reason` string makes that a different outcome.
+        """
+        with self._tx() as conn:
+            row = conn.execute(
+                "SELECT run_id, node_id, result_digest FROM effects "
+                "WHERE idempotency_key=?", (key,)).fetchone()
+            if row is None:
+                return False
+            if row["result_digest"]:
+                raise StoreError(
+                    f"effect {key!r} is CONFIRMED; releasing it would permit a "
+                    f"second one. Only a CLAIMED effect can be released.")
+            conn.execute("DELETE FROM effects WHERE idempotency_key=?", (key,))
+            self._append_event(conn, row["run_id"], "effect_released",
+                               {"key": key, "reason": reason},
+                               node_id=row["node_id"])
             return True
 
     def confirm_effect(self, key: str, result_digest: str) -> None:

@@ -416,6 +416,14 @@ class RunnerBehaviour(unittest.TestCase):
         self.assertEqual(rows[1]["outcome"], G.FINISHED)
 
     def test_a_claimed_but_unconfirmed_effect_is_reported_not_repeated(self):
+        """Not repeated, and — the half this test used to get wrong — not
+        reported as a success either.
+
+        The claim is written before the effect, so an unconfirmed claim means
+        the effect MAY have happened. The node blocks. An earlier version of
+        this test asserted NODE_SUCCEEDED, which made the runtime's answer to
+        "did the mail go out?" a confident yes it had no basis for.
+        """
         graph = TaskGraph([static_node("send", {"ok": True},
                                        side_effect=EXTERNAL_REVERSIBLE)])
         runner = self.runner()
@@ -426,7 +434,9 @@ class RunnerBehaviour(unittest.TestCase):
         result = self.runner().run(run_id)
         self.assertTrue(any("never confirmed" in n for n in result.notes),
                         result.notes)
-        self.assertEqual(result.steps[0].state, G.NODE_SUCCEEDED)
+        self.assertEqual(result.steps[0].state, G.BLOCKED_ON_APPROVAL,
+                         result.to_dict())
+        self.assertEqual(result.state, G.WAITING)
         self.assertEqual(len(runner.store.effects(run_id)), 1)
 
 

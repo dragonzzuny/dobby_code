@@ -91,6 +91,72 @@ def is_windows() -> bool:
     return os.name == "nt"
 
 
+def process_alive(pid: int) -> "bool | None":
+    """True if `pid` is running, False if it is not, None if it cannot be told.
+
+    Three-valued deliberately. "I cannot tell" is not "it is dead", and a lease
+    recovery that collapses the two either strands work forever or takes a node
+    away from the worker still executing it.
+
+    Windows needs more than opening the process. A handle can be opened for a
+    process that has already exited as long as somebody still holds a handle to
+    it — the test suite holds exactly that, through the `Popen` object of a
+    process it just killed — so the exit code, not the open, is the answer.
+    `os.kill(pid, 0)` is NOT the portable spelling: on Windows `os.kill` calls
+    TerminateProcess, so the POSIX liveness idiom would kill the process it was
+    asked about.
+
+    Caveats, both narrow and both real: a Windows process whose real exit code
+    is 259 (`STILL_ACTIVE`) reads as alive, and a PID reused between the lease
+    and this call reads as the original holder. The lease expiry is the bound on
+    both — it is why callers must treat an expired lease as recoverable no
+    matter what this returns.
+    """
+    if pid <= 0:
+        return None
+    if is_windows():
+        import ctypes
+
+        process_query_limited_information = 0x1000
+        still_active = 259
+        try:
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            # Without an explicit restype ctypes truncates the 64-bit HANDLE to
+            # an int, and the CloseHandle that follows closes a handle that was
+            # never opened.
+            kernel32.OpenProcess.restype = ctypes.c_void_p
+            kernel32.OpenProcess.argtypes = (ctypes.c_ulong, ctypes.c_int,
+                                             ctypes.c_ulong)
+            kernel32.GetExitCodeProcess.argtypes = (
+                ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong))
+            kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+
+            handle = kernel32.OpenProcess(
+                process_query_limited_information, False, pid)
+            if not handle:
+                return False
+            try:
+                code = ctypes.c_ulong()
+                if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                    return None
+                return code.value == still_active
+            finally:
+                kernel32.CloseHandle(handle)
+        except OSError:
+            return None
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # It exists and belongs to somebody else. Existence is the question.
+        return True
+    except OSError:
+        return None
+    return True
+
+
 #: Emitted by the probe below. Deliberately ASCII and unlikely to occur by
 #: accident, so a shell that prints something else is not mistaken for a pass.
 _POSIX_PROBE_TOKEN = "dobby_posix_shell_ok"

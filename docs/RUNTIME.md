@@ -61,6 +61,36 @@ truth" is a testable claim rather than an assertion.
 The JSONL trajectory stays exactly where it was. A record you can read and a
 state you can resume are different jobs.
 
+### Leases: who holds a node, and who may take it back
+
+The claim is a single `UPDATE ... WHERE state='READY'`, so two workers racing for
+one node produce one winner. That was never the hard part. The hard part is
+recovery: an attempt with no finish means *either* the process died holding it
+*or* another worker is running it right now, and those want opposite treatment.
+Recovering both — which an open attempt alone justifies — hands a second worker
+the node the first is still executing, reintroducing the duplicate the lease
+exists to prevent, from inside the code that repairs crashes.
+
+So a lease records `lease_owner` (`host/pid`) and `lease_expires`, written in the
+same statement as the state. `lease_is_held` returns True only when all of these
+hold — and False whenever the evidence is missing or unreadable, because a run
+that stalls forever is worse than one that reclaims a node whose owner cannot be
+identified:
+
+- the owner string is one this runtime wrote (`host/pid`),
+- the lease has not expired,
+- the owner names **this** host — another machine's PID cannot be probed, so an
+  unexpired lease there is evidence *for* the holder and recovery waits out the
+  TTL,
+- and that PID is running. `core/platform.process_alive` answers in three values,
+  never two: on Windows it reads the exit code rather than `os.kill(pid, 0)`,
+  which on that platform would *terminate* the process it was asked about.
+
+TTL is the node's own timeout plus a margin, not a heartbeat. A node cannot
+legitimately run longer than its timeout, so a second liveness mechanism would be
+a second thing to keep correct. Expiry beats liveness in both directions: it
+bounds PID reuse, and it bounds a holder that hangs forever.
+
 ## Artifact contracts
 
 A node hands the next node a contract, not prose:
@@ -93,9 +123,38 @@ unverified patch and report it as verified.
 
 `idempotency_key = sha256(run_id, node_id, effect_version)` — derived from
 identity, not content, so a retry that rewords the same email still collides.
-The key is claimed **before** the effect. A crash in the window between claiming
-and acting leaves a claimed-but-unconfirmed effect, which the run reports and a
-human resolves. The other ordering's failure mode is an invisible duplicate.
+The key is claimed **before** the effect. The other ordering's failure mode is an
+invisible duplicate.
+
+A crash in the window between claiming and acting leaves a claimed-but-unconfirmed
+effect. An effect therefore has **three** states, and the middle one is the point:
+
+| `effect_status(key)` | means | what resume does |
+|---|---|---|
+| `None` | never claimed | claim it and perform it |
+| `CLAIMED` | intent recorded, outcome never observed | **block the node** |
+| `CONFIRMED` | it demonstrably happened | finish the node without repeating it |
+
+`CLAIMED` is not a slower `CONFIRMED`. The effect may have reached the outside
+world and may not, and nothing on this machine can decide which — so both
+automatic answers are wrong. Repeating it risks a second real-world effect;
+calling it done reports a success nobody observed. The node goes to
+`BLOCKED_ON_APPROVAL`, the run to `WAITING`, and the run names its two exits:
+
+```python
+store.confirm_effect(key, result_digest="checked the outbox; it went")
+store.release_effect(key, reason="checked the outbox; it did not")
+```
+
+Resume acts on whichever was recorded — confirm finishes the node as an
+idempotent no-op, release lets it perform the effect after all. `release_effect`
+refuses a `CONFIRMED` effect, because releasing one of those is how the same mail
+gets sent twice.
+
+What is still **not** automated: asking the effect provider itself. An
+`EffectAdapter.status(key)` that queried the mail API or the deploy service would
+resolve most `CLAIMED` effects without a human. Until it exists, a human is the
+lookup.
 
 `max_irreversible` defaults to **0**. A run acquires the right to do something
 irreversible explicitly; it does not inherit it from having been started.
@@ -272,6 +331,15 @@ diagram is worse than a smaller diagram.
   Model judgment stays where `docs/EVAL_DESIGN.md` puts it: advisory, invoked as
   an ordinary node so it costs a visible provider call, and labelled wherever
   the artifact travels.
+- **No effect-provider lookup.** A `CLAIMED` effect is resolved by a human
+  calling `confirm_effect` or `release_effect`, and there is no CLI for either
+  yet — it is a Python call against `RunStore`. An `EffectAdapter.status(key)`
+  that asked the mail API or the deploy service would answer most of these
+  without a person; nothing implements one.
+- **Leases are single-machine.** Ownership is `host/pid` and liveness is a local
+  process check, so a second host sharing the store is answered only by the TTL.
+  There is no heartbeat, no fencing token, and no orphan detector running
+  independently of a resume.
 - **Only the linear default graph is assembled.** `TaskGraph` is a general DAG
   and runs nodes in parallel when asked (`--parallel N`), but `default_graph`
   still produces four nodes in a line. Parallel implement-A / implement-B with a
@@ -295,6 +363,20 @@ happy run succeeds:
   is promoted.
 - `test_an_external_effect_is_performed_once_across_two_runs`,
   `test_a_claimed_but_unconfirmed_effect_is_reported_not_repeated`.
+
+`tests/test_runtime_lease.py` covers the two guarantees that only hold when a
+worker stops existing partway through:
+
+- `test_a_node_held_by_a_live_worker_is_left_alone` — a second runner attaches to
+  a run whose node is leased by a live process. It starts no second attempt. Its
+  companion `test_a_node_held_by_a_dead_worker_is_recovered` uses a PID it
+  watched exit, and `test_an_expired_lease_is_recovered_even_from_a_live_owner`
+  shows expiry overriding liveness.
+- `test_an_unconfirmed_effect_blocks_instead_of_reporting_success` — the defect
+  this file was written for. The run reports `WAITING`, not `SUCCEEDED`.
+  `test_confirming_it_...` and `test_releasing_it_...` drive both operator exits
+  through to a finished run, and `test_a_confirmed_effect_cannot_be_released`
+  asserts the one that would duplicate an effect is refused.
 
 `tests/test_runtime_injection.py` injects the four faults a runtime has to
 survive — provider timeout, worker crash, verify failure, duplicate callback —
