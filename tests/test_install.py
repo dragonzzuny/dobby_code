@@ -31,6 +31,8 @@ from pathlib import Path
 
 INSTALL_SH = os.path.join(REPO, "install.sh")
 INSTALL_PS1 = os.path.join(REPO, "install.ps1")
+HOST_PACKAGE_JSON = '{"name":"demo"}'
+HOST_AGENTS_MD = "# the host's own contract\n"
 GITIGNORE = os.path.join(REPO, ".gitignore")
 
 #: These tests belong to the KIT, not to an installed project.
@@ -189,45 +191,104 @@ class TestInterpreterProbe(_KitOnly):
 class TestShellInstallEndToEnd(_KitOnly):
     """Actually run it. The defects above were invisible to every other test."""
 
-    def setUp(self):
-        self.host = tempfile.mkdtemp(prefix="dobby-host-")
-        self.addCleanup(shutil.rmtree, self.host, True)
-        os.makedirs(os.path.join(self.host, "src"), exist_ok=True)
-        with open(os.path.join(self.host, "package.json"), "w",
-                  encoding="utf-8") as f:
-            f.write('{"name":"demo"}')
-        with open(os.path.join(self.host, "AGENTS.md"), "w",
-                  encoding="utf-8") as f:
-            f.write("# the host's own contract\n")
+    #: The install this class shares. Running `install.sh` costs ~18s — it
+    #: copies 5MB and then runs seven test modules as its own health check — and
+    #: most of the assertions below only READ the result. Paying for it once per
+    #: test is why this module alone took 389s of a suite budgeted at 300s.
+    #:
+    #: Only tests that neither mutate the host nor need a pristine one use it.
+    #: Anything that installs twice, plants a file first, or asserts on a FIRST
+    #: install still takes its own via `_own_host()`. A shared fixture stretched
+    #: past what a test needs is a test that passes for the wrong reason — the
+    #: same rule `test_doctor_damage` was trimmed under.
+    _shared_host = None
+    _shared_proc = None
 
-    def _install(self, *extra):
+    @staticmethod
+    def _make_host() -> str:
+        host = tempfile.mkdtemp(prefix="dobby-host-")
+        os.makedirs(os.path.join(host, "src"), exist_ok=True)
+        with open(os.path.join(host, "package.json"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(HOST_PACKAGE_JSON)
+        with open(os.path.join(host, "AGENTS.md"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(HOST_AGENTS_MD)
+        return host
+
+    @staticmethod
+    def _run_install(host, *extra):
         # The probed BASH. Two failures are being avoided at once, and each was
         # introduced by fixing the other.
         #
-        # The literal "bash" resolved to C:\Windows\System32\bash.exe on a Windows
-        # runner - the WSL launcher, which with no distribution installed printed
-        # a UTF-16LE error and exited 1, after which seven assertions failed
-        # complaining about missing files. Substituting posix_shell_path() fixed
-        # Windows and broke Ubuntu in the same commit: /bin/sh there is dash, and
-        # dash answers `set: Illegal option -o pipefail`.
+        # The literal "bash" resolved to C:\Windows\System32ash.exe on a
+        # Windows runner - the WSL launcher, which with no distribution installed
+        # printed a UTF-16LE error and exited 1, after which seven assertions
+        # failed complaining about missing files. Substituting posix_shell_path()
+        # fixed Windows and broke Ubuntu in the same commit: /bin/sh there is
+        # dash, and dash answers `set: Illegal option -o pipefail`.
         #
         # install.sh declares #!/usr/bin/env bash and uses BASH_SOURCE. The guard
         # must vet that capability, not "a POSIX shell" and not a name.
         shell = bash_path()
-        self.assertIsNotNone(shell, "guard should have skipped this class")
+        assert shell, "the class guard should have skipped this"
         return subprocess.run(
-            [shell, INSTALL_SH, self.host, *extra],
+            [shell, INSTALL_SH, host, *extra],
             cwd=REPO, capture_output=True, text=True,
             encoding="utf-8", errors="replace", env=child_env(), timeout=600)
 
+    @classmethod
+    def setUpClass(cls):
+        if not (_IS_THE_KIT and bash_path()):
+            return                       # the class guard skips every test
+        cls._shared_host = cls._make_host()
+        cls._shared_proc = cls._run_install(cls._shared_host)
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._shared_host:
+            shutil.rmtree(cls._shared_host, ignore_errors=True)
+            cls._shared_host = None
+
+    def setUp(self):
+        self.host = self._shared_host
+
+    def _own_host(self):
+        """A pristine host for this test alone, with nothing installed in it."""
+        self.host = self._make_host()
+        self.addCleanup(shutil.rmtree, self.host, True)
+        return self.host
+
+    def _installed_host(self):
+        """A private host in the state a FIRST install leaves, by copying one.
+
+        For the upgrade tests, which all have the shape install -> change
+        something -> install again. Only the SECOND install is under test; the
+        first is a fixture, and re-running `install.sh` to produce it costs ~53s
+        against ~1s to copy the 5.6MB result. What is copied is the output of a
+        real install performed by `setUpClass`, so the disk state under test is
+        the same state — not a reconstruction of it.
+
+        A test that needs the first install to be a live process (its exit code,
+        its stdout) uses `_shared_proc`, which belongs to that same install.
+        """
+        self.host = tempfile.mkdtemp(prefix="dobby-upgrade-")
+        self.addCleanup(shutil.rmtree, self.host, True)
+        shutil.rmtree(self.host)                 # copytree wants a fresh name
+        shutil.copytree(self._shared_host, self.host)
+        return self.host
+
+    def _install(self, *extra):
+        """Run the installer into THIS test's host."""
+        return self._run_install(self.host, *extra)
+
     def test_install_succeeds_on_this_machine(self):
-        proc = self._install()
+        proc = self._shared_proc
         self.assertEqual(proc.returncode, 0,
                          f"install failed:\n{proc.stdout}\n{proc.stderr}")
         self.assertNotIn("3.10+ required", proc.stdout + proc.stderr)
 
     def test_engine_lands_and_data_lands(self):
-        self._install()
         for rel in ("dobby/cli.py", "dobby/core/kg.py", "mcp",
                     ".dobby/ontology.json", ".dobby/knowledge/kg.json",
                     ".claude/rules", "DESIGN.md", "CLAUDE.md"):
@@ -242,7 +303,6 @@ class TestShellInstallEndToEnd(_KitOnly):
         memory rather than the distribution. Reading the source directory means
         the next skill added is covered without anyone remembering to.
         """
-        self._install()
         want = sorted(d for d in os.listdir(
             os.path.join(REPO, ".claude", "skills"))
             if os.path.isdir(os.path.join(REPO, ".claude", "skills", d)))
@@ -260,7 +320,6 @@ class TestShellInstallEndToEnd(_KitOnly):
         src = os.path.join(REPO, ".claude", "commands")
         want = sorted(f for f in os.listdir(src) if f.endswith(".md"))
         self.assertIn("dobby.md", want)
-        self._install()
         dest = os.path.join(self.host, ".claude", "commands")
         self.assertTrue(os.path.isdir(dest), "no .claude/commands in the host")
         for name in want:
@@ -282,7 +341,6 @@ class TestShellInstallEndToEnd(_KitOnly):
         it — working in a project whose operating contract it had no way to find.
         A rule that exists and is invisible is worse than an absent one.
         """
-        self._install()
         for entry in ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "QWEN.md"):
             path = os.path.join(self.host, entry)
             with self.subTest(entry=entry):
@@ -294,6 +352,7 @@ class TestShellInstallEndToEnd(_KitOnly):
 
     def test_an_adapter_the_host_already_wrote_is_not_overwritten(self):
         """A host's own GEMINI.md outranks ours, exactly as AGENTS.md does."""
+        self._own_host()          # the file must predate the install
         mine = "# my own gemini notes\n"
         with open(os.path.join(self.host, "GEMINI.md"), "w",
                   encoding="utf-8") as handle:
@@ -312,8 +371,8 @@ class TestShellInstallEndToEnd(_KitOnly):
         kit" is not a restore path when the host may have been running a version
         the kit no longer has.
         """
-        first = self._install()
-        self.assertEqual(first.returncode, 0)
+        self._installed_host()
+        self.assertEqual(self._shared_proc.returncode, 0)
         backups = os.path.join(self.host, ".dobby", "backups")
         self.assertFalse(os.path.isdir(backups),
                          "a first install has nothing to back up")
@@ -347,7 +406,6 @@ class TestShellInstallEndToEnd(_KitOnly):
         `registry.index()` and not `os.listdir`. Nothing in the install output
         mentioned it.
         """
-        self._install()
         host_registry = os.path.join(self.host, ".dobby", "registry",
                                      "skills.json")
         with open(host_registry, encoding="utf-8") as handle:
@@ -362,7 +420,7 @@ class TestShellInstallEndToEnd(_KitOnly):
 
     def test_the_sync_is_add_only_and_keeps_a_host_revision(self):
         """A host may have revised a factory skill. That must survive."""
-        self._install()
+        self._installed_host()    # it edits the registry, then reinstalls
         host_registry = os.path.join(self.host, ".dobby", "registry",
                                      "skills.json")
         with open(host_registry, encoding="utf-8") as handle:
@@ -394,6 +452,7 @@ class TestShellInstallEndToEnd(_KitOnly):
 
     def test_no_runtime_state_is_copied(self):
         """The leak: audit logs, trajectories, and sandbox captures travelled."""
+        self._own_host()          # the plant must predate the install
         # Plant state in the source that must NOT reach the host.
         planted = []
         for rel in ("state/sandbox/planted.out", "state/audit.jsonl",
@@ -425,7 +484,6 @@ class TestShellInstallEndToEnd(_KitOnly):
                          f"runtime state travelled to the host: {offenders}")
 
     def test_hosts_own_agents_md_is_not_overwritten(self):
-        self._install()
         with open(os.path.join(self.host, "AGENTS.md"), encoding="utf-8") as f:
             body = f.read()
         self.assertIn("the host's own contract", body,
@@ -433,7 +491,7 @@ class TestShellInstallEndToEnd(_KitOnly):
         self.assertIn("dobby", body)
 
     def test_reinstall_preserves_curated_data(self):
-        self._install()
+        self._installed_host()    # it edits curated data, then reinstalls
         kg = os.path.join(self.host, ".dobby", "knowledge", "kg.json")
         with open(kg, "a", encoding="utf-8") as f:
             f.write("\n")           # a stand-in for curation
@@ -445,11 +503,12 @@ class TestShellInstallEndToEnd(_KitOnly):
 
     def test_reinstall_does_not_report_bootstrap_as_failed(self):
         """Already-instantiated is the normal upgrade state, not a failure."""
-        self._install()
+        self._installed_host()    # asserts on the SECOND install
         proc = self._install()
         self.assertNotIn("FAIL bootstrap", proc.stdout)
 
     def test_dry_run_writes_nothing(self):
+        self._own_host()          # --dry must land in a host with nothing
         proc = self._install("--dry")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertFalse(os.path.exists(os.path.join(self.host, "dobby")),
@@ -490,14 +549,32 @@ class TestLaunchersLandAndRun(_KitOnly):
     becomes false in both directions.
     """
 
-    def setUp(self):
-        self.host = tempfile.mkdtemp(prefix="dobby-launcher-")
-        self.addCleanup(shutil.rmtree, self.host, True)
-        proc = subprocess.run([bash_path(), INSTALL_SH, self.host], cwd=REPO,
+    #: One install for the class. Every test here only READS what the installer
+    #: wrote — the two launcher files, and what happens when they are invoked —
+    #: and none writes to the host, so a fresh install per test bought nothing
+    #: and cost ~53s each.
+    _host = None
+
+    @classmethod
+    def setUpClass(cls):
+        if not (_IS_THE_KIT and bash_path()):
+            return                      # the class guard skips every test
+        cls._host = tempfile.mkdtemp(prefix="dobby-launcher-")
+        proc = subprocess.run([bash_path(), INSTALL_SH, cls._host], cwd=REPO,
                               capture_output=True, text=True, encoding="utf-8",
                               errors="replace", env=child_env(), timeout=900)
-        self.assertEqual(proc.returncode, 0,
-                         f"install failed:\n{proc.stdout}\n{proc.stderr}")
+        if proc.returncode != 0:
+            raise AssertionError(
+                "install failed: " + proc.stdout + proc.stderr)
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._host:
+            shutil.rmtree(cls._host, ignore_errors=True)
+            cls._host = None
+
+    def setUp(self):
+        self.host = self._host
 
     def test_both_launchers_land(self):
         for name in ("dobby.cmd", "dobby.sh"):
