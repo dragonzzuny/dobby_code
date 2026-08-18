@@ -30,6 +30,12 @@
     dobby runtime status <run_id>       nodes, attempts, artifacts, integrity
     dobby runtime list                  every run in this project
 
+    dobby project init --smoke "..."    scan, baseline, and fix the contract
+    dobby project open                  a shift: what is verified, what is next
+    dobby project next                  the next work item, chosen arithmetically
+    dobby project attach-run W001 <run> point an item at the run judging it
+    dobby project close <session_id>    judge by the run, write the handover
+
 Almost every command prints JSON on stdout so the output is consumable by another
 process without parsing prose. The exceptions are deliberate and are named here,
 because a blanket promise that two commands break is worse than an accurate one —
@@ -1460,6 +1466,89 @@ def cmd_runtime(args):
     _out(payload)
 
 
+def cmd_project(args):
+    """The unit above a run: a portfolio that survives the session working it.
+
+    Nothing here calls a provider. `init` scans and runs the smoke checks;
+    `next` ranks arithmetically. The one judgement left to a model — whether an
+    item is well enough understood to implement — is REPORTED as
+    `needs_architect` rather than made here.
+    """
+    from .project import (ProjectStore, attach_run, close_session, initialise,
+                          open_session, select_next)
+
+    repo = _repo(args)
+    data = _data(args)
+
+    if args.action == "init":
+        specs = _read_json(args.items) if args.items else []
+        if isinstance(specs, dict):
+            specs = specs.get("items", [])
+        _out(initialise(data, args.root or repo,
+                        smoke=tuple(c for c in (args.smoke or "").split("|")
+                                    if c.strip()),
+                        item_specs=specs,
+                        allow_network=_allow_network(args),
+                        run_baseline=not args.no_baseline))
+        return
+
+    store = ProjectStore(data)
+
+    if args.action == "list":
+        _out({"projects": store.list_projects()})
+        return
+
+    project = store.load_project(args.project)
+
+    if args.action == "status":
+        baseline = project["baseline"]
+        _out({"project_id": project["project_id"], "root": project["root"],
+              "manifest_digest": project["manifest_digest"],
+              "portfolio_version": project["portfolio"].version,
+              "coverage": project["portfolio"].coverage(),
+              "baseline": baseline.to_dict() if baseline else None,
+              "items": [i.to_dict() for i in project["portfolio"].items],
+              "sessions": store.sessions(project["project_id"], limit=5)})
+        return
+
+    if args.action == "events":
+        _out({"project_id": project["project_id"],
+              "events": store.events(project["project_id"])})
+        return
+
+    if args.action == "next":
+        from .runtime.store import RunStore
+        from .project.session import _unconfirmed_by_run
+        unconfirmed = _unconfirmed_by_run(
+            RunStore(data),
+            [i.latest_run_id for i in project["portfolio"].items])
+        selection = select_next(project["portfolio"],
+                                baseline=project["baseline"],
+                                unconfirmed_effects=unconfirmed)
+        _out(selection.to_dict())
+        return
+
+    if args.action == "attach-run":
+        if not (args.work_item and args.run_id):
+            _die("attach-run needs a work item id and a run id: "
+                 "dobby project attach-run W001 <run_id>")
+        _out(attach_run(data, args.work_item, args.run_id,
+                        project_id=project["project_id"]))
+        return
+
+    if args.action == "open":
+        _out(open_session(data, project_id=project["project_id"],
+                          rebaseline=args.rebaseline).to_dict())
+        return
+
+    if args.action == "close":
+        if not args.work_item:
+            _die("close needs a session id: dobby project close <session_id>")
+        _out(close_session(data, args.work_item,
+                           promote=not args.no_promote).to_dict())
+        return
+
+
 # --------------------------------------------------------------- main ----
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="dobby",
@@ -1870,6 +1959,35 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-route", action="store_true",
                    help="skip the router (budgets come from defaults)")
     p.set_defaults(fn=_runtime_dispatch)
+
+    p = sub.add_parser("project", parents=[common, net],
+                       help="the unit above a run: manifest, portfolio, "
+                            "baseline, session envelope")
+    p.add_argument("action",
+                   choices=["init", "status", "list", "next", "attach-run",
+                            "open", "close", "events"])
+    p.add_argument("work_item", nargs="?", default=None,
+                   help="work item id for attach-run; session id for close")
+    p.add_argument("run_id", nargs="?", default=None,
+                   help="the runtime run id, for attach-run")
+    p.add_argument("--project", default=None,
+                   help="project id; optional while this store holds only one")
+    p.add_argument("--root", default=None, help="init: repository to scan")
+    p.add_argument("--smoke", default=None,
+                   help="init: pipe-separated commands that prove the tree is "
+                        "sound. Without it, a cheap default is derived and "
+                        "recorded as derived")
+    p.add_argument("--items", default=None,
+                   help="init: JSON file of work item specs. Absent means an "
+                        "empty portfolio — this command does not invent one")
+    p.add_argument("--no-baseline", action="store_true",
+                   help="init: skip the first baseline (it will be required "
+                        "before any item may start)")
+    p.add_argument("--rebaseline", action="store_true",
+                   help="open: re-take the baseline instead of refusing")
+    p.add_argument("--no-promote", action="store_true",
+                   help="close: do not judge the active item by its run")
+    p.set_defaults(fn=cmd_project)
     return ap
 
 
