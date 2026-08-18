@@ -28,8 +28,14 @@ constant because "the loop ended" is not an answer a caller can act on:
 
     PORTFOLIO_COMPLETE      nothing remains
     NOTHING_STARTABLE       everything left is blocked or waiting on a dependency
-    NEEDS_ARCHITECT         the next item has no machine-checkable acceptance, or
-                            too much uncertainty to hand to an implementation
+    NEEDS_ARCHITECT         the next item has no machine-checkable acceptance,
+                            or too much uncertainty to hand to an
+                            implementation — and no architect was offered
+    NEEDS_DISCOVERY         the architect answered, correctly, that the item
+                            needs evidence before it needs an implementation
+    NEEDS_HUMAN_APPROVAL    the plan wants something outside what the project
+                            has declared: a new command, a raised effect class
+    PLAN_REJECTED           the plan would have weakened the definition of done
     NEEDS_RECONCILIATION    an external effect was claimed and never confirmed
     BASELINE_FAILED         the tree does not pass its own checks
     ITEM_BLOCKED            the run did not satisfy the item, and repeating it
@@ -45,6 +51,7 @@ decision somebody made.
 
 from __future__ import annotations
 
+from . import architecture as A
 from .models import BLOCKED, DONE, ProjectError
 from .session import attach_run, close_session, open_session
 from .store import ProjectStore
@@ -53,26 +60,67 @@ from .store import ProjectStore
 PORTFOLIO_COMPLETE = "portfolio_complete"
 NOTHING_STARTABLE = "nothing_startable"
 NEEDS_ARCHITECT = "needs_architect"
+NEEDS_DISCOVERY = "needs_discovery"
+NEEDS_HUMAN_APPROVAL = "needs_human_approval"
+PLAN_REJECTED = "plan_rejected"
 NEEDS_RECONCILIATION = "needs_reconciliation"
 BASELINE_FAILED = "baseline_failed"
 ITEM_BLOCKED = "item_blocked"
 MAX_ITEMS = "max_items"
 
 STOP_REASONS = (PORTFOLIO_COMPLETE, NOTHING_STARTABLE, NEEDS_ARCHITECT,
-                NEEDS_RECONCILIATION, BASELINE_FAILED, ITEM_BLOCKED, MAX_ITEMS)
+                NEEDS_DISCOVERY, NEEDS_HUMAN_APPROVAL, PLAN_REJECTED,
+                NEEDS_RECONCILIATION, BASELINE_FAILED, ITEM_BLOCKED,
+                MAX_ITEMS)
 
 #: A ceiling on an unbounded drain. Not a tuning knob — a runaway guard, so a
 #: portfolio that somehow keeps producing startable items cannot spend a machine
 #: overnight without anybody having chosen that.
 DRAIN_CEILING = 50
 
+#: An architect outcome that is not APPLIED is a halt, and each kind of halt is
+#: its own reason. Mapped rather than branched so a new outcome cannot silently
+#: fall through to "the loop ended".
+_STOP_FOR_OUTCOME = {
+    A.NEEDS_DISCOVERY: NEEDS_DISCOVERY,
+    A.NEEDS_HUMAN_APPROVAL: NEEDS_HUMAN_APPROVAL,
+    A.REJECTED: PLAN_REJECTED,
+}
+
+
+def _ask_the_architect(data_dir, project_id, item, envelope, *, provider,
+                       propose):
+    """One bounded call, and its failures are decisions rather than exceptions.
+
+    A provider that is absent, times out or answers in prose is not a crash of
+    the loop: it is a plan that could not be obtained, which is exactly the
+    `REJECTED` outcome the store records with the reason attached.
+    """
+    try:
+        return A.request_architecture(
+            data_dir, item.work_item_id, project_id=project_id,
+            session_id=envelope.session_id, provider=provider,
+            propose=propose)
+    except A.PlanRejected as exc:
+        return A.PlanDecision(request_digest="", plan_id=None,
+                              outcome=A.REJECTED, reason=str(exc))
+
 
 def advance(data_dir: str, *, project_id: str | None = None,
             provider: str | None = None, execute_command: str | None = None,
-            max_items: int = 1, max_steps: int = 100, budget=None) -> dict:
+            max_items: int = 1, max_steps: int = 100, budget=None,
+            architect: bool = False, architect_provider: str | None = None,
+            propose=None) -> dict:
     """Carry the portfolio forward, and say why it stopped.
 
     `max_items=0` drains until a stop reason, bounded by `DRAIN_CEILING`.
+
+    `architect=True` turns the `needs_architect` halt into one bounded call:
+    the item goes to `project/architecture.py`, which may widen its acceptance
+    from the project's own declared checks and nothing else. Off by default,
+    because letting a model change the definition of done is a decision somebody
+    makes rather than one a loop assumes. `propose` is passed straight through
+    as the plan source, so a caller may supply one without a provider.
 
     Somebody has to do the work: pass `provider` for an agent CLI or
     `execute_command` for a deterministic step. With neither, the graph is
@@ -99,7 +147,9 @@ def advance(data_dir: str, *, project_id: str | None = None,
             data_dir, store, pid, root, provider=provider,
             execute_command=execute_command, static=static,
             max_steps=max_steps, budget=budget, make_graph=default_graph,
-            make_runner=Runner, make_budget=RunBudget)
+            make_runner=Runner, make_budget=RunBudget,
+            architect=architect, architect_provider=architect_provider,
+            propose=propose)
         if step is not None:
             iterations.append(step)
             if step["item_state"] == DONE:
@@ -123,7 +173,8 @@ def advance(data_dir: str, *, project_id: str | None = None,
 
 
 def _one_item(data_dir, store, project_id, root, *, provider, execute_command,
-              static, max_steps, budget, make_graph, make_runner, make_budget):
+              static, max_steps, budget, make_graph, make_runner, make_budget,
+              architect=False, architect_provider=None, propose=None):
     """One shift. Returns `(step_record | None, stop | None)`.
 
     A record with no stop means carry on; a stop with no record means the loop
@@ -149,7 +200,21 @@ def _one_item(data_dir, store, project_id, root, *, provider, execute_command,
             f"session {envelope.session_id} names work item "
             f"{envelope.active_work_item_id!r}, which is not in the portfolio")
     if item.needs_architect:
-        return None, (NEEDS_ARCHITECT, envelope.next_action)
+        if not (architect or propose):
+            return None, (NEEDS_ARCHITECT, envelope.next_action)
+        decision = _ask_the_architect(
+            data_dir, project_id, item, envelope,
+            provider=architect_provider, propose=propose)
+        if decision.outcome != A.APPLIED:
+            return None, (_STOP_FOR_OUTCOME[decision.outcome], decision.reason)
+        # Re-read: the plan changed the item and bumped the portfolio, and the
+        # copy in hand is the one from before that write.
+        item = store.load_project(project_id)["portfolio"].get(
+            item.work_item_id)
+        if item.needs_architect:            # pragma: no cover - belt and brace
+            return None, (NEEDS_ARCHITECT,
+                          f"{item.work_item_id} is still ungradeable after an "
+                          f"applied plan")
 
     graph = make_graph(item.outcome or item.title, provider=provider,
                        execute_command=execute_command,

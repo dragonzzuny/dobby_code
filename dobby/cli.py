@@ -1550,7 +1550,9 @@ def cmd_project(args):
         _out(advance(data, project_id=project["project_id"],
                      provider=args.provider, execute_command=args.execute,
                      max_items=(0 if args.until == "empty" else args.max_items),
-                     max_steps=args.max_steps))
+                     max_steps=args.max_steps,
+                     architect=args.architect,
+                     architect_provider=args.architect_provider))
         return
 
     if args.action == "close":
@@ -2010,6 +2012,14 @@ def build_parser() -> argparse.ArgumentParser:
                    help="run: agent CLI that does the work")
     p.add_argument("--execute", default=None,
                    help="run: deterministic command that does the work")
+    p.add_argument("--architect", action="store_true",
+                   help="run: when an item is ungradeable, ask an architect for "
+                        "a plan instead of stopping. It may only propose "
+                        "acceptance checks this project already declares; "
+                        "anything else needs a person")
+    p.add_argument("--architect-provider", default=None,
+                   help="run: provider for the architect role (default: the "
+                        "catalog's preference for `architect`)")
     p.set_defaults(fn=cmd_project)
     return ap
 

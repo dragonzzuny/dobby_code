@@ -73,6 +73,38 @@ CREATE TABLE IF NOT EXISTS project_events (
 CREATE INDEX IF NOT EXISTS project_events_project
     ON project_events(project_id, seq);
 
+-- One row per call to the architect, opened BEFORE the provider runs. A row
+-- with no decision is the visible state of "we asked and never heard back",
+-- which is what a crash mid-call leaves and what resume has to recognise.
+CREATE TABLE IF NOT EXISTS architecture_requests (
+    digest       TEXT PRIMARY KEY,
+    project_id   TEXT NOT NULL,
+    work_item_id TEXT NOT NULL,
+    trigger      TEXT NOT NULL,
+    request      TEXT NOT NULL,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS architecture_requests_project
+    ON architecture_requests(project_id, created_at);
+
+-- The plan and what was done about it, written in the SAME transaction as the
+-- portfolio change it justifies. Splitting them would allow a plan recorded as
+-- APPLIED beside an item that never changed.
+CREATE TABLE IF NOT EXISTS plan_revisions (
+    digest            TEXT PRIMARY KEY,
+    project_id        TEXT NOT NULL,
+    work_item_id      TEXT NOT NULL,
+    plan_id           TEXT,
+    plan              TEXT,
+    outcome           TEXT NOT NULL,
+    reason            TEXT NOT NULL,
+    portfolio_version INTEGER,
+    decision          TEXT NOT NULL,
+    decided_at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS plan_revisions_project
+    ON plan_revisions(project_id, decided_at);
+
 CREATE TABLE IF NOT EXISTS session_envelopes (
     session_id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
@@ -351,6 +383,111 @@ class ProjectStore:
         if row is None:
             return None
         return SessionEnvelope.from_dict(json.loads(row["envelope"]))
+
+    # -- architecture ------------------------------------------------------
+    def open_architecture_request(self, request) -> None:
+        """Record the question before anybody answers it.
+
+        `INSERT OR IGNORE`: asking twice about an identical world is one
+        question, and the digest says so. The caller checks `decision_for`
+        first; this is the belt to that brace.
+        """
+        with transaction(self.path) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO architecture_requests(digest,"
+                " project_id, work_item_id, trigger, request, created_at)"
+                " VALUES(?,?,?,?,?,?)",
+                (request.digest, request.project_id, request.work_item_id,
+                 request.trigger,
+                 json.dumps(request.to_dict(), ensure_ascii=False),
+                 request.created_at))
+            self._event(conn, request.project_id, "architecture_requested",
+                        {"digest": request.digest, "trigger": request.trigger},
+                        work_item_id=request.work_item_id)
+
+    def decision_for(self, project_id: str, digest: str) -> dict | None:
+        """A prior decision for this exact question, or None."""
+        with transaction(self.path) as conn:
+            row = conn.execute(
+                "SELECT decision FROM plan_revisions WHERE digest=?"
+                " AND project_id=?", (digest, project_id)).fetchone()
+        return json.loads(row["decision"]) if row else None
+
+    def open_requests(self, project_id: str) -> list[dict]:
+        """Requests with no decision — asked, never settled."""
+        with transaction(self.path) as conn:
+            rows = conn.execute(
+                "SELECT r.request FROM architecture_requests r"
+                " LEFT JOIN plan_revisions p ON p.digest = r.digest"
+                " WHERE r.project_id=? AND p.digest IS NULL"
+                " ORDER BY r.created_at", (project_id,)).fetchall()
+        return [json.loads(r["request"]) for r in rows]
+
+    def plans(self, project_id: str, *, work_item_id: str | None = None
+              ) -> list[dict]:
+        query = ("SELECT plan, decision FROM plan_revisions WHERE project_id=?")
+        params = [project_id]
+        if work_item_id:
+            query += " AND work_item_id=?"
+            params.append(work_item_id)
+        with transaction(self.path) as conn:
+            rows = conn.execute(query + " ORDER BY decided_at",
+                                params).fetchall()
+        return [{"plan": json.loads(r["plan"]) if r["plan"] else None,
+                 "decision": json.loads(r["decision"])} for r in rows]
+
+    def settle_architecture(self, request, plan, decision, *, item=None,
+                            expected_version: int | None = None) -> int | None:
+        """Write the plan, the decision and the portfolio change as ONE unit.
+
+        The item is optional because most outcomes change nothing: a rejected
+        plan must leave the portfolio at the version it was read at, and an
+        assertion that it did is the only way to know a refusal was really a
+        refusal.
+        """
+        now = time.strftime("%Y-%m-%dT%H:%M:%S")
+        version = None
+        with transaction(self.path) as conn:
+            if item is not None:
+                if expected_version is None:
+                    raise ProjectError(
+                        "applying a plan needs the portfolio version it was "
+                        "decided against")
+                version = self._bump(conn, item.project_id, expected_version,
+                                     now)
+                item.version += 1
+                cur = conn.execute(
+                    "UPDATE work_items SET spec=?, state=?, latest_run_id=?,"
+                    " version=?, updated_at=? WHERE project_id=?"
+                    " AND work_item_id=?",
+                    (json.dumps(item.to_dict(), ensure_ascii=False),
+                     item.state, item.latest_run_id, item.version, now,
+                     item.project_id, item.work_item_id))
+                if cur.rowcount != 1:
+                    raise ProjectError(
+                        f"no work item {item.work_item_id!r} to apply a plan to")
+            conn.execute(
+                "INSERT OR REPLACE INTO plan_revisions(digest, project_id,"
+                " work_item_id, plan_id, plan, outcome, reason,"
+                " portfolio_version, decision, decided_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (request.digest, request.project_id, request.work_item_id,
+                 decision.plan_id,
+                 json.dumps(plan.to_dict(), ensure_ascii=False) if plan
+                 else None,
+                 decision.outcome, decision.reason, version,
+                 json.dumps({**decision.to_dict(),
+                             "portfolio_version": version},
+                            ensure_ascii=False),
+                 decision.decided_at))
+            self._event(conn, request.project_id, "plan_decided",
+                        {"digest": request.digest, "plan_id": decision.plan_id,
+                         "outcome": decision.outcome,
+                         "reason": decision.reason,
+                         "applied_checks": list(decision.applied_checks)},
+                        work_item_id=request.work_item_id,
+                        portfolio_version=version)
+        return version
 
     def sessions(self, project_id: str, *, limit: int = 25) -> list[dict]:
         with transaction(self.path) as conn:

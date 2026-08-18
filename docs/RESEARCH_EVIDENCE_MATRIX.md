@@ -202,10 +202,12 @@ Recorded so they are not mistaken for oversights.
   needs a model, and a model's guess at what remains — stored as the definition
   of done — is the fiction the project kernel exists to keep out. The item that
   would need such a decision sets `needs_architect` and stops the loop.
-- **The architect step itself**: when an item has no machine-checkable
-  acceptance or too much uncertainty, `dobby project run` halts and says so.
-  Nothing calls a model to make that decision and write it back into the
-  portfolio.
+- **What the architect may propose**: `dobby project run --architect` calls a
+  read-only architect for an ungradeable item, but a plan may only use
+  acceptance commands the project already declares. A new command, a raised
+  side-effect class, new top-level items or a discovery step all halt instead of
+  applying. Nothing compiles a plan's `execution_steps` or `discovery_steps`
+  into a run — the item still goes through the same linear `default_graph`.
 - **An effect-provider status lookup**: `dobby/runtime/store.py` distinguishes a
   CLAIMED external effect from a CONFIRMED one and blocks the node on the
   former, but resolving it means a human calling `confirm_effect` or

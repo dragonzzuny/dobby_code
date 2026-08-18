@@ -1,7 +1,7 @@
 # dobby
 
 [![ci](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml/badge.svg)](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-1407-3fb950)](tests/)
+[![tests](https://img.shields.io/badge/tests-1448-3fb950)](tests/)
 [![python](https://img.shields.io/badge/python-3.10%2B-4c8eda)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/dependencies-PyYAML%20only-4c8eda)](#install)
 [![platforms](https://img.shields.io/badge/platforms-linux%20%7C%20macos%20%7C%20windows-4c8eda)](.github/workflows/ci.yml)
@@ -195,10 +195,16 @@ fresh worker needs, which is deliberately not a transcript.
   The one judgement left to a model is not *which* item but whether an item is
   gradeable at all — reported as `needs_architect`, never decided.
 - **It stops at boundaries and names them.** `dobby project run --until empty`
-  drains the portfolio and halts on one of seven declared reasons —
+  drains the portfolio and halts on one of ten declared reasons —
   `baseline_failed`, `needs_architect`, `needs_reconciliation`, `item_blocked`,
   and so on — because a caller deciding whether to fetch a human cannot parse a
   sentence. A blocked item is a stop, not a skip.
+- **An architect may widen the gate, never lower it.** `--architect` asks a
+  read-only model to make an ungradeable item gradeable, and it may only choose
+  acceptance commands the project already declares. Dropping a check is refused
+  outright; an invented one, a destructive one or a raised side-effect class
+  stops for a person. The request is recorded before the model is called, and
+  the plan, the decision and the portfolio change land in one transaction.
 - **It re-baselines between items,** since the item that just succeeded changed
   the tree. If the project's own smoke checks then fail, everything stops and the
   failure is attributed to the item that caused it.
@@ -636,7 +642,7 @@ dobby/style.py     the generated-prose signature (English + Korean)
 .claude/skills/    procedures
 mcp/               optional MCP gateway: 4 meta-tools, allowlisted, no network
 evals/             retrieval gold (dev / val / holdout)
-tests/             1407 tests
+tests/             1448 tests
 docs/              architecture, project kernel, operating manual, failure
                    catalog, threat model, research evidence matrix
 ```
@@ -644,7 +650,7 @@ docs/              architecture, project kernel, operating manual, failure
 ## Verify it yourself
 
 ```bash
-python -m unittest discover -s tests -q      # 1407 tests
+python -m unittest discover -s tests -q      # 1448 tests
 python -m dobby.cli slice --scenario SELF-CHECK
 python -m dobby.cli doctor
 ```

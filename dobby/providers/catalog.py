@@ -304,6 +304,15 @@ ROLE_ROUTING: dict[str, tuple[str, ...]] = {
     # High-volume mechanical work: dedupe, classify, extract, rank. Cheapest
     # first, because volume is the cost driver and the task is not subtle.
     "mechanical": ("ollama", "qwen", "kimi", "dashscope", "gemini", "agy"),
+    # Plans one work item and returns a document, never an edit. Deepest
+    # available and only ONE runs, for the same reason `synthesize` is: this is
+    # the decision the rest of the portfolio is built on, and a cheap wrong
+    # answer here is paid for by every worker that follows it.
+    #
+    # Invoked WITHOUT `write_extra`, which is the catalog's opt-in for a CLI
+    # that may edit files. The read-only profile is the absence of that tuple,
+    # not a promise made in prose.
+    "architect": ("claude", "codex", "gemini", "agy"),
     # Final judgment. Deepest available, and only ONE runs.
     "synthesize": ("claude", "codex", "gemini", "agy"),
     "adjudicate": ("claude", "codex", "gemini", "agy"),

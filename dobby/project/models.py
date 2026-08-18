@@ -157,6 +157,11 @@ class WorkItem:
     evidence_refs: list = field(default_factory=list)
     latest_run_id: str | None = None
     blocked_reason: str = ""
+    #: The plan that made this item gradeable, if an architect was asked.
+    #: Recorded rather than inferred: without it, an item whose
+    #: uncertainty was the reason for the call still reads as uncertain
+    #: after the call, and the loop asks the same question forever.
+    planned_by: str | None = None
     version: int = 1
 
     def __post_init__(self):
@@ -172,9 +177,18 @@ class WorkItem:
         High uncertainty, or an item with no machine-checkable acceptance. Both
         mean the same thing operationally: sending this to a worker now produces
         something nobody can grade.
+
+        An applied plan clears the uncertainty gate and NOT the acceptance one.
+        That asymmetry is the point: the architect's job was to make the item
+        gradeable, so a plan that left it with no acceptance check did not do
+        it, and no amount of planning may substitute for something that can be
+        run.
         """
-        return (self.uncertainty >= UNCERTAINTY_ESCALATION
-                or not self.acceptance_checks)
+        if not self.acceptance_checks:
+            return True
+        if self.planned_by:
+            return False
+        return self.uncertainty >= UNCERTAINTY_ESCALATION
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -309,6 +323,10 @@ class SessionEnvelope:
     open_failures: tuple = ()
     unconfirmed_effects: tuple = ()
     next_action: str = ""
+    #: An architecture request that was opened and never settled — the
+    #: state a crash mid-call leaves. A fresh session must not start work
+    #: on an item whose plan is still in flight.
+    pending_request_digest: str | None = None
     needs_rebaseline: bool = False
     created_at: str = ""
     closed_at: str | None = None

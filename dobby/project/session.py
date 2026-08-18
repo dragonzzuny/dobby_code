@@ -91,6 +91,11 @@ def open_session(data_dir: str, *, project_id: str | None = None,
     unconfirmed = _unconfirmed_by_run(
         run_store, [i.latest_run_id for i in portfolio.items])
 
+    # An architecture request opened and never settled is a question in
+    # flight. Surfaced rather than swallowed: a fresh session that starts work
+    # on the item would be acting on a plan nobody has seen the answer to.
+    open_requests = store.open_requests(manifest.project_id)
+
     previous = store.latest_envelope(manifest.project_id)
     selection = select_next(
         portfolio, baseline=baseline, unconfirmed_effects=unconfirmed,
@@ -126,6 +131,8 @@ def open_session(data_dir: str, *, project_id: str | None = None,
         # caller keying on the flag saw a healthy shift with nothing to do.
         # `close_session` already set it; the two now agree.
         needs_rebaseline=selection.needs_rebaseline,
+        pending_request_digest=(open_requests[0]["digest"]
+                                if open_requests else None),
         next_action=_next_action(selection))
     store.put_envelope(envelope)
     return envelope

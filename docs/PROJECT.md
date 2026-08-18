@@ -161,6 +161,69 @@ portfolio fills with quiet failures while the summary keeps reporting progress.
 Running the command again steps over it deliberately, which is a decision
 somebody made.
 
+## The architect
+
+`needs_architect` was always the right signal and stopping on it was always
+safe. Safe is not progress, so `--architect` turns that halt into one bounded
+transaction:
+
+```
+ArchitectureRequest  ->  PlanSpec  ->  PlanDecision  ->  portfolio
+```
+
+### What it may change, and what it may not
+
+The temptation is to let the architect write acceptance checks. That is exactly
+the failure this kernel exists to prevent: an architect that proposes `echo ok`
+as the definition of done has not planned the work, it has removed the gate. So
+the allow-list is the project's own declaration — the manifest's smoke checks
+and the item's existing acceptance — and nothing else:
+
+| the plan | outcome |
+|---|---|
+| uses only commands this project already declares | `APPLIED` |
+| adds to the item's acceptance | `APPLIED` |
+| drops or replaces an existing check | `REJECTED`, always |
+| names a command the manifest never declared | `NEEDS_HUMAN_APPROVAL` |
+| names one `guard_command` calls destructive | `NEEDS_HUMAN_APPROVAL`, named |
+| depends on an item that does not exist, or closes a cycle | `REJECTED` |
+| raises the side-effect class | `NEEDS_HUMAN_APPROVAL` |
+| creates new top-level work items | `REJECTED` |
+| proposes read-only discovery and no acceptance | `NEEDS_DISCOVERY` |
+
+`NEEDS_DISCOVERY` is its own outcome rather than a flavour of "needs a human",
+because it is the one case where the architect did its job correctly and the
+answer is *more evidence* rather than a decision.
+
+### Read-only, and why that is a real claim
+
+The provider is invoked through the catalog's own argv with **no `write_extra`**
+— the tuple that puts a CLI into a state where it may edit files. `claude`'s
+catalog argv ends in `--permission-mode plan` for the same reason. The architect
+returns a document; `project/architecture.py` is the only thing that writes.
+
+### Asking twice, and dying in the middle
+
+A request's digest covers the contract, the tree, the item's gradeability and
+its evidence — and deliberately not the clock or the session. Two sessions that
+hit the same wall on the same tree are asking one question, and the second gets
+the first answer instead of paying a model for an opinion with nothing new
+behind it.
+
+The request is recorded **before** the provider is called, so dying mid-call
+leaves a question nobody answered and a portfolio nobody touched — visible as
+`pending_request_digest` on the next session's envelope. The plan, the decision
+and the portfolio change are then one transaction, so there is no state in which
+a plan reads as applied beside an item that never changed.
+
+### It does not lower the bar it just raised
+
+An applied plan sets `planned_by` on the item, which clears the *uncertainty*
+gate and never the *acceptance* one — a plan that left the item with no runnable
+check did not do its job, and no amount of planning substitutes for something
+that can be run. After that the item goes through the ordinary loop, and PK-2
+still decides: `SUCCEEDED` run, promoted artifact, no unconfirmed effect.
+
 ## Using it
 
 ```bash
@@ -174,6 +237,9 @@ python -m dobby.cli project status
 # the loop: one verified item, or drain until a boundary
 python -m dobby.cli project run
 python -m dobby.cli project run --until empty --execute "make build"
+
+# let an architect make an ungradeable item gradeable, within the allow-list
+python -m dobby.cli project run --architect
 
 # by hand, if you want the steps separately
 python -m dobby.cli project next
@@ -194,10 +260,12 @@ invented command that happens to exit zero certifies something nobody measured.
 Stated rather than implied.
 
 - **No portfolio is generated.** `init` records what the caller supplies. There
-  is no decomposition of "build me an app" into work items, and the item that
-  would do it (`needs_architect`) stops the loop rather than guessing.
-- **No architect step.** When an item needs a decision the loop halts and says
-  so; nothing calls a model to make that decision and write it back.
+  is no decomposition of "build me an app" into work items, and a plan that
+  proposes new top-level items is refused.
+- **The architect may not write a new check.** It chooses from what the project
+  already declares. Anything else is a stop, not a widening — see below.
+- **Discovery is proposed and never executed.** `NEEDS_DISCOVERY` records the
+  steps and halts; nothing compiles them into a run yet.
 - **No cost accounting.** Inherited from the runtime: `max_cost_usd` is enforced
   against a `cost_spent` nothing charges, because CLI providers do not report
   token usage.
@@ -227,6 +295,14 @@ three defects that the docstrings had asserted and the code had not:
 - `select_next` prepended the previous session's active item to the in-flight
   list and then re-sorted that list by rank, which sorted the preference back
   out. The prepend could not change any outcome.
+
+`tests/test_project_architecture.py` — 41 tests, and almost every one is a
+proposal that must NOT be applied: a check the manifest never declared, a
+destructive one, a plan that drops an existing check, a dependency that closes a
+cycle, prose where a plan belonged. The two that do apply assert what was
+applied and where it came from. One asserts the run after an applied plan ends
+`FAILED` rather than `WAITING` — because it once passed for the wrong reason,
+having never reached the gate at all.
 
 `tests/test_project_loop.py` — 20 tests, and almost all of them assert where the
 loop *stopped* rather than what it produced. The two that assert progress also

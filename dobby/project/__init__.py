@@ -18,6 +18,7 @@ repository it has never seen and re-derives what "done" means.
     select.py    which item is next, decided without a model
     session.py   open a shift, judge the item by its run, hand over
     loop.py      one item at a time, and the boundary it stopped at
+    architecture.py  the one place a model may change the plan
 
 Six invariants, each enforced in one place:
 
@@ -32,6 +33,10 @@ Six invariants, each enforced in one place:
 from .init import (build_manifest, capability_inventory, detect_stack,
                    discover_smoke_checks, git_sha, initialise, items_from_specs,
                    repo_digest, run_smoke, take_baseline)
+from .architecture import (APPLIED, ArchitectureRequest, NEEDS_DISCOVERY,
+                           NEEDS_HUMAN_APPROVAL, OUTCOMES, PlanDecision,
+                           PlanRejected, PlanSpec, REJECTED,
+                           request_architecture)
 from .loop import STOP_REASONS, advance
 from .models import (BLOCKED, CANCELLED, DONE, IN_PROGRESS, NEEDS_REPLAN, OPEN,
                      READY, SELECTABLE, VERIFYING, WORK_ITEM_STATES, Baseline,
@@ -45,9 +50,11 @@ from .store import (ProjectStore, StalePortfolio, new_project_id,
 
 __all__ = [
     "BLOCKED", "Baseline", "CANCELLED", "DONE", "IN_PROGRESS", "NEEDS_REPLAN",
-    "OPEN", "Portfolio", "STOP_REASONS", "ProjectError", "ProjectManifest", "ProjectStore",
+    "APPLIED", "ArchitectureRequest", "NEEDS_DISCOVERY",
+    "NEEDS_HUMAN_APPROVAL", "OPEN", "OUTCOMES", "PlanDecision",
+    "PlanRejected", "PlanSpec", "Portfolio", "REJECTED", "STOP_REASONS", "ProjectError", "ProjectManifest", "ProjectStore",
     "READY", "SELECTABLE", "Selection", "SessionEnvelope", "StalePortfolio",
-    "VERIFYING", "WORK_ITEM_STATES", "WorkItem", "advance", "attach_run",
+    "VERIFYING", "WORK_ITEM_STATES", "WorkItem", "advance", "attach_run", "request_architecture",
     "build_manifest", "capability_inventory", "close_session",
     "dependencies_met", "detect_stack", "digest_of", "discover_smoke_checks",
     "git_sha", "initialise", "items_from_specs", "new_project_id",
