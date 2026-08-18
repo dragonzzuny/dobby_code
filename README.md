@@ -1,7 +1,7 @@
 # dobby
 
 [![ci](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml/badge.svg)](https://github.com/dragonzzuny/dobby_code/actions/workflows/ci.yml)
-[![tests](https://img.shields.io/badge/tests-1326-3fb950)](tests/)
+[![tests](https://img.shields.io/badge/tests-1407-3fb950)](tests/)
 [![python](https://img.shields.io/badge/python-3.10%2B-4c8eda)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/dependencies-PyYAML%20only-4c8eda)](#install)
 [![platforms](https://img.shields.io/badge/platforms-linux%20%7C%20macos%20%7C%20windows-4c8eda)](.github/workflows/ci.yml)
@@ -70,6 +70,10 @@ python -m dobby.cli slice --scenario SELF-CHECK
 python -m dobby.cli runtime run "add rate limiting to the upload endpoint" \
     --execute "pytest -q tests/test_ratelimit.py" --check "pytest -q"
 python -m dobby.cli runtime resume <run_id>
+
+# 7. Work a project across sessions: the loop halts where only you can proceed
+python -m dobby.cli project init --smoke "pytest -q" --items items.json
+python -m dobby.cli project run --until empty --execute "pytest -q"
 ```
 
 The contract installs a door for each harness — `CLAUDE.md`, `GEMINI.md`,
@@ -169,6 +173,41 @@ python -m dobby.cli runtime bench --corpus t.json
 What it deliberately does not do — the hedge is decided and never raced, no cost
 accounting, no benchmark result, one advisory judge rather than a panel — is
 listed with reasons in [docs/RUNTIME.md](docs/RUNTIME.md).
+
+### Projects that outlive the run — `dobby/project/`
+
+A run is the wrong unit for work that outlives an afternoon. It ends, and the
+next session opens a repository it has never seen, re-derives what the test
+command is, and sometimes re-implements what was finished on Tuesday.
+
+The project kernel is the unit above it: a **manifest** (what this project is
+and how it is checked, frozen), a **baseline** (whether the tree was sound, and
+against which code), a **portfolio** of work items whose acceptance is
+*commands* rather than sentences, and a **session envelope** — the minimum a
+fresh worker needs, which is deliberately not a transcript.
+
+- **The run decides what is done, not the worker.** An item becomes `DONE` only
+  when a runtime run ended `SUCCEEDED`, promoted at least one artifact, and left
+  no unconfirmed external effect. The store cannot express "the agent said it
+  finished".
+- **Selection is arithmetic.** The same portfolio in the same state yields the
+  same next item, so an interrupted session continues rather than reconsiders.
+  The one judgement left to a model is not *which* item but whether an item is
+  gradeable at all — reported as `needs_architect`, never decided.
+- **It stops at boundaries and names them.** `dobby project run --until empty`
+  drains the portfolio and halts on one of seven declared reasons —
+  `baseline_failed`, `needs_architect`, `needs_reconciliation`, `item_blocked`,
+  and so on — because a caller deciding whether to fetch a human cannot parse a
+  sentence. A blocked item is a stop, not a skip.
+- **It re-baselines between items,** since the item that just succeeded changed
+  the tree. If the project's own smoke checks then fail, everything stops and the
+  failure is attributed to the item that caused it.
+
+Six invariants, each enforced in one place and each with a test that fails when
+it does not hold. Writing those tests found three defects the docstrings had
+asserted and the code had not — including a dirty-tree refusal that had never
+once fired. Design, and what it deliberately does not do:
+[docs/PROJECT.md](docs/PROJECT.md).
 
 ### Multi-provider fleet — `dobby/providers/`
 
@@ -567,7 +606,9 @@ DESIGN.md          the design system, machine-readable
 dobby/core/        proven engine: knowledge graph, router, policies, skills,
                    evaluator, trajectory, optimizer, improvement loop, evolution
 dobby/runtime/     durable execution: task graph, event-log store, artifact
-                   contracts, verifier gate, failure classes, resume
+                   contracts, verifier gate, failure classes, node leases, resume
+dobby/project/     the unit above a run: manifest, baseline, portfolio, session
+                   envelope, and the loop that carries one verified item at a time
 dobby/providers/   provider fleet + parallel fan-out
 dobby/agy.py       Antigravity delegation lane: gate, templates, flag guards
 dobby/memory/      six-tier memory + gates + compression
@@ -595,15 +636,15 @@ dobby/style.py     the generated-prose signature (English + Korean)
 .claude/skills/    procedures
 mcp/               optional MCP gateway: 4 meta-tools, allowlisted, no network
 evals/             retrieval gold (dev / val / holdout)
-tests/             1326 tests
-docs/              architecture, operating manual, failure catalog, threat
-                   model, research evidence matrix
+tests/             1407 tests
+docs/              architecture, project kernel, operating manual, failure
+                   catalog, threat model, research evidence matrix
 ```
 
 ## Verify it yourself
 
 ```bash
-python -m unittest discover -s tests -q      # 1326 tests
+python -m unittest discover -s tests -q      # 1407 tests
 python -m dobby.cli slice --scenario SELF-CHECK
 python -m dobby.cli doctor
 ```

@@ -197,6 +197,24 @@ Recorded so they are not mistaken for oversights.
   corpus to run it on. `example_corpus()` is a shape, labelled as one. So the
   question the harness exists to answer — does the runtime finish more tasks
   verified — is UNANSWERED here, not answered weakly.
+- **Portfolio decomposition**: `dobby project init` records the work items the
+  caller supplies and derives none. Turning "build me an app" into a portfolio
+  needs a model, and a model's guess at what remains — stored as the definition
+  of done — is the fiction the project kernel exists to keep out. The item that
+  would need such a decision sets `needs_architect` and stops the loop.
+- **The architect step itself**: when an item has no machine-checkable
+  acceptance or too much uncertainty, `dobby project run` halts and says so.
+  Nothing calls a model to make that decision and write it back into the
+  portfolio.
+- **An effect-provider status lookup**: `dobby/runtime/store.py` distinguishes a
+  CLAIMED external effect from a CONFIRMED one and blocks the node on the
+  former, but resolving it means a human calling `confirm_effect` or
+  `release_effect`. There is no `EffectAdapter.status(key)` that asks the mail
+  API or the deploy service, and no CLI for either resolution.
+- **Distributed leases**: a runtime node lease records `host/pid` and an expiry,
+  and liveness is a local process check, so a second host sharing the store is
+  answered only by the TTL. No heartbeat, no fencing token, no orphan detector
+  running independently of a resume.
 - **Semantic verification beyond a single advisory judge**: the verifier has its
   deterministic and grounded layers; the third is one `judge` node, and it is
   advisory by construction. No panel, no cross-examination.

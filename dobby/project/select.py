@@ -126,28 +126,30 @@ def select_next(portfolio: Portfolio, *, baseline=None,
     # while the first is half-done is how a portfolio accumulates work in
     # flight that nobody finishes.
     in_flight = [i for i in portfolio.items if i.state == IN_PROGRESS]
-    # The previous session's item is not merely added to the in-flight set, it
-    # WINS it. Ranking is the right tie-break between things not yet started;
-    # between two half-done items it is the wrong question, because the one this
-    # project was last actually working on is the one whose context, branch and
-    # partial artifacts exist. An earlier version prepended the candidate and
-    # then re-sorted the list, which sorted the preference straight back out —
-    # the prepend could not change any outcome.
+    # Resume means IN_PROGRESS, and only that. Among items genuinely in flight
+    # the previous session's own item WINS rather than merely joining the set:
+    # ranking is the right tie-break between things not yet started, but between
+    # two half-done items it is the wrong question, because the one this project
+    # was last actually working on is the one whose branch and partial artifacts
+    # exist. An earlier version prepended that candidate and then re-sorted the
+    # list, which sorted the preference straight back out.
+    #
+    # An item the last envelope merely NAMED as next is not in flight. Treating
+    # it as a resume would label ordinary selection as recovery, and — the part
+    # that matters — would hand it out without passing the candidate filter
+    # below, so a dependency that is not DONE would no longer stop it.
     resumed = None
     if active_work_item_id and active_work_item_id in by_id:
         candidate = by_id[active_work_item_id]
-        if candidate.state not in CLOSED_STATES:
+        if candidate.state == IN_PROGRESS:
             resumed = candidate
     if resumed is None and in_flight:
         resumed = sorted(in_flight, key=rank_key)[0]
     if resumed is not None:
-        was_in_flight = resumed.state == IN_PROGRESS
         return Selection(
             item=resumed, recovery=True,
-            reason=(f"{resumed.work_item_id} was left "
-                    f"{'IN_PROGRESS' if was_in_flight else resumed.state} by an "
-                    f"earlier session; resuming it before starting anything "
-                    f"new"),
+            reason=(f"{resumed.work_item_id} was left IN_PROGRESS by an earlier "
+                    f"session; resuming it before starting anything new"),
             needs_architect=resumed.needs_architect,
             considered=[i.work_item_id for i in portfolio.items])
 

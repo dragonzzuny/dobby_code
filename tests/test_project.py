@@ -448,6 +448,24 @@ class PK5RecoveryFirst(unittest.TestCase):
                                 active_work_item_id="W002")
         self.assertEqual(selection.item.work_item_id, "W002")
 
+    def test_an_item_merely_named_as_next_is_not_treated_as_a_resume(self):
+        """Resume means IN_PROGRESS, and the distinction is load-bearing.
+
+        The resume branch runs BEFORE the candidate filter, so anything it
+        accepts skips the dependency check. An item the last envelope only named
+        as the next one to start has not started, and must go the ordinary way.
+        """
+        portfolio = Portfolio("p", items=[
+            item("W001", state=M.OPEN),
+            item("W002", state=M.OPEN, depends_on=["W001"], priority=9)])
+        selection = select_next(portfolio, baseline=passing_baseline(),
+                                active_work_item_id="W002")
+        self.assertEqual(selection.item.work_item_id, "W001",
+                         "an unstarted item was resumed past its own unmet "
+                         "dependency")
+        self.assertFalse(selection.recovery,
+                         "ordinary selection was labelled as recovery")
+
     def test_ranking_is_a_total_order_so_two_sessions_agree(self):
         twins = [item("W002", priority=5, impact=5, uncertainty=1),
                  item("W001", priority=5, impact=5, uncertainty=1)]

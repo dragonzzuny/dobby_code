@@ -35,6 +35,7 @@
     dobby project next                  the next work item, chosen arithmetically
     dobby project attach-run W001 <run> point an item at the run judging it
     dobby project close <session_id>    judge by the run, write the handover
+    dobby project run --until empty     the loop: one verified item at a time
 
 Almost every command prints JSON on stdout so the output is consumable by another
 process without parsing prose. The exceptions are deliberate and are named here,
@@ -1474,8 +1475,8 @@ def cmd_project(args):
     item is well enough understood to implement — is REPORTED as
     `needs_architect` rather than made here.
     """
-    from .project import (ProjectStore, attach_run, close_session, initialise,
-                          open_session, select_next)
+    from .project import (ProjectStore, advance, attach_run, close_session,
+                          initialise, open_session, select_next)
 
     repo = _repo(args)
     data = _data(args)
@@ -1539,6 +1540,17 @@ def cmd_project(args):
     if args.action == "open":
         _out(open_session(data, project_id=project["project_id"],
                           rebaseline=args.rebaseline).to_dict())
+        return
+
+    if args.action == "run":
+        # The one command that acts on its own, so it is the one that has to be
+        # explicit about where it stopped. `stopped` is a closed set of reasons
+        # (dobby/project/loop.py), not prose, because a caller deciding whether
+        # to escalate to a human cannot parse a sentence.
+        _out(advance(data, project_id=project["project_id"],
+                     provider=args.provider, execute_command=args.execute,
+                     max_items=(0 if args.until == "empty" else args.max_items),
+                     max_steps=args.max_steps))
         return
 
     if args.action == "close":
@@ -1965,7 +1977,7 @@ def build_parser() -> argparse.ArgumentParser:
                             "baseline, session envelope")
     p.add_argument("action",
                    choices=["init", "status", "list", "next", "attach-run",
-                            "open", "close", "events"])
+                            "open", "close", "events", "run"])
     p.add_argument("work_item", nargs="?", default=None,
                    help="work item id for attach-run; session id for close")
     p.add_argument("run_id", nargs="?", default=None,
@@ -1987,6 +1999,17 @@ def build_parser() -> argparse.ArgumentParser:
                    help="open: re-take the baseline instead of refusing")
     p.add_argument("--no-promote", action="store_true",
                    help="close: do not judge the active item by its run")
+    p.add_argument("--until", choices=["item", "empty"], default="item",
+                   help="run: stop after one item (default) or drain the "
+                        "portfolio until a boundary only a person can cross")
+    p.add_argument("--max-items", type=int, default=1,
+                   help="run: hard ceiling on items in one invocation")
+    p.add_argument("--max-steps", type=int, default=100,
+                   help="run: node steps per work item")
+    p.add_argument("--provider", default=None,
+                   help="run: agent CLI that does the work")
+    p.add_argument("--execute", default=None,
+                   help="run: deterministic command that does the work")
     p.set_defaults(fn=cmd_project)
     return ap
 
