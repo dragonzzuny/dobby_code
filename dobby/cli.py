@@ -1499,6 +1499,91 @@ def cmd_project(args):
         _out({"projects": store.list_projects()})
         return
 
+    # `plan` and `check` run BEFORE a project exists, and that is the point of
+    # both: `plan` produces the items file that `init` needs, and `check` is
+    # invoked as an acceptance check by whatever is grading a stage, including a
+    # person with no project store at all.
+    if args.action == "plan":
+        from .project.inquiry import plan as inquiry_plan
+        if not args.work_item:
+            _die('plan needs a topic: dobby project plan "<topic>"')
+        stages = (tuple(s.strip() for s in args.stages.split(",") if s.strip())
+                  if args.stages else None)
+        smoke = tuple(s.strip() for s in (args.smoke or "").split("|")
+                      if s.strip())
+        try:
+            result = inquiry_plan(args.work_item, stages=stages,
+                                  smoke_checks=smoke)
+        except ValueError as exc:
+            _die(str(exc))
+        if args.out:
+            os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".",
+                        exist_ok=True)
+            with open(args.out, "w", encoding="utf-8") as fh:
+                json.dump(result["items"], fh, ensure_ascii=False, indent=1)
+            result["written"] = args.out
+            result["next"] = (f"dobby project init --root . --items "
+                              f"{args.out}")
+        _out(result)
+        return
+
+    if args.action == "refine":
+        from .project.evidence import ideas_and_corpus
+        from .project.refine import provider_generator
+        from .project.refine import refine as run_refine
+        if not args.artifact:
+            _die("refine needs an ideation artifact: dobby project refine "
+                 "--file <ideation.json>")
+        if not os.path.exists(args.artifact):
+            _die(f"{args.artifact} does not exist")
+        with open(args.artifact, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        _, corpus = ideas_and_corpus(doc)
+        try:
+            generate = provider_generator(
+                args.provider, corpus, root=_repo(args),
+                allow_network=getattr(args, "allow_network", False),
+                count=max(1, args.min or 3))
+        except ValueError as exc:
+            _die(str(exc))
+        result = run_refine(
+            generate, corpus,
+            base_instruction=(doc.get("instruction")
+                              or f"Propose approaches to: "
+                                 f"{args.work_item or 'the need in this artifact'}"),
+            topic=(args.work_item or ""), rounds=args.rounds,
+            min_accepted=max(1, args.min or 1))
+        # Written beside the input, never over it: the artifact under an
+        # acceptance check is the stage's own output, and rewriting it here
+        # would make this command both the producer and the grader.
+        out = args.out or f"{os.path.splitext(args.artifact)[0]}.refined.json"
+        with open(out, "w", encoding="utf-8") as fh:
+            json.dump({"corpus": doc.get("corpus") or [],
+                       "ideas": result["accepted"]}, fh, ensure_ascii=False,
+                      indent=1)
+        result["written"] = out
+        result["provider"] = getattr(generate, "provider_id", None)
+        result["next"] = (f"review it, then: dobby project check --kind "
+                          f"ideation --file {out}")
+        _out(result)
+        raise SystemExit(0 if result["stopped"] == "satisfied" else 1)
+
+    if args.action == "check":
+        from .project.evidence import ArtifactError, check_file
+        if not (args.kind and args.artifact):
+            _die("check needs both: dobby project check --kind <kind> "
+                 "--file <artifact.json>")
+        try:
+            verdict = check_file(args.kind, args.artifact, min_rows=args.min,
+                                 root=_repo(args), corpus_path=args.corpus)
+        except ArtifactError as exc:
+            _die(str(exc))
+        _out(verdict)
+        # The exit code IS the acceptance signal: this command is what a work
+        # item's `acceptance_checks` runs, and the runtime gate reads the code,
+        # not the JSON.
+        raise SystemExit(0 if verdict["ok"] else 1)
+
     project = store.load_project(args.project)
 
     if args.action == "status":
@@ -1547,6 +1632,28 @@ def cmd_project(args):
         # explicit about where it stopped. `stopped` is a closed set of reasons
         # (dobby/project/loop.py), not prose, because a caller deciding whether
         # to escalate to a human cannot parse a sentence.
+        if args.attempts > 1 and args.until == "empty":
+            # Two ceilings that cannot both hold. Silently letting one win is
+            # how a run reports a drained portfolio after touching one item.
+            _die("--until empty and --attempts >1 ask for different things: "
+                 "draining the portfolio, and spending repeated attempts on one "
+                 "item. Pick one — repeat the --attempts invocation to advance "
+                 "further")
+        if args.attempts > 1:
+            # A retry path is its own decision, so it is its own function and
+            # its own stop reasons rather than a flag inside the kernel. It
+            # drives one item at a time by construction: see
+            # dobby/project/reattempt.py on why draining and counting attempts
+            # cannot both be true of one invocation.
+            from .project.reattempt import persevere
+            _out(persevere(data, project_id=project["project_id"],
+                           max_attempts=args.attempts,
+                           provider=args.provider,
+                           execute_command=args.execute,
+                           max_steps=args.max_steps,
+                           architect=args.architect,
+                           architect_provider=args.architect_provider))
+            return
         _out(advance(data, project_id=project["project_id"],
                      provider=args.provider, execute_command=args.execute,
                      max_items=(0 if args.until == "empty" else args.max_items),
@@ -1979,9 +2086,11 @@ def build_parser() -> argparse.ArgumentParser:
                             "baseline, session envelope")
     p.add_argument("action",
                    choices=["init", "status", "list", "next", "attach-run",
-                            "open", "close", "events", "run"])
+                            "open", "close", "events", "run", "plan",
+                            "check", "refine"])
     p.add_argument("work_item", nargs="?", default=None,
-                   help="work item id for attach-run; session id for close")
+                   help="work item id for attach-run; session id for close; "
+                        "the topic for plan")
     p.add_argument("run_id", nargs="?", default=None,
                    help="the runtime run id, for attach-run")
     p.add_argument("--project", default=None,
@@ -2020,6 +2129,35 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--architect-provider", default=None,
                    help="run: provider for the architect role (default: the "
                         "catalog's preference for `architect`)")
+    p.add_argument("--attempts", type=int, default=1,
+                   help="run: attempts per item. Above 1, a BLOCKED item is "
+                        "repaired from its own failing acceptance check and "
+                        "retried; an item that gives nothing to change is "
+                        "never retried (dobby/project/reattempt.py)")
+    from .project.inquiry import STAGE_KEYS
+    p.add_argument("--stages", default=None,
+                   help="plan: comma-separated subset of the inquiry stages "
+                        f"({','.join(STAGE_KEYS)})")
+    p.add_argument("--out", default=None,
+                   help="plan: write the item specs here, ready for "
+                        "`project init --items`. Without it they go to stdout "
+                        "and nothing is written")
+    p.add_argument("--kind", default=None,
+                   help="check: which stage artifact this is "
+                        "(dobby/project/evidence.py)")
+    p.add_argument("--file", dest="artifact", default=None,
+                   help="check: the artifact to grade")
+    p.add_argument("--min", type=int, default=None,
+                   help="check: rows the stage declared. Defaults to the kind's "
+                        "floor, and the number used is recorded in the verdict")
+    p.add_argument("--corpus", default=None,
+                   help="check: JSON of independently retrieved records. "
+                        "Without it, citation resolution reports NOT CHECKED "
+                        "rather than clean")
+    p.add_argument("--rounds", type=int, default=3,
+                   help="refine: generate/assess/repair cycles before giving "
+                        "up. A round that returns nothing new ends the cycle "
+                        "early, whatever this says")
     p.set_defaults(fn=cmd_project)
     return ap
 

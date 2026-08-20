@@ -19,6 +19,12 @@ repository it has never seen and re-derives what "done" means.
     session.py   open a shift, judge the item by its run, hand over
     loop.py      one item at a time, and the boundary it stopped at
     architecture.py  the one place a model may change the plan
+    inquiry.py   a research topic as a portfolio, deterministically
+    evidence.py  acceptance for stages a command could not grade before
+    refine.py    the idea cycle: generate, assess, repair, generate again
+                 (imported as a MODULE, never re-exported: a function named
+                  `refine` in this namespace would shadow its own module)
+    reattempt.py the item cycle: retry only after a derived repair
 
 Six invariants, each enforced in one place:
 
@@ -38,6 +44,10 @@ from .architecture import (APPLIED, ArchitectureRequest, NEEDS_DISCOVERY,
                            PlanRejected, PlanSpec, REJECTED,
                            request_architecture)
 from .loop import STOP_REASONS, advance
+from .evidence import (ArtifactError, KINDS, acceptance_command,
+                       check_file, ideas_and_corpus)
+from .inquiry import STAGE_KEYS, decompose, plan
+from .reattempt import derive_repair, parse_artifact_check, persevere
 from .models import (BLOCKED, CANCELLED, DONE, IN_PROGRESS, NEEDS_REPLAN, OPEN,
                      READY, SELECTABLE, VERIFYING, WORK_ITEM_STATES, Baseline,
                      Portfolio, ProjectError, ProjectManifest, SessionEnvelope,
@@ -60,4 +70,8 @@ __all__ = [
     "git_sha", "initialise", "items_from_specs", "new_project_id",
     "new_session_id", "new_work_item_id", "open_session", "promote_from_run",
     "rank_key", "repo_digest", "run_smoke", "select_next", "take_baseline",
+    "ArtifactError", "KINDS", "STAGE_KEYS", "acceptance_command",
+    "check_file", "decompose", "derive_repair", "ideas_and_corpus",
+    "parse_artifact_check",
+    "persevere", "plan",
 ]
