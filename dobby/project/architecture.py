@@ -435,15 +435,26 @@ def propose_via_provider(request: ArchitectureRequest, *, item, manifest,
                          provider: str | None = None,
                          allow_network: bool = False,
                          timeout_s: int | None = None) -> dict:
-    """Ask a provider for a plan. READ-ONLY by construction.
+    """Ask a provider for a plan, and refuse one that came with an edit.
 
-    `write_extra` is never passed, which is the catalog's own opt-in for a CLI
-    that may edit files. What comes back is parsed as data by the caller.
+    The docstring here used to read "READ-ONLY by construction", on the grounds
+    that `write_extra` is never passed. That was wrong, and this repository's own
+    catalog was already the counter-evidence: `write_extra=()` says what this
+    harness declined to send, and `agy` was measured writing files under exactly
+    the argv this function uses. Read-only is now enforced in two places that
+    fail differently, because neither is sufficient alone:
+
+      routing   `catalog.READ_ONLY_ROLES` will not resolve this role to a
+                provider recorded as RO_DENIED. A rule about a list.
+      detection `readonly.run_read_only` fingerprints the tree either side of
+                the call and discards the plan if it moved. A fact about the
+                tree, and the one that would catch a provider whose CLAIMED
+                read-only mode turns out to be the next agy.
     """
     from ..providers.catalog import registry
     from ..providers.detect import resolve_role
-    from ..providers.run import run_provider
     from ..runtime.workers import extract_json
+    from .readonly import ReadOnlyViolation, run_read_only
 
     provider_id = provider or resolve_role(ARCHITECT_ROLE,
                                            allow_network=allow_network)
@@ -452,9 +463,14 @@ def propose_via_provider(request: ArchitectureRequest, *, item, manifest,
             f"no provider on this machine fills the {ARCHITECT_ROLE!r} role; "
             f"install one or pass --provider")
     spec = registry().get(provider_id)
-    result = run_provider(spec, build_prompt(request, item=item,
-                                             manifest=manifest),
-                          cwd=manifest.root, timeout_s=timeout_s)
+    try:
+        result = run_read_only(
+            spec, build_prompt(request, item=item, manifest=manifest),
+            root=manifest.root, timeout_s=timeout_s, role=ARCHITECT_ROLE)
+    except ReadOnlyViolation as exc:
+        # Surfaced as a rejected plan so the loop's existing stop path carries
+        # it, rather than as a crash that loses the request already recorded.
+        raise PlanRejected(str(exc)) from exc
     if not result.ok:
         raise PlanRejected(
             f"the architect provider {provider_id} failed: "

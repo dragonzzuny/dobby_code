@@ -28,7 +28,7 @@ from __future__ import annotations
 import dataclasses
 
 from .base import ProviderSpec
-from .catalog import (LOCAL_ONLY_ROLES, ROLE_ROUTING, registry,
+from .catalog import (LOCAL_ONLY_ROLES, READ_ONLY_ROLES, ROLE_ROUTING, registry,
                       role_preference)
 
 AVAILABLE = "available"
@@ -130,6 +130,12 @@ def resolve_role(role: str, allow_network: bool = False,
             continue
         if role in LOCAL_ONLY_ROLES and reg.get(pid).kind == "api":
             # The aggregated context is the crown jewel; never ship it out.
+            continue
+        if role in READ_ONLY_ROLES and not reg.get(pid).may_fill_a_read_only_role:
+            # Measured to write under the default argv, or never looked at.
+            # Skipped rather than reported, for the same reason the line above
+            # is: the caller asked for the best ALLOWED provider, and one that
+            # would edit the tree is not a cheaper version of one that would not.
             continue
         entry = avail.get(pid)
         if entry is not None and entry.usable:

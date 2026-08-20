@@ -54,6 +54,14 @@ class ProviderError(RuntimeError):
     for a provider that merely failed to produce output."""
 
 
+#: See `ProviderSpec.read_only_default`.
+RO_VERIFIED = "verified"
+RO_CLAIMED = "claimed"
+RO_DENIED = "denied"
+RO_UNKNOWN = "unknown"
+READ_ONLY_STATES = (RO_VERIFIED, RO_CLAIMED, RO_DENIED, RO_UNKNOWN)
+
+
 @dataclasses.dataclass(frozen=True)
 class ProviderSpec:
     """How to detect, invoke, and budget one external agent runner."""
@@ -91,6 +99,24 @@ class ProviderSpec:
     #: as a harness failure when the provider had simply never been allowed to
     #: write.
     write_extra: tuple[str, ...] = ()
+    #: What is actually known about this CLI's behaviour when `write_extra` is
+    #: NOT passed. Four values, because "read-only" has turned out to mean four
+    #: different things here and a boolean merged them:
+    #:
+    #:   RO_VERIFIED  a write was attempted under the default argv and REFUSED,
+    #:                on some platform, and the probe is recorded.
+    #:   RO_CLAIMED   the default argv selects a mode the vendor documents as
+    #:                read-only, and nobody here has tried to break it.
+    #:   RO_DENIED    a write was attempted under the default argv and SUCCEEDED.
+    #:                This provider may never fill a read-only role.
+    #:   RO_UNKNOWN   nobody has looked. The honest default, and it is treated
+    #:                as unsafe for a read-only role rather than as harmless.
+    #:
+    #: `write_extra=()` was previously read as the read-only profile. It is not:
+    #: it is the absence of an opt-in, which says what this harness did NOT send
+    #: and nothing about what the CLI does anyway. `agy` is RO_DENIED for exactly
+    #: that reason — see the probe in `providers/catalog.py`.
+    read_only_default: str = "unknown"
     notes: str = ""
 
     def __post_init__(self) -> None:
@@ -103,6 +129,11 @@ class ProviderSpec:
                 raise ProviderError(f"{self.id}: unknown capability {cap!r}")
         if self.kind == "cli" and (self.binary is None or self.argv is None):
             raise ProviderError(f"{self.id}: cli providers need binary and argv")
+        if self.read_only_default not in READ_ONLY_STATES:
+            raise ProviderError(
+                f"{self.id}: unknown read_only_default "
+                f"{self.read_only_default!r}; expected one of "
+                f"{READ_ONLY_STATES}")
 
     # -- availability -------------------------------------------------------
     def which(self) -> str | None:
@@ -113,6 +144,22 @@ class ProviderSpec:
         """Required env vars that are absent. Cheap, and never logs values."""
         import os
         return [v for v in self.required_env if not os.environ.get(v)]
+
+    @property
+    def may_fill_a_read_only_role(self) -> bool:
+        """Whether this provider can be trusted with a role that must not write.
+
+        A provider with no `files` capability is read-only because it has no
+        mechanism to be otherwise, whatever its flags say — that is a structural
+        fact and not a claim. Everything else has to have been looked at:
+        UNKNOWN is refused, because "nobody checked" and "it is safe" are the two
+        things this repository keeps insisting are different.
+        """
+        if self.read_only_default == RO_DENIED:
+            return False
+        if "files" not in self.capabilities:
+            return True
+        return self.read_only_default in (RO_VERIFIED, RO_CLAIMED)
 
     def build_argv(self, prompt: str, model: str | None = None,
                    extra: Sequence[str] = ()) -> list[str]:

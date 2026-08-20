@@ -502,17 +502,28 @@ class TheArchitectIsNotGivenWriteAccess(unittest.TestCase):
         self.assertIn("never remove or weaken", prompt.lower())
 
     def test_run_provider_is_never_given_write_extra(self):
-        """The read-only profile is the ABSENCE of that tuple, so assert it.
+        """Absence of that tuple, plus the guard that absence turned out to need.
 
         Reads the CODE and not the docstring, which mentions `write_extra` by
         name — an earlier version of this assertion failed on its own prose.
+
+        The last assertion moved from `run_provider(spec` to `run_read_only(`
+        when the call gained its second enforcement. That is a STRENGTHENING and
+        not a relaxed test: `run_provider` alone was the thing this whole check
+        was built on, and the catalog had already measured a provider writing
+        under exactly that argv. `run_read_only` is `run_provider` plus a tree
+        fingerprint either side of it, so asserting the wrapper asserts strictly
+        more than asserting the call it wraps.
         """
         import inspect
         body = inspect.getsource(A.propose_via_provider).split(chr(34) * 3)[-1]
         self.assertNotIn("write_extra", body)
         self.assertNotIn("extra=", body,
                          "passing `extra` is how a CLI is handed edit rights")
-        self.assertIn("run_provider(spec", body)
+        self.assertIn("run_read_only(", body)
+        self.assertNotIn("run_provider(", body,
+                         "the unguarded call is what let an RO_DENIED provider "
+                         "reach a read-only role in the first place")
 
 
 class TheRequestKnowsWhatItAsked(unittest.TestCase):

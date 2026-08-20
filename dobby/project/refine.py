@@ -146,17 +146,24 @@ def provider_generator(provider_id: str | None, corpus: Sequence[Evidence], *,
                        timeout_s: int | None = None, count: int = 3,
                        role: str = "architect"
                        ) -> Callable[[str, int], list[Idea]]:
-    """A `generate` backed by a provider CLI, read-only by construction.
+    """A `generate` backed by a provider CLI, in a role that may not write.
 
     A provider that fails, times out, or answers in prose returns NO ideas
     rather than raising. That is deliberate: `refine` already has a stop reason
     for an empty round, and turning a provider hiccup into an exception would
     lose the transcript of the rounds that did work.
+
+    A provider that EDITED THE TREE is the one exception and does raise. It is
+    not a hiccup and it is not an empty round — it is a process that was asked
+    for ideas and changed the repository instead, and continuing the cycle would
+    generate the next round against a tree nobody measured. See
+    `project/readonly.py`; this generator defaults to the `architect` role and
+    inherited exactly the overstated guarantee that module was written to fix.
     """
     from ..providers.catalog import registry
     from ..providers.detect import resolve_role
-    from ..providers.run import run_provider
     from ..runtime.workers import extract_json
+    from .readonly import run_read_only
 
     resolved = provider_id or resolve_role(role, allow_network=allow_network)
     if not resolved:
@@ -167,10 +174,10 @@ def provider_generator(provider_id: str | None, corpus: Sequence[Evidence], *,
     rendered = render_corpus(corpus)
 
     def generate(instruction: str, index: int) -> list[Idea]:
-        result = run_provider(
+        result = run_read_only(
             spec, IDEA_PROMPT.format(instruction=instruction, corpus=rendered,
                                      count=count),
-            cwd=root, timeout_s=timeout_s)
+            root=root, timeout_s=timeout_s, role=role)
         if not result.ok:
             return []
         payload = extract_json(result.text)

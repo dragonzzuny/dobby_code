@@ -36,7 +36,8 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from .base import ProviderRegistry, ProviderSpec
+from .base import (RO_CLAIMED, RO_DENIED, RO_UNKNOWN, RO_VERIFIED,
+                   ProviderRegistry, ProviderSpec)
 
 # --------------------------------------------------------------------------
 # CLI argv builders.
@@ -180,6 +181,10 @@ CATALOG: tuple[ProviderSpec, ...] = (
         # read-only. Extras are appended last and therefore override it.
         write_extra=("--permission-mode", "acceptEdits"),
         capabilities=("files", "shell", "web", "vision", "long_context"),
+        # `--permission-mode plan` is documented by the vendor as read-only and the
+        # default argv pins it. CLAIMED, not VERIFIED: no write probe has been run
+        # against it here, and the one provider that WAS probed wrote anyway.
+        read_only_default=RO_CLAIMED,
         timeout_s=900, mutates_worktree=True, verified_on=(WIN,),
         notes="Deepest tool use and longest context of the CLI set; default "
               "choice for synthesis and adjudication roles.",
@@ -193,6 +198,9 @@ CATALOG: tuple[ProviderSpec, ...] = (
         # is a liability, not a measurement.
         write_extra=("-s", "workspace-write"),
         capabilities=("files", "shell", "long_context"),
+        # Sandboxed by default per the note below; `-s workspace-write` is the
+        # opt-in. CLAIMED for the same reason as claude — documented, not probed.
+        read_only_default=RO_CLAIMED,
         timeout_s=900, mutates_worktree=True, verified_on=(WIN,),
         notes="Strong at focused code edits and repo-scoped review "
               "(`codex exec review`). Sandboxed by default.",
@@ -201,6 +209,9 @@ CATALOG: tuple[ProviderSpec, ...] = (
         id="gemini", kind="cli", display="Gemini CLI", binary="gemini",
         argv=_gemini, cost_tier="standard",
         capabilities=("files", "shell", "web", "vision", "long_context"),
+        # `--approval-mode plan` is the vendor's read-only mode and the default
+        # argv pins it. Documented, not probed here.
+        read_only_default=RO_CLAIMED,
         timeout_s=900, mutates_worktree=True, verified_on=(WIN,),
         notes="Large context and a real web tool; the default scout for "
               "breadth-first exploration.",
@@ -222,6 +233,12 @@ CATALOG: tuple[ProviderSpec, ...] = (
         # only cwd/worktree isolation and the prompt stand between it and the tree.
         write_extra=("--mode", "accept-edits"),
         capabilities=("files", "shell", "long_context"),
+        # MEASURED to write under the default argv: the four-configuration probe
+        # in `_agy` above created a file in all four mode/permission combinations.
+        # This is the whole reason this field exists. `write_extra=()` says what
+        # this harness did not send; it says nothing about what agy does anyway,
+        # and a read-only role that resolved here would be one in name only.
+        read_only_default=RO_DENIED,
         timeout_s=900, mutates_worktree=True, verified_on=(WIN,),
         notes="Exposes several model families behind one CLI (`agy models`), "
               "including a reasoning-effort dial (--effort). `dobby agy` is the "
@@ -234,6 +251,9 @@ CATALOG: tuple[ProviderSpec, ...] = (
         id="qwen", kind="cli", display="Qwen Code CLI", binary="qwen",
         argv=_qwen, cost_tier="cheap",
         capabilities=("files", "shell", "long_context"),
+        # Nobody has looked, and `verified_on=()` says the argv itself is
+        # unobserved. Unknown is refused for read-only roles rather than assumed.
+        read_only_default=RO_UNKNOWN,
         timeout_s=600, mutates_worktree=True, verified_on=(),
         notes="Declared, NOT verified here (binary absent on the authoring "
               "machine). Install: npm i -g @qwen-code/qwen-code.",
@@ -242,6 +262,9 @@ CATALOG: tuple[ProviderSpec, ...] = (
         id="ollama", kind="cli", display="Ollama (local weights)",
         binary="ollama", argv=_ollama, cost_tier="local",
         capabilities=("long_context",),
+        # Structural: no `files` capability, so there is no mechanism to write
+        # with. This is a fact about the interface, not a claim about a flag.
+        read_only_default=RO_VERIFIED,
         timeout_s=1200, mutates_worktree=False, verified_on=(),
         notes="Declared, NOT verified here. Runs llama/qwen/mistral locally: "
               "no network egress, no per-token cost, weaker tool use. Ideal "
@@ -253,6 +276,8 @@ CATALOG: tuple[ProviderSpec, ...] = (
         binary=None, argv=None, cost_tier="cheap",
         capabilities=("long_context",),
         required_env=("MOONSHOT_API_KEY",),
+        # Structural: an api provider that returns text.
+        read_only_default=RO_VERIFIED,
         timeout_s=300, mutates_worktree=False, verified_on=(),
         notes="Declared, NOT verified here. OpenAI-compatible endpoint; needs "
               "providers.allow_network=true AND MOONSHOT_API_KEY.",
@@ -263,6 +288,8 @@ CATALOG: tuple[ProviderSpec, ...] = (
         binary=None, argv=None, cost_tier="cheap",
         capabilities=("long_context", "vision"),
         required_env=("DASHSCOPE_API_KEY",),
+        # Structural: an api provider that returns text.
+        read_only_default=RO_VERIFIED,
         timeout_s=300, mutates_worktree=False, verified_on=(),
         notes="Declared, NOT verified here. Hosted Qwen; same gating as kimi.",
     ),
@@ -309,9 +336,11 @@ ROLE_ROUTING: dict[str, tuple[str, ...]] = {
     # the decision the rest of the portfolio is built on, and a cheap wrong
     # answer here is paid for by every worker that follows it.
     #
-    # Invoked WITHOUT `write_extra`, which is the catalog's opt-in for a CLI
-    # that may edit files. The read-only profile is the absence of that tuple,
-    # not a promise made in prose.
+    # Invoked WITHOUT `write_extra`. That absence is NOT the read-only profile —
+    # it only says what this harness declined to send. `agy` stays listed here
+    # because it is a capable planner, and `READ_ONLY_ROLES` below is what
+    # actually keeps it out: it is RO_DENIED, measured writing under exactly the
+    # argv this role uses.
     "architect": ("claude", "codex", "gemini", "agy"),
     # Final judgment. Deepest available, and only ONE runs.
     "synthesize": ("claude", "codex", "gemini", "agy"),
@@ -322,6 +351,17 @@ ROLE_ROUTING: dict[str, tuple[str, ...]] = {
 #: allowed: they see the whole aggregated context, which is the highest-value
 #: payload in the system and the worst thing to ship to a third party.
 LOCAL_ONLY_ROLES = frozenset({"synthesize", "adjudicate"})
+
+#: Roles whose whole contract is that they return a document and touch nothing.
+#: A provider measured to write under the default argv may not fill one, however
+#: high it sits in `ROLE_ROUTING` — the preference table states what would be
+#: BEST, and this states what is ALLOWED, which is a different question and was
+#: previously answered only by the absence of `write_extra`.
+#:
+#: Membership here is not a guarantee on its own. It removes the provider that is
+#: known to write; the callers additionally fingerprint the tree either side of
+#: the call, because a routing table is a claim and the tree is the fact.
+READ_ONLY_ROLES = frozenset({"architect"})
 
 
 def role_preference(role: str) -> tuple[str, ...]:

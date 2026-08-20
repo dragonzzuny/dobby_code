@@ -195,12 +195,36 @@ and the item's existing acceptance — and nothing else:
 because it is the one case where the architect did its job correctly and the
 answer is *more evidence* rather than a decision.
 
-### Read-only, and why that is a real claim
+### Read-only, and how much of that is actually a claim
 
-The provider is invoked through the catalog's own argv with **no `write_extra`**
-— the tuple that puts a CLI into a state where it may edit files. `claude`'s
-catalog argv ends in `--permission-mode plan` for the same reason. The architect
-returns a document; `project/architecture.py` is the only thing that writes.
+This section used to say the read-only profile was "a real claim" because the
+provider is invoked with **no `write_extra`** — the tuple that puts a CLI into a
+state where it may edit files. That reasoning was wrong, and the counter-evidence
+was already in this repository: `providers/catalog.py` records a probe from
+2026-08-04 in which `agy` created a file under **all four** of its
+mode/permission combinations, i.e. under exactly the argv this role uses.
+`write_extra=()` says what this harness declined to send. It says nothing about
+what the CLI does anyway.
+
+So read-only is now two mechanisms that fail differently, and each is described
+by what it can and cannot establish:
+
+| mechanism | what it is | what it cannot do |
+|---|---|---|
+| `catalog.READ_ONLY_ROLES` + `ProviderSpec.read_only_default` | a provider recorded `RO_DENIED` never resolves to a read-only role | only excludes what somebody has already probed |
+| `project/readonly.run_read_only` | fingerprints the tree either side of the call and discards the plan if it moved | detects, never prevents — the provider is a separate process with the user's own permissions |
+
+`read_only_default` is deliberately four-valued. `agy` is `RO_DENIED`
+(measured writing). `claude`, `codex` and `gemini` are `RO_CLAIMED` — their
+default argv selects a mode the vendor documents as read-only and **nobody here
+has tried to break it**, which is precisely what was true of `agy` until somebody
+did. `qwen` is `RO_UNKNOWN` and is refused, because "nobody checked" and "it is
+safe" are different. The text-only providers are `RO_VERIFIED` structurally: they
+have no file capability to write with.
+
+The architect returns a document; `project/architecture.py` is the only thing
+that writes. That part was always true — it is the *containment of the provider*
+that was overstated.
 
 ### Asking twice, and dying in the middle
 

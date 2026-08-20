@@ -202,8 +202,11 @@ Recorded so they are not mistaken for oversights.
   needs a model, and a model's guess at what remains — stored as the definition
   of done — is the fiction the project kernel exists to keep out. The item that
   would need such a decision sets `needs_architect` and stops the loop.
-- **What the architect may propose**: `dobby project run --architect` calls a
-  read-only architect for an ungradeable item, but a plan may only use
+- **What the architect may propose**: `dobby project run --architect` calls an
+  architect in a role that may not write — enforced by routing (`RO_DENIED`
+  providers are unreachable) and then CHECKED by fingerprinting the tree either
+  side of the call, because only one provider has actually been probed and the
+  rest are documented rather than measured. A plan may only use
   acceptance commands the project already declares. A new command, a raised
   side-effect class, new top-level items or a discovery step all halt instead of
   applying. Nothing compiles a plan's `execution_steps` or `discovery_steps`
