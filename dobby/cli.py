@@ -1632,6 +1632,11 @@ def cmd_project(args):
         # explicit about where it stopped. `stopped` is a closed set of reasons
         # (dobby/project/loop.py), not prose, because a caller deciding whether
         # to escalate to a human cannot parse a sentence.
+        if args.replan and args.attempts <= 1:
+            # A replan whose retry can never happen is a provider call bought
+            # for nothing. Refused rather than silently ignored.
+            _die("--replan needs --attempts >1: the replan exists to license a "
+                 "retry, and one attempt has no second one to license")
         if args.attempts > 1 and args.until == "empty":
             # Two ceilings that cannot both hold. Silently letting one win is
             # how a run reports a drained portfolio after touching one item.
@@ -1653,7 +1658,9 @@ def cmd_project(args):
                            max_steps=args.max_steps,
                            architect=args.architect,
                            architect_provider=args.architect_provider,
-                           compile_plans=args.compile_plans))
+                           compile_plans=args.compile_plans,
+                           replan=args.replan,
+                           replan_provider=args.architect_provider))
             return
         _out(advance(data, project_id=project["project_id"],
                      provider=args.provider, execute_command=args.execute,
@@ -2131,6 +2138,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--architect-provider", default=None,
                    help="run: provider for the architect role (default: the "
                         "catalog's preference for `architect`)")
+    p.add_argument("--replan", action="store_true",
+                   help="run: when a blocked item's own checks give nothing to "
+                        "repair, carry the run's failure back to the architect "
+                        "and retry if it applies a new plan. Needs --attempts "
+                        ">1 and a provider. Tried only AFTER the deterministic "
+                        "repair, which costs nothing")
     p.add_argument("--compile-plans", action="store_true",
                    help="run: shape the graph from the item's APPLIED plan "
                         "(scout -> implement -> critic -> verify -> report) "

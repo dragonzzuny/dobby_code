@@ -61,10 +61,25 @@ class TheItemContractCoversWhatTheArchitectIsShown(unittest.TestCase):
             item().architect_contract_digest,
             item(depends_on=["W002"]).architect_contract_digest)
 
-    def test_an_edit_moves_it_through_version_even_if_nothing_else_did(self):
-        """The catch-all, so a future field cannot fall outside identity."""
-        self.assertNotEqual(item().architect_contract_digest,
-                            item(version=2).architect_contract_digest)
+    def test_a_bare_version_bump_is_NOT_a_new_question(self):
+        """This assertion is the inverse of the one that stood here, on purpose.
+
+        `version` was folded into the contract digest as a catch-all so a future
+        field could not silently fall outside identity. Building the replan path
+        showed what that cost: `version` bumps on EVERY write, including a state
+        transition, a run being attached, or a repair directive the harness
+        appended to itself. Almost every item the loop touched therefore became a
+        new architect question, which is the dedupe the ceiling work was built to
+        protect — a guard that makes the thing it guards useless.
+
+        The property is not abandoned, it is asserted directly instead:
+        `test_replan.py::test_the_contract_digest_covers_every_field_the_prompt_shows`
+        reads `build_prompt` and fails if it shows the architect a field the
+        digest does not cover. That is a stronger check than a version bump,
+        because it names the actual requirement rather than approximating it.
+        """
+        self.assertEqual(item().architect_contract_digest,
+                         item(version=2).architect_contract_digest)
 
     def test_the_same_item_twice_is_the_same_contract(self):
         self.assertEqual(item().architect_contract_digest,

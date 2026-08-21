@@ -51,7 +51,7 @@ import time
 from dataclasses import asdict, dataclass, field
 
 from ..core.security import guard_command, load_protected
-from .models import ProjectError, digest_of
+from .models import BLOCKED, ProjectError, digest_of
 
 #: The logical role, resolved through the provider catalog like every other one.
 ARCHITECT_ROLE = "architect"
@@ -146,6 +146,12 @@ class ArchitectureRequest:
     #: each independently move identity today and a caller may build a request
     #: without an item at all, where this is empty and they are all there is.
     item_contract: str = ""
+    #: What went wrong last time, one line per failing node
+    #: (`project/replan.py`). Empty for the two triggers that are about an item
+    #: nobody has run yet. In the digest because a DIFFERENT failure is a
+    #: different question, and the same failure twice is the one `decision_for`
+    #: exists to answer for free.
+    failure_context: tuple = ()
     created_at: str = ""
 
     def __post_init__(self):
@@ -179,11 +185,12 @@ class ArchitectureRequest:
             "acceptance_checks": sorted(self.acceptance_checks),
             "evidence_refs": sorted(self.evidence_refs),
             "item_contract": self.item_contract,
+            "failure_context": list(self.failure_context),
         })
 
     def to_dict(self) -> dict:
         out = asdict(self)
-        for key in ("acceptance_checks", "evidence_refs"):
+        for key in ("acceptance_checks", "evidence_refs", "failure_context"):
             out[key] = list(getattr(self, key))
         out["request_id"] = self.request_id
         out["digest"] = self.digest
@@ -442,6 +449,12 @@ def build_prompt(request: ArchitectureRequest, *, item, manifest) -> str:
         f"existing acceptance checks: {list(item.acceptance_checks) or 'NONE'}",
         f"why you were called: {request.trigger}",
         "",
+        *(["## What failed last time",
+           "This is the runtime's own record, not a summary. The approach that",
+           "produced it did not work; propose a different one rather than the",
+           "same one again.",
+           *(f"  {line}" for line in request.failure_context),
+           ""] if request.failure_context else []),
         "## Commands you may propose as acceptance",
         "These, and ONLY these, can be applied without a human. They are the",
         "project's declared way of checking itself:",
@@ -515,7 +528,17 @@ def propose_via_provider(request: ArchitectureRequest, *, item, manifest,
 # -- the controller -----------------------------------------------------------
 
 def trigger_for(item) -> str:
-    """Why this item needs an architect. Never guessed from the text."""
+    """Why this item needs an architect. Never guessed from the text.
+
+    BLOCKED is checked first because it outranks the other two as a description
+    of the situation: an item that has already been attempted and failed is not
+    waiting for a definition of done, it is waiting for a different approach, and
+    calling that MISSING_ACCEPTANCE would file the failure under the wrong
+    budget as well as the wrong question.
+    """
+    if getattr(item, "state", "") == BLOCKED and getattr(
+            item, "blocked_reason", ""):
+        return REPLAN
     if not item.acceptance_checks:
         return MISSING_ACCEPTANCE
     return HIGH_UNCERTAINTY
@@ -527,7 +550,8 @@ def request_architecture(data_dir: str, work_item_id: str, *,
                          trigger: str | None = None,
                          propose=None, provider: str | None = None,
                          allow_network: bool = False,
-                         ceiling: int = ARCHITECT_CALL_CEILING) -> PlanDecision:
+                         ceiling: int = ARCHITECT_CALL_CEILING,
+                         failure_context: tuple = ()) -> PlanDecision:
     """Call the architect for one item and settle what it proposed.
 
     `propose` is the seam. It takes the request and returns the raw plan
@@ -562,7 +586,8 @@ def request_architecture(data_dir: str, work_item_id: str, *,
         item_uncertainty=item.uncertainty,
         acceptance_checks=tuple(item.acceptance_checks),
         evidence_refs=tuple(item.evidence_refs),
-        item_contract=item.architect_contract_digest)
+        item_contract=item.architect_contract_digest,
+        failure_context=tuple(failure_context))
 
     settled = store.decision_for(request.project_id, request.digest)
     if settled is not None:

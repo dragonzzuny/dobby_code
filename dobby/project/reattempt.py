@@ -41,6 +41,7 @@ from __future__ import annotations
 import os
 import shlex
 
+from . import architecture as A
 from . import evidence as E
 from .loop import ITEM_BLOCKED, advance
 from .models import OPEN
@@ -51,8 +52,17 @@ from .store import ProjectStore
 NO_REPAIR_DERIVED = "no_repair_derived"
 #: A repair was applied and the item failed again, up to the caller's ceiling.
 ATTEMPTS_EXHAUSTED = "attempts_exhausted"
+#: The architect was asked to reconsider and did not apply a plan. Its own reason
+#: is carried in `detail`; this only says the retry was not licensed.
+REPLAN_NOT_APPLIED = "replan_not_applied"
 
-STOP_REASONS = (NO_REPAIR_DERIVED, ATTEMPTS_EXHAUSTED)
+STOP_REASONS = (NO_REPAIR_DERIVED, ATTEMPTS_EXHAUSTED, REPLAN_NOT_APPLIED)
+
+#: Where an applied REPLAN is noted on the item, distinct from a repair so the
+#: two are never confused in a later read: one says "your artifact was wrong",
+#: the other says "your approach was".
+REPLAN_MARKER = (
+    "\n\n--- REPLANNED (the architect reconsidered after a failure) ---\n")
 
 #: Where an applied repair is written into the item's outcome. Everything from
 #: this marker to the end is REPLACED on each attempt rather than appended to, so
@@ -170,8 +180,40 @@ def _apply(store: ProjectStore, project_id: str, item, repair: dict,
                              f"(attempt {attempt})")
 
 
+def _replan(store, data_dir, project_id, item, *, session_id, provider,
+            propose, allow_network):
+    """Ask the architect to reconsider, and reopen the item if it did.
+
+    Returns `(retryable, decision)`. Reopening is what licenses the next attempt
+    under this module's own rule — an applied plan changed the item's contract,
+    which is a recorded change and not a repeat.
+    """
+    from .replan import request_replan
+
+    decision = request_replan(
+        data_dir, item, project_id=project_id, session_id=session_id,
+        provider=provider, propose=propose, allow_network=allow_network)
+    if decision.outcome != A.APPLIED:
+        return False, decision
+
+    # Re-read: `request_architecture` wrote the plan onto the item and bumped
+    # the portfolio, and the copy in hand predates that.
+    fresh = store.load_project(project_id)["portfolio"].get(item.work_item_id)
+    base = fresh.outcome.split(REPAIR_MARKER)[0].split(REPLAN_MARKER)[0]
+    fresh.outcome = (f"{base}{REPLAN_MARKER}plan {decision.plan_id}: "
+                     f"{decision.reason or 'applied'}")
+    fresh.state = OPEN
+    fresh.blocked_reason = ""
+    version = store.load_project(project_id)["portfolio"].version
+    store.update_item(fresh, expected_version=version,
+                      reason=f"replanned by {decision.plan_id}")
+    return True, decision
+
+
 def persevere(data_dir: str, *, project_id: str | None = None,
-              max_attempts: int = 2, **advance_kwargs) -> dict:
+              max_attempts: int = 2, replan: bool = False,
+              replan_provider: str | None = None, replan_propose=None,
+              **advance_kwargs) -> dict:
     """`advance` one item at a time, repairing a blocked item between attempts.
 
     Every keyword `loop.advance` takes is passed through, except `max_items`,
@@ -193,6 +235,7 @@ def persevere(data_dir: str, *, project_id: str | None = None,
 
     attempts: list[dict] = []
     repairs_applied = 0
+    replans_applied = 0
     stopped, detail = ATTEMPTS_EXHAUSTED, f"no attempt was made (ceiling {ceiling})"
 
     for attempt in range(1, ceiling + 1):
@@ -214,6 +257,37 @@ def persevere(data_dir: str, *, project_id: str | None = None,
         item = store.load_project(pid)["portfolio"].get(blocked_id)
         repair = derive_repair(item, root=root)
         if repair is None:
+            # The deterministic path had nothing to say. That is exactly the
+            # case a replan is for — and it is tried SECOND on purpose: a repair
+            # derived from a failing check costs nothing and is right whenever
+            # the artifact was the problem, so spending a model call before
+            # trying it would invert the ordering.
+            if replan and (replan_provider or replan_propose or
+                           advance_kwargs.get("provider")):
+                retryable, decision = _replan(
+                    store, data_dir, pid, item,
+                    session_id=result["iterations"][-1].get("session_id", ""),
+                    provider=replan_provider or advance_kwargs.get("provider"),
+                    propose=replan_propose,
+                    allow_network=advance_kwargs.get("allow_network", False))
+                attempts[-1]["replan"] = {"outcome": decision.outcome,
+                                          "plan_id": decision.plan_id,
+                                          "reason": decision.reason}
+                if retryable and attempt < ceiling:
+                    replans_applied += 1
+                    continue
+                if retryable:
+                    replans_applied += 1
+                    stopped = ATTEMPTS_EXHAUSTED
+                    detail = (f"{blocked_id} was replanned by "
+                              f"{decision.plan_id} on the last permitted "
+                              f"attempt; the plan is applied and a further "
+                              f"invocation continues from it")
+                    break
+                stopped = REPLAN_NOT_APPLIED
+                detail = (f"{blocked_id}: the architect was asked to reconsider "
+                          f"and answered {decision.outcome} — {decision.reason}")
+                break
             stopped = NO_REPAIR_DERIVED
             detail = (f"{blocked_id} is blocked and its acceptance checks give "
                       f"nothing to change: either they are not artifact checks, "
@@ -247,5 +321,6 @@ def persevere(data_dir: str, *, project_id: str | None = None,
         "attempts_used": len(attempts),
         "max_attempts": ceiling,
         "repairs_applied": repairs_applied,
+        "replans_applied": replans_applied,
         "coverage": refreshed["portfolio"].coverage(),
     }

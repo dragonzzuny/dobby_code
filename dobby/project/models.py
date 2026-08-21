@@ -48,6 +48,18 @@ SELECTABLE = (OPEN, READY, IN_PROGRESS)
 #: Terminal for the purposes of "is there work left".
 CLOSED_STATES = {DONE, CANCELLED}
 
+#: Harness annotations appended to an item's outcome — repair directives from
+#: `reattempt.py`, replan notes, anything this system writes to itself. Every
+#: marker that gets appended there starts with this prefix.
+#:
+#: Everything from the first occurrence is EXCLUDED from
+#: `architect_contract_digest`. Including it meant the loop's own note to itself
+#: changed what counted as a different question: a failure that had not changed
+#: at all looked new because the harness had annotated the item about it, and the
+#: architect was paid to answer the same question twice. The item's contract is
+#: what a PERSON stated the outcome to be; the annotations are what happened.
+ANNOTATION_PREFIX = "\n\n--- "
+
 #: Above this, an item is not handed straight to an implementation worker. It
 #: gets a discovery step or an architect decision first — the one judgement this
 #: kernel does not make deterministically.
@@ -203,20 +215,34 @@ class WorkItem:
         answer.
 
         `depends_on` is here for the same reason: an item that just gained a
-        dependency is a different planning problem. `version` is here as the
-        catch-all, so any future field that reaches the prompt cannot silently
-        fall outside identity — an edit bumps it whatever else it touched.
+        dependency is a different planning problem.
+
+        `version` was here as a catch-all and has been REMOVED. It bumps on every
+        write, including the ones that change nothing an architect is shown — a
+        state transition, a run being attached, a repair directive the harness
+        appended to itself. With it in, almost every item the loop touched became
+        a new question, which defeats the dedupe it was meant to protect. A guard
+        that makes the thing it guards useless is not a guard.
+
+        What replaces it is a TEST rather than a runtime trick:
+        `test_replan.py` reads `build_prompt` and asserts every `item.<field>` it
+        references appears in the set below. A future field that reaches the
+        prompt fails that test instead of silently falling outside identity.
         """
         return digest_of({
             "work_item_id": self.work_item_id,
             "title": self.title,
-            "outcome": self.outcome,
+            "outcome": self.outcome.split(ANNOTATION_PREFIX)[0],
             "acceptance_checks": sorted(self.acceptance_checks),
             "depends_on": sorted(self.depends_on),
             "uncertainty": self.uncertainty,
             "evidence_refs": sorted(self.evidence_refs),
-            "version": self.version,
         })
+
+    #: The fields `architect_contract_digest` covers. Named so a test can read
+    #: it, rather than re-deriving the list and drifting from the digest.
+    CONTRACT_FIELDS = ("work_item_id", "title", "outcome", "acceptance_checks",
+                       "depends_on", "uncertainty", "evidence_refs")
 
     def to_dict(self) -> dict:
         return asdict(self)
