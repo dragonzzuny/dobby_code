@@ -1652,14 +1652,16 @@ def cmd_project(args):
                            execute_command=args.execute,
                            max_steps=args.max_steps,
                            architect=args.architect,
-                           architect_provider=args.architect_provider))
+                           architect_provider=args.architect_provider,
+                           compile_plans=args.compile_plans))
             return
         _out(advance(data, project_id=project["project_id"],
                      provider=args.provider, execute_command=args.execute,
                      max_items=(0 if args.until == "empty" else args.max_items),
                      max_steps=args.max_steps,
                      architect=args.architect,
-                     architect_provider=args.architect_provider))
+                     architect_provider=args.architect_provider,
+                     compile_plans=args.compile_plans))
         return
 
     if args.action == "close":
@@ -2129,6 +2131,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--architect-provider", default=None,
                    help="run: provider for the architect role (default: the "
                         "catalog's preference for `architect`)")
+    p.add_argument("--compile-plans", action="store_true",
+                   help="run: shape the graph from the item's APPLIED plan "
+                        "(scout -> implement -> critic -> verify -> report) "
+                        "instead of the generic four nodes. Off by default: "
+                        "letting a model shape what executes is a decision "
+                        "somebody makes. A plan that will not compile falls "
+                        "back and says so in the step's `graph` field")
     p.add_argument("--attempts", type=int, default=1,
                    help="run: attempts per item. Above 1, a BLOCKED item is "
                         "repaired from its own failing acceptance check and "

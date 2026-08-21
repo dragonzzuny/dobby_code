@@ -110,7 +110,7 @@ def advance(data_dir: str, *, project_id: str | None = None,
             provider: str | None = None, execute_command: str | None = None,
             max_items: int = 1, max_steps: int = 100, budget=None,
             architect: bool = False, architect_provider: str | None = None,
-            propose=None) -> dict:
+            propose=None, compile_plans: bool = False) -> dict:
     """Carry the portfolio forward, and say why it stopped.
 
     `max_items=0` drains until a stop reason, bounded by `DRAIN_CEILING`.
@@ -149,7 +149,7 @@ def advance(data_dir: str, *, project_id: str | None = None,
             max_steps=max_steps, budget=budget, make_graph=default_graph,
             make_runner=Runner, make_budget=RunBudget,
             architect=architect, architect_provider=architect_provider,
-            propose=propose)
+            propose=propose, compile_plans=compile_plans)
         if step is not None:
             iterations.append(step)
             if step["item_state"] == DONE:
@@ -174,7 +174,8 @@ def advance(data_dir: str, *, project_id: str | None = None,
 
 def _one_item(data_dir, store, project_id, root, *, provider, execute_command,
               static, max_steps, budget, make_graph, make_runner, make_budget,
-              architect=False, architect_provider=None, propose=None):
+              architect=False, architect_provider=None, propose=None,
+              compile_plans=False):
     """One shift. Returns `(step_record | None, stop | None)`.
 
     A record with no stop means carry on; a stop with no record means the loop
@@ -216,10 +217,19 @@ def _one_item(data_dir, store, project_id, root, *, provider, execute_command,
                           f"{item.work_item_id} is still ungradeable after an "
                           f"applied plan")
 
-    graph = make_graph(item.outcome or item.title, provider=provider,
-                       execute_command=execute_command,
-                       acceptance_checks=list(item.acceptance_checks),
-                       static=static)
+    # An applied plan describes HOW the work should be shaped, and until
+    # `project/workorder.py` existed that description was recorded and then
+    # discarded here — every item ran the same generic graph. Compiling it is
+    # opt-in for the same reason `architect` is: letting a model shape what
+    # executes is a decision somebody makes. `shape` is carried into the step
+    # record because a compiled run and a generic one otherwise look identical,
+    # and "was the plan actually executed" would be unanswerable again.
+    from .workorder import choose_graph
+    graph, shape = choose_graph(
+        store, project_id, item, manifest=project["manifest"],
+        make_graph=make_graph, provider=provider,
+        execute_command=execute_command, static=static,
+        compile_plans=compile_plans)
     runner = make_runner(root, data_dir=data_dir)
     run_id = runner.start(item.outcome or item.title, graph,
                           budget=budget or make_budget())
@@ -238,6 +248,7 @@ def _one_item(data_dir, store, project_id, root, *, provider, execute_command,
     step = {"session_id": envelope.session_id,
             "work_item_id": item.work_item_id,
             "title": item.title,
+            "graph": shape,
             "run_id": run_id,
             "run_state": result.state,
             "item_state": judged.state,

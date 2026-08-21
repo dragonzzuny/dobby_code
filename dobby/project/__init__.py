@@ -25,6 +25,8 @@ repository it has never seen and re-derives what "done" means.
                  (imported as a MODULE, never re-exported: a function named
                   `refine` in this namespace would shadow its own module)
     reattempt.py the item cycle: retry only after a derived repair
+    readonly.py  running a provider in a role that may not write
+    workorder.py an accepted plan as a graph the existing runtime runs
 
 Six invariants, each enforced in one place:
 
@@ -48,6 +50,9 @@ from .evidence import (ArtifactError, KINDS, acceptance_command,
                        check_file, ideas_and_corpus)
 from .inquiry import STAGE_KEYS, decompose, plan
 from .reattempt import derive_repair, parse_artifact_check, persevere
+from .readonly import ReadOnlyViolation, run_read_only
+from .workorder import (PlanNotCompilable, WorkOrder, choose_graph,
+                        compile_graph, compile_orders)
 from .models import (BLOCKED, CANCELLED, DONE, IN_PROGRESS, NEEDS_REPLAN, OPEN,
                      READY, SELECTABLE, VERIFYING, WORK_ITEM_STATES, Baseline,
                      Portfolio, ProjectError, ProjectManifest, SessionEnvelope,
@@ -73,5 +78,7 @@ __all__ = [
     "ArtifactError", "KINDS", "STAGE_KEYS", "acceptance_command",
     "check_file", "decompose", "derive_repair", "ideas_and_corpus",
     "parse_artifact_check",
-    "persevere", "plan",
+    "persevere", "plan", "PlanNotCompilable", "ReadOnlyViolation",
+    "WorkOrder", "choose_graph", "compile_graph", "compile_orders",
+    "run_read_only",
 ]
