@@ -436,6 +436,32 @@ class ProjectStore:
         return [{"plan": json.loads(r["plan"]) if r["plan"] else None,
                  "decision": json.loads(r["decision"])} for r in rows]
 
+    def settled_requests(self, project_id: str, work_item_id: str, *,
+                         trigger: str | None = None) -> list[dict]:
+        """Architect questions about this item that actually reached a decision.
+
+        Joined rather than read from `plan_revisions` alone, because the trigger
+        lives on the REQUEST and the budget in `architecture.py` is per trigger:
+        "this item has already been planned once" and "this item has already had
+        its uncertainty adjudicated once" are different budgets, and a count that
+        merged them would refuse the second question because of the first.
+
+        Open requests are excluded. One that was recorded and never settled is a
+        call that died mid-flight, and charging the operator for it would make a
+        crashed provider spend the item's budget.
+        """
+        query = ("SELECT r.request FROM architecture_requests r"
+                 " JOIN plan_revisions p ON p.digest = r.digest"
+                 " WHERE r.project_id=? AND r.work_item_id=?")
+        params = [project_id, work_item_id]
+        if trigger:
+            query += " AND r.trigger=?"
+            params.append(trigger)
+        with transaction(self.path) as conn:
+            rows = conn.execute(query + " ORDER BY r.created_at",
+                                params).fetchall()
+        return [json.loads(r["request"]) for r in rows]
+
     def settle_architecture(self, request, plan, decision, *, item=None,
                             expected_version: int | None = None) -> int | None:
         """Write the plan, the decision and the portfolio change as ONE unit.

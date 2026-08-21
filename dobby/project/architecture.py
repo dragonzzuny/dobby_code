@@ -56,6 +56,28 @@ from .models import ProjectError, digest_of
 #: The logical role, resolved through the provider catalog like every other one.
 ARCHITECT_ROLE = "architect"
 
+#: Distinct architect calls allowed per (work item, trigger). Two, and the number
+#: is an argument rather than a preference:
+#:
+#:   the FIRST call asks the question.
+#:   the SECOND asks it again carrying whatever the first said was missing —
+#:     which is the only retry the evidence actually licenses, and it is
+#:     reachable only because the request digest changed, meaning the item, the
+#:     tree or the evidence really did move.
+#:   a THIRD is the loop paying a model to rediscover that a person has to
+#:     decide this one.
+#:
+#: A ceiling of 1 would look stricter and would be wrong: it makes the legitimate
+#: retry unreachable, so an operator who supplies exactly the evidence the
+#: architect asked for gets refused for supplying it. Unbounded is what this
+#: replaces — `decision_for` deduped the SAME question and nothing bounded a
+#: sequence of slightly different ones.
+ARCHITECT_CALL_CEILING = 2
+
+#: Written into the refusal's reason so the budget check can tell its own
+#: refusals apart from real decisions and not charge the item for them.
+BUDGET_MARKER = "architect budget"
+
 # -- why the architect was called --------------------------------------------
 MISSING_ACCEPTANCE = "MISSING_ACCEPTANCE"
 HIGH_UNCERTAINTY = "HIGH_UNCERTAINTY"
@@ -118,6 +140,12 @@ class ArchitectureRequest:
     item_uncertainty: int = 0
     acceptance_checks: tuple = ()
     evidence_refs: tuple = ()
+    #: `WorkItem.architect_contract_digest` — everything about the item that
+    #: reaches the prompt, including the title and outcome the three fields above
+    #: do not cover. Kept ALONGSIDE them rather than replacing them: those three
+    #: each independently move identity today and a caller may build a request
+    #: without an item at all, where this is empty and they are all there is.
+    item_contract: str = ""
     created_at: str = ""
 
     def __post_init__(self):
@@ -150,6 +178,7 @@ class ArchitectureRequest:
             "item_uncertainty": self.item_uncertainty,
             "acceptance_checks": sorted(self.acceptance_checks),
             "evidence_refs": sorted(self.evidence_refs),
+            "item_contract": self.item_contract,
         })
 
     def to_dict(self) -> dict:
@@ -497,7 +526,8 @@ def request_architecture(data_dir: str, work_item_id: str, *,
                          session_id: str = "",
                          trigger: str | None = None,
                          propose=None, provider: str | None = None,
-                         allow_network: bool = False) -> PlanDecision:
+                         allow_network: bool = False,
+                         ceiling: int = ARCHITECT_CALL_CEILING) -> PlanDecision:
     """Call the architect for one item and settle what it proposed.
 
     `propose` is the seam. It takes the request and returns the raw plan
@@ -531,13 +561,38 @@ def request_architecture(data_dir: str, work_item_id: str, *,
         session_id=session_id,
         item_uncertainty=item.uncertainty,
         acceptance_checks=tuple(item.acceptance_checks),
-        evidence_refs=tuple(item.evidence_refs))
+        evidence_refs=tuple(item.evidence_refs),
+        item_contract=item.architect_contract_digest)
 
     settled = store.decision_for(request.project_id, request.digest)
     if settled is not None:
         # Same item, same contract, same tree, same evidence. A second call
         # would buy a second opinion with nothing new behind it.
         return PlanDecision(**settled)
+
+    # Checked AFTER the dedupe, deliberately: a repeat of a question already
+    # answered costs nothing and must keep returning its answer even once the
+    # budget is spent. What the ceiling bounds is NEW questions.
+    spent = [r for r in store.settled_requests(
+        request.project_id, work_item_id, trigger=request.trigger)
+        if BUDGET_MARKER not in (
+            store.decision_for(request.project_id, r.get("digest", "")) or {}
+        ).get("reason", "")]
+    if len(spent) >= max(1, int(ceiling)):
+        decision = PlanDecision(
+            request_digest=request.digest, plan_id=None,
+            outcome=NEEDS_HUMAN_APPROVAL,
+            reason=(f"{BUDGET_MARKER} for {work_item_id} on trigger "
+                    f"{request.trigger} is spent: {len(spent)} call(s) already "
+                    f"reached a decision and the ceiling is {ceiling}. The "
+                    f"evidence has changed enough to make this a new question "
+                    f"and not enough to make it a different one — which is the "
+                    f"point at which more planning stops being the missing "
+                    f"input. A person decides this item, or supplies the "
+                    f"discovery the earlier call asked for"))
+        store.open_architecture_request(request)
+        store.settle_architecture(request, None, decision)
+        return decision
 
     store.open_architecture_request(request)
 

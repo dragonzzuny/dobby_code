@@ -190,6 +190,34 @@ class WorkItem:
             return False
         return self.uncertainty >= UNCERTAINTY_ESCALATION
 
+    @property
+    def architect_contract_digest(self) -> str:
+        """Everything about this item that changes what an architect is asked.
+
+        `ArchitectureRequest` used to fold in uncertainty, acceptance checks and
+        evidence refs, which is most of the gradeability question but not the
+        whole prompt. `build_prompt` also shows the architect the TITLE and the
+        OUTCOME, so a person rewriting the outcome — the ordinary way a vague
+        item gets sharpened — changed what was being asked while the request
+        digest stayed put, and the dedupe answered the new question with the old
+        answer.
+
+        `depends_on` is here for the same reason: an item that just gained a
+        dependency is a different planning problem. `version` is here as the
+        catch-all, so any future field that reaches the prompt cannot silently
+        fall outside identity — an edit bumps it whatever else it touched.
+        """
+        return digest_of({
+            "work_item_id": self.work_item_id,
+            "title": self.title,
+            "outcome": self.outcome,
+            "acceptance_checks": sorted(self.acceptance_checks),
+            "depends_on": sorted(self.depends_on),
+            "uncertainty": self.uncertainty,
+            "evidence_refs": sorted(self.evidence_refs),
+            "version": self.version,
+        })
+
     def to_dict(self) -> dict:
         return asdict(self)
 
