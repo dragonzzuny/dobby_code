@@ -174,11 +174,27 @@ class AWriteThatDidNotHappenIsNotASuccess(WorkerCase):
 
 
 class ARefusedPermissionIsItsOwnFailure(WorkerCase):
-    def test_a_provider_that_was_refused_a_tool_is_not_ok(self):
-        stub = StubProvider(denials=[{"tool": "Write"}])
+    def test_a_refusal_that_stopped_the_work_is_a_permission_failure(self):
+        stub = StubProvider(denials=[{"tool": "Write"}])   # and writes nothing
         result = self.run_node(self.node(), stub)
         self.assertFalse(result.ok)
         self.assertEqual(result.failure.failure_class, PERMISSION_DENIED)
+
+    def test_a_refusal_that_did_not_stop_the_work_is_not_a_failure(self):
+        """Found by the A/B pilot, in nine runs, against the first version.
+
+        claude fixed the file correctly and was refused five unrelated tools on
+        the way. The first rule checked denials before the effect and failed the
+        node — a verdict with no basis, which is the same defect this module
+        exists to prevent, pointing the other way. The effect decides; a denial
+        only refines the diagnosis when the effect is missing.
+        """
+        stub = StubProvider(denials=[{"tool": "Bash"}, {"tool": "WebSearch"}],
+                            on_call=self.touch("made.txt"))
+        result = self.run_node(self.node(), stub)
+        self.assertTrue(result.ok, result.failure)
+        self.assertEqual(result.meta["permission_denials"], 2,
+                         "the denials were dropped instead of recorded")
 
     def test_a_provider_with_no_verified_write_flag_is_refused_up_front(self):
         """Running it read-only would produce a call that succeeds and does nothing."""

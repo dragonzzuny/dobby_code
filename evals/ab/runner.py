@@ -47,6 +47,12 @@ import shutil
 import time
 from dataclasses import asdict, dataclass, field
 
+#: What the C arm takes as its baseline: the tree imports and compiles. NOT the
+#: task's acceptance check — see `run_arm_dobby`.
+SOUNDNESS_CHECK = (
+    '{python} -c "import compileall, sys; '
+    'sys.exit(0 if compileall.compile_dir(chr(46), quiet=2) else 1)"')
+
 ARM_DIRECT = "A_direct"
 ARM_GATED = "B_gated"
 ARM_DOBBY = "C_dobby"
@@ -261,10 +267,18 @@ def run_arm_dobby(task: PilotTask, root: str, data_dir: str, *, provider: str,
     guard = fingerprint(root, task.immutable)
     started = time.monotonic()
     with recording() as calls:
-        initialise(data_dir, root, smoke=(task.check,),
+        # SOUNDNESS, NOT ACCEPTANCE. The first pilot passed `task.check` here and
+        # every C arm stopped at `baseline_failed` without making a single
+        # provider call — correctly, because PK-1 refuses to start work on a tree
+        # that fails its own checks, and the task's own failing test WAS the
+        # tree's check. That is the invariant working and the harness misusing
+        # it. A baseline says "this tree is sound enough to work in"; the
+        # acceptance check says "the work is done", and conflating them makes
+        # every unfinished task look like a broken repository.
+        initialise(data_dir, root, smoke=(SOUNDNESS_CHECK,),
                    item_specs=[{"outcome": task.prompt,
                                 "acceptance_checks": [task.check]}],
-                   run_baseline=False)
+                   run_baseline=True)
         outcome = persevere(data_dir, max_attempts=2, provider=provider,
                             max_steps=max_calls)
     wall = time.monotonic() - started

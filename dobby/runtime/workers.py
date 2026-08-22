@@ -303,32 +303,40 @@ class ProviderWorker(WorkerAdapter):
                                   and not (result.text or "").strip())),
                 meta=meta)
 
-        # A REFUSED TOOL IS NOT A SUCCESSFUL CALL THAT HAPPENED TO DO NOTHING.
-        # The provider says so itself when it reports structured output, and the
-        # distinction is the whole point: "it chose not to" and "it could not"
-        # need different responses, and only one of them is the harness's fault.
+        # FAIL-CLOSED ON THE DECLARED EFFECT, AND ON THAT ALONE.
+        #
+        # The first version of this checked `permission_denials` FIRST and failed
+        # any writing node that saw one. The A/B pilot caught it within nine
+        # runs: claude fixed the file correctly and was refused five unrelated
+        # tools along the way, so a node that had done exactly what it was asked
+        # was reported as a permission failure. That is the same defect this
+        # module was written to fix, pointing the other way — a verdict with no
+        # basis, this time a negative one.
+        #
+        # So the EFFECT decides. Denials are recorded either way, and they only
+        # change the diagnosis when the effect is missing: then "it could not"
+        # is a better answer than "it did not", and it names a fix the operator
+        # can make.
         denials = result.meta.get("permission_denials") or []
-        if writes and denials:
-            return WorkerResult(
-                False, raw=result.text, meta=meta,
-                failure=Failure(
-                    PERMISSION_DENIED,
-                    f"{provider_id} was refused {len(denials)} tool "
-                    f"permission(s) while performing a declared "
-                    f"{node.contract.side_effect_class}; the call returned but "
-                    f"the work was not permitted",
-                    evidence={"provider": provider_id, "denials": denials[:5]}))
-
-        # FAIL-CLOSED ON THE DECLARED EFFECT. This runs BEFORE the schema check
-        # and before any acceptance check, because it answers a smaller and
-        # earlier question than either: did the thing this node said it would do
-        # leave a trace. A well-shaped payload describing work that did not
-        # happen is exactly the failure this was built after.
         if before is not None:
             happened, detail = effects.observed(
                 before, effects.snapshot(root, node.contract.expected_paths))
             meta["effect_observed"] = happened
             meta["effect_detail"] = detail
+            if denials:
+                # Kept even on success: a run that got its work done while being
+                # refused tools is worth seeing before the day it does not.
+                meta["permission_denials"] = len(denials)
+            if not happened and denials:
+                return WorkerResult(
+                    False, raw=result.text, meta=meta,
+                    failure=Failure(
+                        PERMISSION_DENIED,
+                        f"{provider_id} was refused {len(denials)} tool "
+                        f"permission(s) and {detail}. The call returned; the "
+                        f"work was not permitted",
+                        evidence={"provider": provider_id,
+                                  "denials": denials[:5]}))
             if not happened:
                 return WorkerResult(
                     False, raw=result.text, meta=meta,
