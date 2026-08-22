@@ -117,7 +117,7 @@ def advance(data_dir: str, *, project_id: str | None = None,
             max_items: int = 1, max_steps: int = 100, budget=None,
             architect: bool = False, architect_provider: str | None = None,
             propose=None, compile_plans: bool = False,
-            isolate: bool = False) -> dict:
+            isolate: bool = False, policy: str = "") -> dict:
     """Carry the portfolio forward, and say why it stopped.
 
     `max_items=0` drains until a stop reason, bounded by `DRAIN_CEILING`.
@@ -157,7 +157,7 @@ def advance(data_dir: str, *, project_id: str | None = None,
             make_runner=Runner, make_budget=RunBudget,
             architect=architect, architect_provider=architect_provider,
             propose=propose, compile_plans=compile_plans,
-            isolate=isolate)
+            isolate=isolate, policy=policy)
         if step is not None:
             iterations.append(step)
             if step["item_state"] == DONE:
@@ -183,7 +183,7 @@ def advance(data_dir: str, *, project_id: str | None = None,
 def _one_item(data_dir, store, project_id, root, *, provider, execute_command,
               static, max_steps, budget, make_graph, make_runner, make_budget,
               architect=False, architect_provider=None, propose=None,
-              compile_plans=False, isolate=False):
+              compile_plans=False, isolate=False, policy=""):
     """One shift. Returns `(step_record | None, stop | None)`.
 
     A record with no stop means carry on; a stop with no record means the loop
@@ -237,7 +237,8 @@ def _one_item(data_dir, store, project_id, root, *, provider, execute_command,
         store, project_id, item, manifest=project["manifest"],
         make_graph=make_graph, provider=provider,
         execute_command=execute_command, static=static,
-        compile_plans=compile_plans)
+        compile_plans=compile_plans, policy=policy,
+        worktree_available=isolate)
     # Isolation runs the graph somewhere the project is NOT, and the changes
     # come back only through `workspace.merge`'s gate. It makes PK-2 stricter
     # rather than looser: promotion still needs a SUCCEEDED run with a promoted

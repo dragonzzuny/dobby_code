@@ -169,6 +169,11 @@ class WorkItem:
     evidence_refs: list = field(default_factory=list)
     latest_run_id: str | None = None
     blocked_reason: str = ""
+    #: Paths this item is expected to change, when somebody knows them without
+    #: an architect having compiled a plan. Feeds the effect contract, so a
+    #: declared scope is checked rather than described. Empty means "check the
+    #: tree", which is weaker and still fail-closed.
+    expected_paths: list = field(default_factory=list)
     #: The plan that made this item gradeable, if an architect was asked.
     #: Recorded rather than inferred: without it, an item whose
     #: uncertainty was the reason for the call still reads as uncertain

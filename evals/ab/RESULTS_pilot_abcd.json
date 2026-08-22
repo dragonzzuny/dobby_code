@@ -1,0 +1,465 @@
+{
+ "seed": 20260823,
+ "provider": "claude",
+ "max_calls": 4,
+ "order": [
+  [
+   "paginate_offbyone",
+   "D_adaptive"
+  ],
+  [
+   "invoice_missing_field",
+   "D_adaptive"
+  ],
+  [
+   "paginate_offbyone",
+   "B_gated"
+  ],
+  [
+   "discount_validation",
+   "C_dobby"
+  ],
+  [
+   "discount_validation",
+   "B_gated"
+  ],
+  [
+   "invoice_missing_field",
+   "A_direct"
+  ],
+  [
+   "invoice_missing_field",
+   "B_gated"
+  ],
+  [
+   "paginate_offbyone",
+   "A_direct"
+  ],
+  [
+   "discount_validation",
+   "A_direct"
+  ],
+  [
+   "paginate_offbyone",
+   "C_dobby"
+  ],
+  [
+   "discount_validation",
+   "D_adaptive"
+  ],
+  [
+   "invoice_missing_field",
+   "C_dobby"
+  ]
+ ],
+ "corpus": [
+  {
+   "task_id": "paginate_offbyone",
+   "prompt": "The tests in test_paginate.py fail. Fix paginate.py so every test passes. Do not modify test_paginate.py.",
+   "check": "{python} -m unittest discover -s . -p \"test_*.py\" -q",
+   "fixture": {
+    "paginate.py": "\"\"\"Paginate a list of records.\"\"\"\n\n\ndef page(items, page_number, per_page):\n    \"\"\"Return the items on `page_number`, counting pages from 1.\"\"\"\n    start = page_number * per_page\n    return items[start:start + per_page]\n",
+    "test_paginate.py": "import unittest\n\nfrom paginate import page\n\n\nclass PageBoundaries(unittest.TestCase):\n    def test_the_first_page_starts_at_the_beginning(self):\n        self.assertEqual(page(list(range(10)), 1, 3), [0, 1, 2])\n\n    def test_the_second_page_follows_the_first(self):\n        self.assertEqual(page(list(range(10)), 2, 3), [3, 4, 5])\n\n    def test_a_page_past_the_end_is_empty(self):\n        self.assertEqual(page(list(range(5)), 9, 3), [])\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+   },
+   "expected_paths": [
+    "paginate.py"
+   ],
+   "immutable": [
+    "test_paginate.py"
+   ],
+   "one_shot_plausible": true,
+   "rationale": "off-by-one in a slice: page 1 returns items 3-5. A single competent call plausibly fixes it, which is why it is in a corpus meant not to favour the structured arms"
+  },
+  {
+   "task_id": "discount_validation",
+   "prompt": "The tests in test_discount.py fail. Fix discount.py so every test passes. Do not modify test_discount.py.",
+   "check": "{python} -m unittest discover -s . -p \"test_*.py\" -q",
+   "fixture": {
+    "discount.py": "\"\"\"Apply a percentage discount to a price.\"\"\"\n\n\ndef discounted(price, percent):\n    \"\"\"Return `price` reduced by `percent`.\"\"\"\n    return price * (1 - percent / 100)\n",
+    "test_discount.py": "import unittest\n\nfrom discount import discounted\n\n\nclass DiscountRules(unittest.TestCase):\n    def test_a_normal_discount_applies(self):\n        self.assertAlmostEqual(discounted(200.0, 10), 180.0)\n\n    def test_a_negative_percentage_is_refused(self):\n        with self.assertRaises(ValueError):\n            discounted(200.0, -5)\n\n    def test_a_percentage_over_one_hundred_is_refused(self):\n        with self.assertRaises(ValueError):\n            discounted(200.0, 120)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+   },
+   "expected_paths": [
+    "discount.py"
+   ],
+   "immutable": [
+    "test_discount.py"
+   ],
+   "one_shot_plausible": true,
+   "rationale": "a missing input guard: the function accepts any percentage. Two of the three tests fail, so a partial fix is possible and visible"
+  },
+  {
+   "task_id": "invoice_missing_field",
+   "prompt": "The tests in test_invoice.py fail. Fix invoice.py so every test passes. Do not modify test_invoice.py.",
+   "check": "{python} -m unittest discover -s . -p \"test_*.py\" -q",
+   "fixture": {
+    "invoice.py": "\"\"\"Total an invoice.\"\"\"\n\n\ndef total(lines):\n    \"\"\"Sum every line. Each line is {\"amount\": float, \"tax\": float}.\"\"\"\n    return sum(line[\"amount\"] for line in lines)\n",
+    "test_invoice.py": "import unittest\n\nfrom invoice import total\n\n\nclass InvoiceTotals(unittest.TestCase):\n    def test_it_includes_tax(self):\n        lines = [{\"amount\": 100.0, \"tax\": 10.0},\n                 {\"amount\": 50.0, \"tax\": 5.0}]\n        self.assertAlmostEqual(total(lines), 165.0)\n\n    def test_an_empty_invoice_totals_zero(self):\n        self.assertAlmostEqual(total([]), 0.0)\n\n    def test_a_line_without_tax_is_treated_as_untaxed(self):\n        self.assertAlmostEqual(total([{\"amount\": 20.0}]), 20.0)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+   },
+   "expected_paths": [
+    "invoice.py"
+   ],
+   "immutable": [
+    "test_invoice.py"
+   ],
+   "one_shot_plausible": true,
+   "rationale": "a total that ignores a field, plus an optional-key case that punishes a naive fix. The naive `line['tax']` raises KeyError on the third test, so the task distinguishes a read of the failure from a guess"
+  }
+ ],
+ "rows": [
+  {
+   "task_id": "paginate_offbyone",
+   "arm": "D_adaptive",
+   "run_id": "20260823-003619-29969d",
+   "verified": true,
+   "first_pass": true,
+   "provider_calls": 1,
+   "retries": 0,
+   "wall_s": 125.0,
+   "agent_s": 117.03,
+   "acceptance_failures": 0,
+   "contract_violations": 0,
+   "human_interventions": 0,
+   "false_successes": 0,
+   "usage": {
+    "calls": 1,
+    "calls_measured": 1,
+    "input_tokens": 20,
+    "output_tokens": 2516,
+    "thinking_tokens": 433,
+    "cache_read_tokens": 499132,
+    "cache_creation_tokens": 33728,
+    "cost_usd": 0.649846,
+    "note": ""
+   },
+   "stopped": "max_items",
+   "note": "reached the ceiling of 1 item(s)",
+   "void": false
+  },
+  {
+   "task_id": "invoice_missing_field",
+   "arm": "D_adaptive",
+   "run_id": "20260823-003822-e850af",
+   "verified": true,
+   "first_pass": true,
+   "provider_calls": 1,
+   "retries": 0,
+   "wall_s": 115.05,
+   "agent_s": 109.06,
+   "acceptance_failures": 0,
+   "contract_violations": 0,
+   "human_interventions": 0,
+   "false_successes": 0,
+   "usage": {
+    "calls": 1,
+    "calls_measured": 1,
+    "input_tokens": 16,
+    "output_tokens": 2005,
+    "thinking_tokens": 160,
+    "cache_read_tokens": 392477,
+    "cache_creation_tokens": 33658,
+    "cost_usd": 0.583023,
+    "note": ""
+   },
+   "stopped": "max_items",
+   "note": "reached the ceiling of 1 item(s)",
+   "void": false
+  },
+  {
+   "task_id": "paginate_offbyone",
+   "arm": "B_gated",
+   "run_id": "20260823-004015-f89dfb",
+   "verified": true,
+   "first_pass": true,
+   "provider_calls": 1,
+   "retries": 0,
+   "wall_s": 68.78,
+   "agent_s": 65.84,
+   "acceptance_failures": 0,
+   "contract_violations": 0,
+   "human_interventions": 0,
+   "false_successes": 0,
+   "usage": {
+    "calls": 1,
+    "calls_measured": 1,
+    "input_tokens": 12,
+    "output_tokens": 1651,
+    "thinking_tokens": 328,
+    "cache_read_tokens": 284801,
+    "cache_creation_tokens": 32760,
+    "cost_usd": 0.511335,
+    "note": ""
+   },
+   "stopped": "SUCCEEDED",
+   "note": "",
+   "void": false
+  },
+  {
+   "task_id": "discount_validation",
+   "arm": "C_dobby",
+   "run_id": "20260823-004125-00330e",
+   "verified": true,
+   "first_pass": true,
+   "provider_calls": 3,
+   "retries": 0,
+   "wall_s": 320.25,
+   "agent_s": 311.23,
+   "acceptance_failures": 0,
+   "contract_violations": 0,
+   "human_interventions": 0,
+   "false_successes": 0,
+   "usage": {
+    "calls": 3,
+    "calls_measured": 3,
+    "input_tokens": 50,
+    "output_tokens": 9790,
+    "thinking_tokens": 2264,
+    "cache_read_tokens": 1283383,
+    "cache_creation_tokens": 103929,
+    "cost_usd": 1.925981,
+    "note": ""
+   },
+   "stopped": "max_items",
+   "note": "reached the ceiling of 1 item(s)",
+   "void": false
+  },
+  {
+   "task_id": "discount_validation",
+   "arm": "B_gated",
+   "run_id": "20260823-004644-082d72",
+   "verified": true,
+   "first_pass": true,
+   "provider_calls": 1,
+   "retries": 0,
+   "wall_s": 68.16,
+   "agent_s": 65.66,
+   "acceptance_failures": 0,
+   "contract_violations": 0,
+   "human_interventions": 0,
+   "false_successes": 0,
+   "usage": {
+    "calls": 1,
+    "calls_measured": 1,
+    "input_tokens": 16,
+    "output_tokens": 1973,
+    "thinking_tokens": 63,
+    "cache_read_tokens": 391283,
+    "cache_creation_tokens": 33061,
+    "cost_usd": 0.575657,
+    "note": ""
+   },
+   "stopped": "SUCCEEDED",
+   "note": "",
+   "void": false
+  },
+  {
+   "task_id": "invoice_missing_field",
+   "arm": "A_direct",
+   "run_id": "direct:invoice_missing_field",
+   "verified": true,
+   "first_pass": true,
+   "provider_calls": 1,
+   "retries": 0,
+   "wall_s": 65.69,
+   "agent_s": 65.61,
+   "acceptance_failures": 0,
+   "contract_violations": 0,
+   "human_interventions": 0,
+   "false_successes": 0,
+   "usage": {
+    "calls": 1,
+    "calls_measured": 1,
+    "input_tokens": 16,
+    "output_tokens": 1741,
+    "thinking_tokens": 163,
+    "cache_read_tokens": 390540,
+    "cache_creation_tokens": 32592,
+    "cost_usd": 0.564795,
+    "note": ""
+   },
+   "stopped": "single_call",
+   "note": "",
+   "void": false
+  },
+  {
+   "task_id": "invoice_missing_field",
+   "arm": "B_gated",
+   "run_id": "20260823-004859-2cb596",
+   "verified": true,
+   "first_pass": true,
+   "provider_calls": 1,
+   "retries": 0,
+   "wall_s": 80.91,
+   "agent_s": 77.67,
+   "acceptance_failures": 0,
+   "contract_violations": 0,
+   "human_interventions": 0,
+   "false_successes": 0,
+   "usage": {
+    "calls": 1,
+    "calls_measured": 1,
+    "input_tokens": 16,
+    "output_tokens": 2288,
+    "thinking_tokens": 387,
+    "cache_read_tokens": 391661,
+    "cache_creation_tokens": 33470,
+    "cost_usd": 0.587811,
+    "note": ""
+   },
+   "stopped": "SUCCEEDED",
+   "note": "",
+   "void": false
+  },
+  {
+   "task_id": "paginate_offbyone",
+   "arm": "A_direct",
+   "run_id": "direct:paginate_offbyone",
+   "verified": true,
+   "first_pass": true,
+   "provider_calls": 1,
+   "retries": 0,
+   "wall_s": 79.16,
+   "agent_s": 79.08,
+   "acceptance_failures": 0,
+   "contract_violations": 0,
+   "human_interventions": 0,
+   "false_successes": 0,
+   "usage": {
+    "calls": 1,
+    "calls_measured": 1,
+    "input_tokens": 18,
+    "output_tokens": 1635,
+    "thinking_tokens": 172,
+    "cache_read_tokens": 444547,
+    "cache_creation_tokens": 32703,
+    "cost_usd": 0.590269,
+    "note": ""
+   },
+   "stopped": "single_call",
+   "note": "",
+   "void": false
+  },
+  {
+   "task_id": "discount_validation",
+   "arm": "A_direct",
+   "run_id": "direct:discount_validation",
+   "verified": true,
+   "first_pass": true,
+   "provider_calls": 1,
+   "retries": 0,
+   "wall_s": 65.91,
+   "agent_s": 65.88,
+   "acceptance_failures": 0,
+   "contract_violations": 0,
+   "human_interventions": 0,
+   "false_successes": 0,
+   "usage": {
+    "calls": 1,
+    "calls_measured": 1,
+    "input_tokens": 18,
+    "output_tokens": 1911,
+    "thinking_tokens": 44,
+    "cache_read_tokens": 443851,
+    "cache_creation_tokens": 33152,
+    "cost_usd": 0.60131,
+    "note": ""
+   },
+   "stopped": "single_call",
+   "note": "",
+   "void": false
+  },
+  {
+   "task_id": "paginate_offbyone",
+   "arm": "C_dobby",
+   "run_id": "20260823-005247-15f452",
+   "verified": true,
+   "first_pass": true,
+   "provider_calls": 3,
+   "retries": 0,
+   "wall_s": 272.66,
+   "agent_s": 265.02,
+   "acceptance_failures": 0,
+   "contract_violations": 0,
+   "human_interventions": 0,
+   "false_successes": 0,
+   "usage": {
+    "calls": 3,
+    "calls_measured": 3,
+    "input_tokens": 42,
+    "output_tokens": 9577,
+    "thinking_tokens": 2961,
+    "cache_read_tokens": 1061555,
+    "cache_creation_tokens": 109455,
+    "cost_usd": 1.864963,
+    "note": ""
+   },
+   "stopped": "max_items",
+   "note": "reached the ceiling of 1 item(s)",
+   "void": false
+  },
+  {
+   "task_id": "discount_validation",
+   "arm": "D_adaptive",
+   "run_id": "20260823-005721-659701",
+   "verified": true,
+   "first_pass": true,
+   "provider_calls": 1,
+   "retries": 0,
+   "wall_s": 90.97,
+   "agent_s": 85.91,
+   "acceptance_failures": 0,
+   "contract_violations": 0,
+   "human_interventions": 0,
+   "false_successes": 0,
+   "usage": {
+    "calls": 1,
+    "calls_measured": 1,
+    "input_tokens": 20,
+    "output_tokens": 2209,
+    "thinking_tokens": 231,
+    "cache_read_tokens": 506459,
+    "cache_creation_tokens": 34560,
+    "cost_usd": 0.654155,
+    "note": ""
+   },
+   "stopped": "max_items",
+   "note": "reached the ceiling of 1 item(s)",
+   "void": false
+  },
+  {
+   "task_id": "invoice_missing_field",
+   "arm": "C_dobby",
+   "run_id": "20260823-005851-507dd3",
+   "verified": true,
+   "first_pass": true,
+   "provider_calls": 3,
+   "retries": 0,
+   "wall_s": 438.12,
+   "agent_s": 430.26,
+   "acceptance_failures": 0,
+   "contract_violations": 0,
+   "human_interventions": 0,
+   "false_successes": 0,
+   "usage": {
+    "calls": 3,
+    "calls_measured": 3,
+    "input_tokens": 46,
+    "output_tokens": 11434,
+    "thinking_tokens": 4282,
+    "cache_read_tokens": 1175099,
+    "cache_creation_tokens": 114761,
+    "cost_usd": 2.02124,
+    "note": ""
+   },
+   "stopped": "max_items",
+   "note": "reached the ceiling of 1 item(s)",
+   "void": false
+  }
+ ],
+ "paired_tasks": [
+  "discount_validation",
+  "invoice_missing_field",
+  "paginate_offbyone"
+ ],
+ "dropped_tasks": [],
+ "note": "only `paired_tasks` may be compared across arms; a task any arm failed to run is void for all of them"
+}

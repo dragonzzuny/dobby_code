@@ -25,7 +25,7 @@ import subprocess
 from dataclasses import dataclass, field
 
 from ..core.platform import child_env, resolve_command
-from . import effects
+from . import contextpack, effects
 from .contracts import (EXTERNAL_IRREVERSIBLE, EXTERNAL_REVERSIBLE,
                         LOCAL_WRITE, SCHEMAS)
 from .failures import (EFFECT_NOT_OBSERVED, Failure, PERMISSION_DENIED,
@@ -392,25 +392,22 @@ class ProviderWorker(WorkerAdapter):
         return node.contract.output_schema or {}
 
     def _prompt(self, node, context: dict) -> str:
-        schema = self._schema(node)
-        parts = [node.instruction.strip()]
-        inputs = context.get("inputs") or {}
-        if inputs:
-            parts.append(
-                "\n## Verified inputs\n"
-                "These are the PROMOTED outputs of the steps this one depends "
-                "on. Nothing else from earlier steps is available, on purpose: "
-                "unverified output is not an input.\n"
-                + json.dumps(inputs, ensure_ascii=False, indent=1,
-                             default=str)[:8000])
-        if schema:
-            parts.append(
-                "\n## Required output\n"
-                "Reply with ONE JSON document and nothing else. It must satisfy "
-                "this schema exactly; a field you cannot fill honestly is a "
-                "reason to say so inside the document, not to omit it.\n"
-                + json.dumps(schema, ensure_ascii=False, indent=1))
-        return "\n".join(parts)
+        """Delegated to `runtime/contextpack.py`.
+
+        This used to inline every promoted dependency as
+        `json.dumps(inputs, indent=1)[:8000]`. A character cap is not a
+        relevance budget, and three things followed from that: it truncated by
+        SERIALISATION ORDER, so the evidence a worker most needed was the
+        evidence most likely to be missing; it re-injected a whole plan payload
+        into an implementer that already had the task; and it moved the stable
+        prefix of every call, which is the part a prompt cache wants held still.
+
+        The pack ranks first, budgets second, and lists by id what it left out —
+        so a worker that did not use evidence it never received is diagnosable
+        from the record rather than mistaken for one that ignored it.
+        """
+        return contextpack.build(node, context,
+                                 schema=self._schema(node)).render()
 
 
 class AdvisoryJudgeWorker(WorkerAdapter):

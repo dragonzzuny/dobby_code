@@ -1667,6 +1667,7 @@ def cmd_project(args):
                            architect_provider=args.architect_provider,
                            compile_plans=args.compile_plans,
                            isolate=args.isolate,
+                           policy=args.policy or "",
                            replan=args.replan,
                            replan_provider=args.architect_provider))
             return
@@ -1677,7 +1678,8 @@ def cmd_project(args):
                      architect=args.architect,
                      architect_provider=args.architect_provider,
                      compile_plans=args.compile_plans,
-                     isolate=args.isolate))
+                     isolate=args.isolate,
+                     policy=args.policy or ""))
         return
 
     if args.action == "close":
@@ -2147,6 +2149,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--architect-provider", default=None,
                    help="run: provider for the architect role (default: the "
                         "catalog's preference for `architect`)")
+    p.add_argument("--policy", choices=["adaptive"], default=None,
+                   help="run: choose the graph SHAPE from the item instead of "
+                        "always building the generic four nodes. Measured "
+                        "reason: evals/ab/RESULTS_pilot.md found the generic "
+                        "graph cost 3.00x the provider calls and 2.94x the "
+                        "money for identical 3/3 verified results. A scoped, "
+                        "gradeable, unfailed item gets ONE gated call; "
+                        "compilation and the architect are escalations with "
+                        "evidence behind them")
     p.add_argument("--isolate", action="store_true",
                    help="run: execute the item in a detached git worktree and "
                         "let its changes back in only through the merge gate — "

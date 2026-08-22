@@ -27,6 +27,8 @@ repository it has never seen and re-derives what "done" means.
     reattempt.py the item cycle: retry only after a derived repair
     readonly.py  running a provider in a role that may not write
     workorder.py an accepted plan as a graph the existing runtime runs
+    execution_policy.py  which SHAPE of execution an item gets
+    fastpath.py  one gated call, and a report nobody paid for
     workspace.py an isolated tree for one item, and the gate its changes
                  must pass to enter the project
     replan.py    a failure carried back to the one thing allowed to change
@@ -56,6 +58,9 @@ from .inquiry import STAGE_KEYS, decompose, plan
 from .reattempt import derive_repair, parse_artifact_check, persevere
 from .readonly import ReadOnlyViolation, run_read_only
 from .replan import blocked_needs_replan, failure_context, request_replan
+from .execution_policy import (ExecutionClass, TaskProfile,
+                               choose_execution, profile_item)
+from .fastpath import deterministic_report, direct_gated_graph
 from .workspace import (ChangeManifest, MergeRefused, changed_paths,
                         declared_write_set, isolated, merge)
 from .workorder import (PlanNotCompilable, WorkOrder, choose_graph,
@@ -91,5 +96,7 @@ __all__ = [
     "run_read_only", "blocked_needs_replan", "failure_context",
     "request_replan", "ANNOTATION_PREFIX", "ChangeManifest",
     "MergeRefused", "changed_paths", "declared_write_set",
-    "isolated", "merge",
+    "isolated", "merge", "ExecutionClass", "TaskProfile",
+    "choose_execution", "profile_item", "deterministic_report",
+    "direct_gated_graph",
 ]

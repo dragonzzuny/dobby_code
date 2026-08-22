@@ -56,7 +56,12 @@ SOUNDNESS_CHECK = (
 ARM_DIRECT = "A_direct"
 ARM_GATED = "B_gated"
 ARM_DOBBY = "C_dobby"
-ARMS = (ARM_DIRECT, ARM_GATED, ARM_DOBBY)
+#: The proposed default: the profiler picks the shape, so a scoped gradeable item
+#: gets ONE gated call instead of three. Named as its own arm rather than
+#: replacing C, because a claim that it is cheaper has to be measured against the
+#: thing it replaces, in the same run, on the same corpus.
+ARM_ADAPTIVE = "D_adaptive"
+ARMS = (ARM_DIRECT, ARM_GATED, ARM_DOBBY, ARM_ADAPTIVE)
 
 
 @dataclass
@@ -257,9 +262,23 @@ def run_arm_gated(task: PilotTask, root: str, data_dir: str, *, provider: str,
                      gamed=tampered(guard, fingerprint(root, task.immutable)))
 
 
+def run_arm_adaptive(task: PilotTask, root: str, data_dir: str, *,
+                     provider: str, max_calls: int, timeout_s: int) -> ArmRun:
+    """The same loop with `policy="adaptive"`. Everything else identical to C."""
+    return _run_loop(task, root, data_dir, ARM_ADAPTIVE, provider=provider,
+                     max_calls=max_calls, policy="adaptive")
+
+
 def run_arm_dobby(task: PilotTask, root: str, data_dir: str, *, provider: str,
                   max_calls: int, timeout_s: int) -> ArmRun:
     """The project loop with its gates, state and repair-carrying retry."""
+    return _run_loop(task, root, data_dir, ARM_DOBBY, provider=provider,
+                     max_calls=max_calls, policy="")
+
+
+def _run_loop(task: PilotTask, root: str, data_dir: str, arm: str, *,
+              provider: str, max_calls: int, policy: str) -> ArmRun:
+    """C and D differ by ONE argument, and this is where that is made obvious."""
     from dobby.project import initialise
     from dobby.project.reattempt import persevere
     from dobby.providers.run import recording
@@ -280,7 +299,7 @@ def run_arm_dobby(task: PilotTask, root: str, data_dir: str, *, provider: str,
                                 "acceptance_checks": [task.check]}],
                    run_baseline=True)
         outcome = persevere(data_dir, max_attempts=2, provider=provider,
-                            max_steps=max_calls)
+                            max_steps=max_calls, policy=policy)
     wall = time.monotonic() - started
 
     from dobby.project import ProjectStore
@@ -289,7 +308,7 @@ def run_arm_dobby(task: PilotTask, root: str, data_dir: str, *, provider: str,
     gamed = tampered(guard, fingerprint(root, task.immutable))
 
     return ArmRun(
-        task_id=task.task_id, arm=ARM_DOBBY,
+        task_id=task.task_id, arm=arm,
         run_id=";".join(i["run_id"] for i in iterations) or "none",
         verified=(item.state == "DONE") and not gamed,
         first_pass=(item.state == "DONE" and outcome["attempts_used"] == 1
@@ -349,7 +368,7 @@ def _from_run(task, arm, run_id, result, calls, wall, root, *,
 
 
 RUNNERS = {ARM_DIRECT: run_arm_direct, ARM_GATED: run_arm_gated,
-           ARM_DOBBY: run_arm_dobby}
+           ARM_DOBBY: run_arm_dobby, ARM_ADAPTIVE: run_arm_adaptive}
 
 
 def run_pilot(corpus, *, base: str, provider: str = "claude", seed: int = 20260822,
@@ -385,10 +404,54 @@ def run_pilot(corpus, *, base: str, provider: str = "claude", seed: int = 202608
                          note=f"{type(exc).__name__}: {exc}"[:300])
         rows.append(row)
 
+    raw = mark_void([r.to_dict() for r in rows])
+    complete, dropped = paired_tasks(raw, arms=tuple(arms))
     return {"seed": seed, "provider": provider, "max_calls": max_calls,
             "order": [(t.task_id, a) for t, a in pairs],
             "corpus": [t.to_dict() for t in corpus],
-            "rows": [r.to_dict() for r in rows]}
+            "rows": raw,
+            "paired_tasks": complete,
+            "dropped_tasks": [{"task_id": t, "void_arms": a}
+                              for t, a in dropped],
+            "note": ("only `paired_tasks` may be compared across arms; a task "
+                     "any arm failed to run is void for all of them")}
+
+
+def mark_void(rows: list) -> list:
+    """A row with no provider call never ran, whatever else it recorded.
+
+    DESIGN.md's stopping rule says an environmentally failed task is void for
+    EVERY arm, because dropping it from one arm only is how a corpus tilts. This
+    applies it mechanically: zero calls on a provider-driven arm is not a loss,
+    it is an absence, and scoring it as a loss would credit whichever arm the
+    provider happened not to fail on.
+    """
+    for row in rows:
+        if row.get("provider_calls", 0) == 0 and not row.get("void"):
+            row["void"] = True
+            row["note"] = (("no provider call was recorded: this arm never ran. "
+                            + (row.get("note") or ""))[:400])
+    return rows
+
+
+def paired_tasks(rows: list, arms=ARMS) -> tuple:
+    """`(complete, dropped)` — task ids where EVERY arm produced a real run.
+
+    An unpaired comparison across arms of uneven luck measures which arm drew
+    the working provider.
+    """
+    by_task: dict = {}
+    for row in rows:
+        by_task.setdefault(row["task_id"], {})[row["arm"]] = row
+    complete, dropped = [], []
+    for task_id, got in sorted(by_task.items()):
+        if all(arm in got and not got[arm].get("void") for arm in arms):
+            complete.append(task_id)
+        else:
+            dropped.append((task_id, sorted(a for a in arms
+                                            if a not in got
+                                            or got[a].get("void"))))
+    return complete, dropped
 
 
 def save(payload: dict, path: str) -> str:

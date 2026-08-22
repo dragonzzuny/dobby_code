@@ -409,7 +409,8 @@ def plan_for(store, project_id: str, item):
 
 def choose_graph(store, project_id: str, item, *, manifest, make_graph,
                  provider=None, execute_command=None, static=False,
-                 compile_plans: bool = False):
+                 compile_plans: bool = False, policy: str = "",
+                 worktree_available: bool = False):
     """`(graph, shape)` — the compiled plan when there is one, else the generic graph.
 
     Falling back is not a failure and is not silent: `shape` names what ran, and
@@ -417,6 +418,39 @@ def choose_graph(store, project_id: str, item, *, manifest, make_graph,
     than as a generic run that looks like nobody planned anything.
     """
     from .architecture import PlanSpec
+
+    if policy == "adaptive":
+        # THE MEASURED DEFAULT. `evals/ab/RESULTS_pilot.md`: the generic graph
+        # cost 3.00x the calls and 2.94x the money for 3/3 verified in every
+        # arm. So the shape is chosen from the item rather than assumed, and a
+        # scoped gradeable item gets one gated call instead of three.
+        from .execution_policy import (ExecutionClass, choose_execution,
+                                       explain, profile_item)
+        from .fastpath import direct_gated_graph
+
+        profile = profile_item(item, store=store, project_id=project_id,
+                               worktree_available=worktree_available)
+        chosen = choose_execution(profile)
+        why = explain(profile, chosen)
+
+        if chosen in (ExecutionClass.DIRECT_GATED,
+                      ExecutionClass.CODEX_FOCUSED_IMPLEMENT):
+            return direct_gated_graph(
+                item, profile, provider=provider,
+                execute_command=execute_command, static=static),                 f"{chosen.value}: {why}"
+        if chosen in (ExecutionClass.ARCHITECT_REPLAN,
+                      ExecutionClass.HUMAN_BOUNDARY):
+            # Not this function's decision to make. The loop already has stops
+            # for both, reached through the architect and the boundary checks;
+            # the generic graph runs only if the caller sends it here anyway.
+            return make_graph(item.outcome or item.title, provider=provider,
+                              execute_command=execute_command,
+                              acceptance_checks=list(item.acceptance_checks),
+                              static=static), f"{chosen.value}: {why}"
+        # COMPILED_SERIAL and AGY_ISOLATED_DELEGATE both want the plan compiled,
+        # so the flag stops being a flag: the class turns it on. This is PR 6 —
+        # compilation as a selective escalation rather than a default tax.
+        compile_plans = True
 
     if not compile_plans:
         return make_graph(item.outcome or item.title, provider=provider,
