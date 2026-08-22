@@ -59,6 +59,20 @@ DEFAULT_OUTPUT_CAP = 24_000
 _RECORDER: list | None = None
 
 
+def _recorded(result: ProviderResult) -> ProviderResult:
+    """Append to the active recorder, whatever the outcome.
+
+    Failures were missing. Measured 2026-08-23: an agy call refused a tool
+    permission, returned exit 1, and the smoke reported `calls_total: 0` — a
+    provider that had launched, spent time and produced nothing was invisible to
+    the counter and therefore to the quota. A cap that counts only successes
+    undercounts precisely the provider that is going wrong.
+    """
+    if _RECORDER is not None:
+        _RECORDER.append(result)
+    return result
+
+
 @contextlib.contextmanager
 def recording(sink: list | None = None, *, collect_usage: bool = True):
     """Record every provider call made inside the block. Yields the sink list.
@@ -106,15 +120,15 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
     collect_usage = (_COLLECT_DEFAULT if collect_usage is None
                      else collect_usage)
     if spec.kind != "cli":
-        return ProviderResult(
+        return _recorded(ProviderResult(
             provider=spec.id, ok=False,
             error=f"{spec.id} is an api provider; run_provider drives cli "
-                  f"providers only (see api_client for the api path)")
+                  f"providers only (see api_client for the api path)"))
     resolved = spec.which()
     if resolved is None:
-        return ProviderResult(
+        return _recorded(ProviderResult(
             provider=spec.id, ok=False,
-            error=f"binary {spec.binary!r} not on PATH")
+            error=f"binary {spec.binary!r} not on PATH"))
 
     extra = tuple(extra)
     if collect_usage and spec.usage_extra:
@@ -148,9 +162,9 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
         # Refusing beats delivering a truncated prompt. A provider that receives
         # only the first line answers that line and the reply looks like an
         # opinion about the whole task.
-        return ProviderResult(
+        return _recorded(ProviderResult(
             provider=spec.id, ok=False,
-            error=f"cannot deliver this prompt intact: {launch_note}")
+            error=f"cannot deliver this prompt intact: {launch_note}"))
     limit = timeout_s or spec.timeout_s
     started = time.monotonic()
     meta = {
@@ -181,30 +195,30 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
             timeout=limit,
         )
     except subprocess.TimeoutExpired:
-        return ProviderResult(
+        return _recorded(ProviderResult(
             provider=spec.id, ok=False,
             duration_s=round(time.monotonic() - started, 2),
             error=f"timeout after {limit}s (the tool may have fallen back to "
                   f"interactive mode — check its non-interactive flag)",
-            meta=meta)
+            meta=meta))
     except FileNotFoundError:
         # State the contradiction rather than just the symptom: PATH lookup
         # succeeded and launching the very path it returned did not. The old
         # message said only "cannot execute 'codex'", which read like a missing
         # install and hid a resolvable path for as long as nobody probed.
-        return ProviderResult(
+        return _recorded(ProviderResult(
             provider=spec.id, ok=False,
             duration_s=round(time.monotonic() - started, 2),
             error=(f"{spec.binary!r} resolved to {resolved!r} but could not be "
                    f"launched — the file exists and the OS refused it, so this "
                    f"is a shim or extension the process loader cannot start "
                    f"directly, not a missing install"),
-            meta=meta)
+            meta=meta))
     except OSError as exc:
-        return ProviderResult(
+        return _recorded(ProviderResult(
             provider=spec.id, ok=False,
             duration_s=round(time.monotonic() - started, 2),
-            error=f"OS error launching {spec.binary!r}: {exc}", meta=meta)
+            error=f"OS error launching {spec.binary!r}: {exc}", meta=meta))
 
     duration = round(time.monotonic() - started, 2)
     raw = proc.stdout or ""
@@ -216,13 +230,13 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
     if proc.returncode != 0:
         # stderr is the diagnostic; cap it too, since a crashing tool can emit
         # megabytes of trace.
-        return ProviderResult(
+        return _recorded(ProviderResult(
             provider=spec.id, ok=False, text=capped,
             exit_code=proc.returncode, duration_s=duration,
             truncated=truncated,
             error=f"exit {proc.returncode}: "
                   f"{cap_output(redact_secrets(stderr), 800).strip()}",
-            meta=meta)
+            meta=meta))
 
     if not capped.strip():
         # Exit 0 with empty stdout is a real and confusing case: it usually
@@ -242,14 +256,14 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
         # guess about output formats. Every delegated read of a file failed this
         # way and the harness blamed the wrong subsystem each time.
         detail = cap_output(redact_secrets(stderr), 600).strip()
-        return ProviderResult(
+        return _recorded(ProviderResult(
             provider=spec.id, ok=False, text="", exit_code=0,
             duration_s=duration,
             error=("exit 0 but no stdout. " + (f"stderr: {detail}" if detail else
                    "stderr was empty too — the tool may print only to a TTY, or "
                    "it silently refused the prompt; try its explicit "
                    "output-format flag")),
-            meta=meta)
+            meta=meta))
 
     usage = None
     if collect_usage and spec.usage_extra:
@@ -266,12 +280,9 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
             # that from a model that simply declined.
             meta.update({k: v for k, v in signals.items() if v not in (None, [])})
 
-    result = ProviderResult(provider=spec.id, ok=True, text=capped,
-                            exit_code=0, duration_s=duration,
-                            truncated=truncated, meta=meta, usage=usage)
-    if _RECORDER is not None:
-        _RECORDER.append(result)
-    return result
+    return _recorded(ProviderResult(
+        provider=spec.id, ok=True, text=capped, exit_code=0,
+        duration_s=duration, truncated=truncated, meta=meta, usage=usage))
 
 
 def run_by_id(pid: str, prompt: str, **kwargs) -> ProviderResult:

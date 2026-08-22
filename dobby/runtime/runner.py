@@ -105,6 +105,8 @@ class Runner:
                  policy: dict | None = None,
                  max_parallel: int = 1,
                  allow_network: bool = False,
+                 placement_context=None,
+                 override_provider: str | None = None,
                  sleep=time.sleep):
         import threading
         self.repo = os.path.abspath(repo)
@@ -118,6 +120,18 @@ class Runner:
         self.max_parallel = max(1, max_parallel)
         self.placement = ProviderPlacement(self.store,
                                            allow_network=allow_network)
+        #: What the SCHEDULER knows that a node does not: whether this run is in
+        #: an isolated workspace, the operator's provider preferences, and how
+        #: many calls each provider has already spent. Without it the role
+        #: policy's isolation rule and the Claude cap are unreachable, which is
+        #: how a table of intentions stays a table of intentions.
+        from ..providers.policy import PlacementContext
+
+        self.placement_context = placement_context or PlacementContext(
+            original_root=self.repo)
+        #: For reproducing a run or an incident. It may not bypass isolation or
+        #: a spent quota — `placement.choose` refuses that explicitly.
+        self.override_provider = override_provider
         self.limiter = ConcurrencyLimiter(total=self.max_parallel,
                                           per_provider=max(1, self.max_parallel))
         #: The budget is read-modify-write from several threads once
@@ -407,6 +421,10 @@ class Runner:
             return
 
         context = {"repo": self.repo, "attempt": attempt,
+                   # The scheduler's view of the workspace, which is what
+                   # licenses a headless tool grant. A node cannot know this
+                   # about itself.
+                   "isolated": self.placement_context.isolated,
                    "inputs": self._promoted_inputs(run_id, task_graph, node),
                    "run_id": run_id}
         provider = node.config.get("provider") if node.worker == "provider" \
@@ -571,17 +589,31 @@ class Runner:
         if node.worker != "provider":
             return None
         avoid = set(node.config.get("avoid_providers") or ())
-        placement = self.placement.choose(node, avoid=avoid)
+        placement = self.placement.choose(
+            node, avoid=avoid, context=self.placement_context,
+            override=self.override_provider)
         tracer.event(SCHEDULER_DECISION, f"place:{node.node_id}",
                      candidates=placement.candidates,
                      chosen=placement.provider or "(none)",
                      reason=placement.reason,
                      provisional=placement.provisional,
                      scores=placement.scores,
-                     node_kind=node.kind)
+                     node_kind=node.kind,
+                     provider_role=placement.provider_role,
+                     isolated=placement.isolated,
+                     eligible=placement.eligible,
+                     rejected=placement.rejected,
+                     selection_basis=placement.selection_basis,
+                     claude_cap_remaining=placement.claude_cap_remaining)
         if placement.provider:
             node.config = dict(node.config)
+            # `provider` is what the worker reads; `selected_provider` is what
+            # the record says was CHOSEN. Keeping both means a trace can show a
+            # selection that a later edit overwrote.
             node.config["provider"] = placement.provider
+            node.config["selected_provider"] = placement.provider
+            self.placement_context.provider_calls[placement.provider] = (
+                self.placement_context.spent(placement.provider) + 1)
             if placement.hedge_with:
                 node.config["hedge_with"] = placement.hedge_with
         return placement

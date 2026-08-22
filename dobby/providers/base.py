@@ -108,6 +108,20 @@ class ProviderSpec:
     #: `codex exec --json` and looked, so it stays empty and its usage reports as
     #: not measured rather than as zero.
     usage_extra: tuple[str, ...] = ()
+    #: Extra argv sent ONLY when this provider runs in an isolated workspace.
+    #:
+    #: For a CLI that cannot use its tools headlessly without auto-approving
+    #: them. Measured 2026-08-23: agy in a worktree returned
+    #: `permission check failed for command "Get-ChildItem -Recurse": user
+    #: denied permission`, exit 1, having done nothing — so headless agy is
+    #: unusable without it, and it is not a containment control either way (see
+    #: the four-configuration probe in `catalog.py`).
+    #:
+    #: Gated on isolation rather than offered as a flag, because auto-approving
+    #: a delegate's tools is only defensible where a write is already contained.
+    #: Sending it on the original tree would be granting the one provider
+    #: measured writing under a read-only mode a free hand in the project.
+    isolated_extra: tuple[str, ...] = ()
     #: What is actually known about this CLI's behaviour when `write_extra` is
     #: NOT passed. Four values, because "read-only" has turned out to mean four
     #: different things here and a boolean merged them:

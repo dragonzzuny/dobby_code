@@ -1,0 +1,161 @@
+{
+ "started": "2026-08-23T08:37:05",
+ "codex": {
+  "smoke": "codex_direct_gated",
+  "rows": [
+   {
+    "task": "paginate_offbyone",
+    "run_id": "20260823-083705-32d2fa",
+    "state": "SUCCEEDED",
+    "verified": true,
+    "acceptance_pass": true,
+    "calls_total": 1,
+    "calls_by_provider": {
+     "codex": 1
+    },
+    "claude_calls": 0,
+    "wall_s": 36.8,
+    "selected_provider": null,
+    "failure": {},
+    "evaluation_gaming": [],
+    "usage": []
+   },
+   {
+    "task": "discount_validation",
+    "run_id": "20260823-083742-e66f87",
+    "state": "SUCCEEDED",
+    "verified": true,
+    "acceptance_pass": true,
+    "calls_total": 1,
+    "calls_by_provider": {
+     "codex": 1
+    },
+    "claude_calls": 0,
+    "wall_s": 33.3,
+    "selected_provider": null,
+    "failure": {},
+    "evaluation_gaming": [],
+    "usage": []
+   },
+   {
+    "task": "invoice_missing_field",
+    "run_id": "20260823-083815-fd69e7",
+    "state": "SUCCEEDED",
+    "verified": true,
+    "acceptance_pass": true,
+    "calls_total": 1,
+    "calls_by_provider": {
+     "codex": 1
+    },
+    "claude_calls": 0,
+    "wall_s": 29.8,
+    "selected_provider": null,
+    "failure": {},
+    "evaluation_gaming": [],
+    "usage": []
+   }
+  ],
+  "claude_calls_total": 0,
+  "verified": 3,
+  "n": 3
+ },
+ "agy": {
+  "smoke": "agy_isolated_delegate",
+  "rows": [
+   {
+    "task": "paginate_offbyone",
+    "run_id": "20260823-083846-430ed1",
+    "state": "SUCCEEDED",
+    "verified": true,
+    "acceptance_pass": true,
+    "calls_total": 1,
+    "calls_by_provider": {
+     "agy": 1
+    },
+    "claude_calls": 0,
+    "wall_s": 152.2,
+    "selected_provider": null,
+    "failure": {},
+    "evaluation_gaming": [],
+    "usage": [],
+    "changed_paths": [
+     "__pycache__/paginate.cpython-311.pyc",
+     "__pycache__/test_paginate.cpython-311.pyc",
+     "paginate.py"
+    ],
+    "worktree": "C:\\Users\\dynap\\AppData\\Local\\Temp\\dobby-wt-domikfyf\\agent0",
+    "original_root_unchanged": true
+   },
+   {
+    "task": "discount_validation",
+    "run_id": "20260823-084119-26aaa6",
+    "state": "SUCCEEDED",
+    "verified": true,
+    "acceptance_pass": true,
+    "calls_total": 1,
+    "calls_by_provider": {
+     "agy": 1
+    },
+    "claude_calls": 0,
+    "wall_s": 111.3,
+    "selected_provider": null,
+    "failure": {},
+    "evaluation_gaming": [],
+    "usage": [],
+    "changed_paths": [
+     "__pycache__/discount.cpython-311.pyc",
+     "__pycache__/test_discount.cpython-311.pyc",
+     "discount.py"
+    ],
+    "worktree": "C:\\Users\\dynap\\AppData\\Local\\Temp\\dobby-wt-n6a1_4mu\\agent0",
+    "original_root_unchanged": true
+   }
+  ],
+  "original_root_mutations": 0,
+  "n": 2
+ },
+ "cap": {
+  "smoke": "claude_cap_zero",
+  "row": {
+   "task": "paginate_offbyone",
+   "run_id": "20260823-084311-6c165e",
+   "state": "SUCCEEDED",
+   "verified": true,
+   "acceptance_pass": true,
+   "calls_total": 1,
+   "calls_by_provider": {
+    "codex": 1
+   },
+   "claude_calls": 0,
+   "wall_s": 35.4,
+   "selected_provider": null,
+   "failure": {},
+   "evaluation_gaming": [],
+   "usage": []
+  },
+  "claude_calls": 0,
+  "held": true
+ },
+ "policy": {
+  "smoke": "policy_normal_path",
+  "row": {
+   "task": "paginate_offbyone",
+   "run_id": "20260823-084347-24076d",
+   "state": "SUCCEEDED",
+   "verified": true,
+   "acceptance_pass": true,
+   "calls_total": 1,
+   "calls_by_provider": {
+    "codex": 1
+   },
+   "claude_calls": 0,
+   "wall_s": 31.2,
+   "selected_provider": null,
+   "failure": {},
+   "evaluation_gaming": [],
+   "usage": []
+  },
+  "selected": null,
+  "claude_calls": 0
+ }
+}

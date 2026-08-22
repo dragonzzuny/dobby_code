@@ -236,6 +236,11 @@ CATALOG: tuple[ProviderSpec, ...] = (
         # filled by agy will edit; a scout role filled by agy CAN ALSO edit, and
         # only cwd/worktree isolation and the prompt stand between it and the tree.
         write_extra=("--mode", "accept-edits"),
+        # Only ever sent inside a worktree. Without it agy refuses its own tools
+        # headlessly and returns exit 1 having done nothing; with it, its tools
+        # run unprompted — which is acceptable exactly where the directory it
+        # was launched in is disposable, and nowhere else.
+        isolated_extra=("--dangerously-skip-permissions",),
         capabilities=("files", "shell", "long_context"),
         # MEASURED to write under the default argv: the four-configuration probe
         # in `_agy` above created a file in all four mode/permission combinations.

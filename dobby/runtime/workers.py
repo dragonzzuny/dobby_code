@@ -270,6 +270,10 @@ class ProviderWorker(WorkerAdapter):
         # whose write flag nobody verified has an empty tuple and gets nothing.
         writes = node.contract.side_effect_class in WRITING_CLASSES
         grant = tuple(spec.write_extra) if writes else ()
+        # Isolation is what licenses the headless grant, so the scheduler's view
+        # of the workspace decides it, not the node.
+        if context.get("isolated") and spec.isolated_extra:
+            grant = grant + tuple(spec.isolated_extra)
         if writes and not grant:
             return WorkerResult(False, failure=Failure(
                 PERMISSION_DENIED,
