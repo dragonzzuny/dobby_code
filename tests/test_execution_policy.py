@@ -197,8 +197,22 @@ class TheProfileCostsNothing(unittest.TestCase):
 
 class TheRoleDecidesWhoAndTheClassDecidesHowMuch(unittest.TestCase):
     def test_agy_is_not_an_implementer_on_the_original_tree(self):
-        """Measured writing under an argv documented as read-only."""
-        self.assertNotIn("agy", ROLE_POLICY[IMPLEMENT].candidates)
+        """Measured writing under an argv documented as read-only.
+
+        This asserted agy's ABSENCE from the candidate list. It is now listed
+        and GATED, which is a stronger arrangement for the same property: absent
+        means it can never be a fallback even once a worktree exists, and the
+        operator's intent is to use the subscription often — just never on the
+        original tree. The gate is `admissible()`, so the rule lives next to the
+        measurement that justifies it rather than in a tuple's ordering.
+        """
+        ok, why = admissible("agy", ROLE_POLICY[IMPLEMENT], isolated=False)
+        self.assertFalse(ok)
+        self.assertIn("measured writing files", why)
+
+    def test_agy_may_implement_once_a_worktree_exists(self):
+        ok, _ = admissible("agy", ROLE_POLICY[IMPLEMENT], isolated=True)
+        self.assertTrue(ok)
 
     def test_agy_is_unreachable_without_isolation(self):
         ok, why = admissible("agy", ROLE_POLICY[ISOLATED_DELEGATE],

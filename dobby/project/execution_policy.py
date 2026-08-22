@@ -214,3 +214,20 @@ def explain(profile: TaskProfile, chosen: ExecutionClass) -> str:
                 f"uncertainty {profile.uncertainty}, no prior failure")
     return (f"{len(profile.expected_paths)} declared path(s) or uncertainty "
             f"{profile.uncertainty} puts this past the fast path")
+
+
+#: Which provider role each execution class asks for. Separate from the class
+#: itself because the class says how much structure and the role says who — and
+#: a capability changing the shape must not silently change the safety rules.
+CLASS_ROLE = {
+    ExecutionClass.DIRECT_GATED: "implement",
+    ExecutionClass.CODEX_FOCUSED_IMPLEMENT: "implement",
+    ExecutionClass.COMPILED_SERIAL: "implement",
+    ExecutionClass.AGY_ISOLATED_DELEGATE: "isolated_delegate",
+    ExecutionClass.ARCHITECT_REPLAN: "architect",
+    ExecutionClass.HUMAN_BOUNDARY: "",
+}
+
+
+def provider_role_for(chosen: ExecutionClass) -> str:
+    return CLASS_ROLE.get(chosen, "implement")

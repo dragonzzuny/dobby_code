@@ -78,7 +78,10 @@ def direct_gated_graph(item, profile, *, provider: str | None = None,
     if worker == "command":
         config = {"command": execute_command}
     elif worker == "provider":
-        config = {"provider": provider}
+        # `provider_role` is what the scheduler reads. `provider` remains the
+        # explicit pin a caller passed; keeping them distinct is what stops a
+        # benchmark's reproducibility flag from becoming the normal path.
+        config = {"provider": provider, "provider_role": "implement"}
         if timeout_s:
             config["timeout_s"] = timeout_s
     else:

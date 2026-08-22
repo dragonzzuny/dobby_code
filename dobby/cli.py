@@ -2138,7 +2138,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-steps", type=int, default=100,
                    help="run: node steps per work item")
     p.add_argument("--provider", default=None,
-                   help="run: agent CLI that does the work")
+                   help="run: DEPRECATED alias for --override-provider. It "
+                        "pinned planner, implementer, critic and report to one "
+                        "CLI, which made the role policy decorative and made "
+                        "the critic the author. Still accepted; warns")
+    p.add_argument("--override-provider", default=None,
+                   help="run: force one provider, for reproducing a run or an "
+                        "incident. It may NOT bypass isolation or a quota — an "
+                        "override that could leave the policy would make the "
+                        "policy advisory")
     p.add_argument("--execute", default=None,
                    help="run: deterministic command that does the work")
     p.add_argument("--architect", action="store_true",

@@ -141,11 +141,25 @@ class Placement:
     scores: dict = field(default_factory=dict)
     provisional: bool = False
     hedge_with: str | None = None
+    #: The policy trace. Present on every placement, because "why this provider"
+    #: has to be answerable from the record rather than re-derived — and because
+    #: a REJECTION is the interesting half: an operator asking why agy never runs
+    #: needs the rule that stopped it, not the absence of its name.
+    provider_role: str = ""
+    isolated: bool = False
+    eligible: list = field(default_factory=list)
+    rejected: dict = field(default_factory=dict)
+    selection_basis: str = ""
+    claude_cap_remaining: int | None = None
 
     def to_dict(self) -> dict:
         return {"provider": self.provider, "reason": self.reason,
                 "candidates": list(self.candidates), "scores": dict(self.scores),
-                "provisional": self.provisional, "hedge_with": self.hedge_with}
+                "provisional": self.provisional, "hedge_with": self.hedge_with,
+                "provider_role": self.provider_role, "isolated": self.isolated,
+                "eligible": list(self.eligible), "rejected": dict(self.rejected),
+                "selection_basis": self.selection_basis,
+                "claude_cap_remaining": self.claude_cap_remaining}
 
 
 class ProviderPlacement:
@@ -193,23 +207,79 @@ class ProviderPlacement:
         return entry
 
     # -- candidates --------------------------------------------------------
-    def candidates(self, node, *, avoid: set | None = None) -> list[str]:
-        """Providers that are usable here and allowed for THIS node.
+    def eligible(self, node, *, context=None, avoid: set | None = None
+                 ) -> tuple[list, dict]:
+        """`(eligible, rejected)` for THIS node's role. Policy first, scores never.
 
-        Three filters, in the order that they refuse most cheaply: installed and
-        working (`detect`), not on the node's avoid list, and permitted by the
-        node's side-effect class.
+        This used to return every installed provider and let the scorecard sort
+        them out. That made `providers/policy.py` decorative: the role tables
+        existed and no traffic saw them, so "codex is the default implementer"
+        was a sentence in a file rather than a thing that happened.
+
+        Four refusals, cheapest first, and each one is RECORDED rather than
+        silently dropping a name:
+
+            not installed        `detect` says it is not usable here
+            on the avoid list    it just failed and the policy says move
+            policy               `admissible()` — isolation, write grant, role
+            quota                the operator's cap, which is not a tie-break
         """
         from ..providers.detect import available_ids
+        from ..providers.policy import (ROLE_POLICY, admissible, governed,
+                                        node_role_for, PlacementContext)
+
+        context = context or PlacementContext()
         avoid = set(avoid or ())
-        usable = [pid for pid in available_ids(allow_network=self.allow_network)
-                  if pid not in avoid]
-        preferred = node.config.get("fallback_providers") or []
-        # Declared preference first, then the rest in catalog order, so a node
-        # that names its preferences gets them and still has the others behind.
-        ordered = [p for p in preferred if p in usable]
-        ordered += [p for p in usable if p not in ordered]
-        return ordered
+        role = node.config.get("provider_role") or node_role_for(node.kind)
+        policy = ROLE_POLICY.get(role)
+
+        usable = set(available_ids(allow_network=self.allow_network))
+        rejected: dict = {}
+        eligible: list = []
+
+        if policy is None:                       # pragma: no cover - guard
+            return sorted(usable - avoid), {"*": f"no policy for role {role!r}"}
+
+        if not (usable & governed()):
+            # The policy governs the catalog's providers and the operator's
+            # constraint is written about those. A fleet it has never heard of
+            # is outside its scope, and refusing every node on such a machine
+            # would be the table asserting authority it does not have. Recorded,
+            # never silent — and unreachable on any machine with claude, codex
+            # or agy installed.
+            rejected["*"] = ("no installed provider is governed by the role "
+                             "policy; selecting from the fleet as configured")
+            free = sorted(usable - avoid)
+            # A node that named its preferences still gets them first. Dropping
+            # that ordering here would make the scope statement quietly change
+            # behaviour it has no opinion about.
+            preferred = [p for p in (node.config.get("fallback_providers") or [])
+                         if p in free]
+            return preferred + [p for p in free if p not in preferred], rejected
+
+        for pid in policy.candidates:
+            if pid not in usable:
+                rejected[pid] = "not installed or not usable on this machine"
+                continue
+            if pid in avoid:
+                rejected[pid] = ("on the avoid list from the last failure; "
+                                 "retrying the same provider is what the "
+                                 "classification said not to do")
+                continue
+            ok, why = admissible(pid, policy, isolated=context.isolated)
+            if not ok:
+                rejected[pid] = why
+                continue
+            allowed, why_not = context.quota_allows(pid)
+            if not allowed:
+                rejected[pid] = why_not
+                continue
+            eligible.append(pid)
+        return eligible, rejected
+
+    def candidates(self, node, *, avoid: set | None = None) -> list[str]:
+        """Kept for callers that only want the list. See `eligible`."""
+        return self.eligible(node, avoid=avoid)[0]
 
     # -- scoring -----------------------------------------------------------
     def score(self, provider: str, node_kind: str, *,
@@ -259,7 +329,8 @@ class ProviderPlacement:
         return utility, terms
 
     # -- the decision ------------------------------------------------------
-    def choose(self, node, *, avoid: set | None = None) -> Placement:
+    def choose(self, node, *, avoid: set | None = None, context=None,
+               override: str | None = None) -> Placement:
         """Pick a provider for `node`, with the argument recorded.
 
         Order of resort, and each step says which one it took:
@@ -269,30 +340,59 @@ class ProviderPlacement:
         4. the catalog's static role preference, when nothing is measured;
         5. nothing, and the reason.
         """
+        from ..providers.policy import (PlacementContext, first_preferred,
+                                        node_role_for)
+
         node_kind = node.kind
-        allowed = [p for p in self.candidates(node, avoid=avoid)
-                   if self.breaker(p).allows()]
-        tripped = [p for p in self.candidates(node, avoid=avoid)
-                   if not self.breaker(p).allows()]
+        context = context or PlacementContext()
+        role = node.config.get("provider_role") or node_role_for(node_kind)
+        eligible, rejected = self.eligible(node, context=context, avoid=avoid)
 
-        configured = node.config.get("provider")
-        if configured and configured in allowed and not (avoid or set()) & {
-                configured}:
-            _, terms = self.score(configured, node_kind)
-            return Placement(configured,
-                             "the node names this provider and nothing "
-                             "disqualifies it",
-                             candidates=allowed, scores={configured: terms})
+        tripped = [p for p in eligible if not self.breaker(p).allows()]
+        for pid in tripped:
+            rejected[pid] = "tripped by the circuit breaker"
+        allowed = [p for p in eligible if self.breaker(p).allows()]
 
-        if not allowed:
-            return Placement(
+        cap = context.preferences.cap_for("claude")
+        remaining = (None if cap is None or cap.max_calls is None
+                     else max(0, cap.max_calls - context.spent("claude")))
+
+        def placed(provider, reason, basis, **kw):
+            return Placement(provider, reason, candidates=allowed,
+                             provider_role=role, isolated=context.isolated,
+                             eligible=list(eligible), rejected=dict(rejected),
+                             selection_basis=basis,
+                             claude_cap_remaining=remaining, **kw)
+
+        # B. An override is for reproducing a run, not for leaving the policy.
+        # A pin that could bypass isolation or a quota would make both of those
+        # advisory, and the whole point of them is that they are not.
+        if override:
+            if override in allowed:
+                return placed(override,
+                              f"explicitly overridden to {override}",
+                              "explicit_override",
+                              scores={override: self.score(override,
+                                                           node_kind)[1]})
+            return placed(
                 None,
-                ("no usable provider for this node"
-                 + (f"; {tripped} are tripped by the circuit breaker"
-                    if tripped else "")
+                (f"--override-provider {override} is not selectable here: "
+                 f"{rejected.get(override, 'it is not a candidate for this role')}"
+                 f". An override may reproduce a run; it may not leave the "
+                 f"policy"),
+                "override_refused")
+
+        # A. Nothing eligible is a stop with the reasons attached, not a silent
+        # fallback to whoever is installed.
+        if not allowed:
+            return placed(
+                None,
+                ("no provider may fill this role here"
+                 + (f"; {tripped} tripped the circuit breaker" if tripped
+                    else "")
                  + ("; the avoid list from the last failure removed the rest"
                     if avoid else "")),
-                candidates=[])
+                "no_eligible_provider")
 
         p95s = [self.stats(p, node_kind).p95_s for p in allowed]
         observed = [v for v in p95s if v is not None]
@@ -309,13 +409,19 @@ class ProviderPlacement:
         measured = [p for p in allowed if scored[p]["quality_measured"]]
 
         if not measured:
-            preferred = self._static_preference(node_kind, allowed)
-            return Placement(
-                preferred or allowed[0],
-                "nothing measured for this node kind yet; using the catalog's "
-                "static preference so an unfitted formula does not pretend to "
-                "be a measurement",
-                candidates=allowed, scores=scored, provisional=True)
+            # C. No calibrated model yet, so the operator's constraint decides.
+            # Ranking three providers on one measurement would be a formula
+            # pretending to be evidence, and it would quietly prefer whichever
+            # provider is least instrumented — `providers/usage.py` can price
+            # exactly one of them.
+            chosen = first_preferred(allowed, role, context.preferences)
+            return placed(
+                chosen or allowed[0],
+                (f"nothing measured for {role!r} yet; using the "
+                 f"subscription-first order so an unfitted formula does not "
+                 f"pretend to be a measurement"),
+                "subscription_first_static_preference",
+                scores=scored, provisional=True)
 
         # One comparison, over every candidate. An untried provider competes
         # here on the optimistic prior — that IS the exploration, and it is why
@@ -332,10 +438,10 @@ class ProviderPlacement:
                       f"no record here — an untried provider competes on the "
                       f"optimistic prior, which is the exploration")
 
-        return Placement(best, reason, candidates=allowed, scores=scored,
-                         provisional=thin,
-                         hedge_with=self._hedge_partner(node, best, allowed,
-                                                        scored))
+        return placed(best, reason, "measured_utility", scores=scored,
+                      provisional=thin,
+                      hedge_with=self._hedge_partner(node, best, allowed,
+                                                     scored))
 
     def _static_preference(self, node_kind: str,
                            allowed: list[str]) -> str | None:

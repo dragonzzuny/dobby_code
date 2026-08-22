@@ -301,6 +301,7 @@ def compile_graph(plan, *, item, manifest, provider: str | None = None,
                 config=({"criterion": {"id": order.work_id,
                                        "description": order.objective},
                          "judge_of": order.input_artifact_ids[0],
+                         "provider_role": "critic",
                          "exclude": [provider] if provider else []}
                         if provider else
                         {"payload": {"verdict": "not judged: no provider"}})))
@@ -310,6 +311,11 @@ def compile_graph(plan, *, item, manifest, provider: str | None = None,
         node_worker = ("command" if (is_writer and execute_command) else worker)
         config = ({"command": execute_command} if node_worker == "command"
                   else _config(node_worker, provider, order))
+        if node_worker == "provider":
+            # scout runs somewhere the project is not; implement writes the
+            # original tree. The roles differ and so must their candidate sets.
+            config["provider_role"] = ("isolated_delegate"
+                                       if order.role == SCOUT else "implement")
         nodes.append(G.TaskNode(
             node_id=order.work_id, kind=order.role,
             depends_on=list(order.depends_on), worker=node_worker,

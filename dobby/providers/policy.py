@@ -87,10 +87,15 @@ ROLE_POLICY: dict[str, ProviderPolicy] = {
         # Codex first: its write grant is the narrowest on offer — inside the
         # working directory, refusing outside it — and the catalog records that
         # as measured rather than documented.
-        candidates=("codex", "claude"),
+        # agy is LISTED and gated rather than excluded. `admissible()` refuses
+        # it whenever `isolated` is false, because its `read_only_default` is
+        # RO_DENIED — so it can only ever be reached here as a fallback once a
+        # fresh worktree exists, which is exactly the operator's intent:
+        # use the subscription often, never on the original tree.
+        candidates=("codex", "agy", "claude"),
         original_root_ok=True, writes=True, max_effort="high",
-        rationale=("the default focused implementer. agy is absent here on "
-                   "purpose: it is RO_DENIED and belongs in isolation")),
+        rationale=("the default focused implementer is codex; agy is reachable "
+                   "only with isolation and claude only within its cap")),
     ISOLATED_DELEGATE: ProviderPolicy(
         role=ISOLATED_DELEGATE,
         candidates=("agy", "codex"),
@@ -100,7 +105,7 @@ ROLE_POLICY: dict[str, ProviderPolicy] = {
                    "run somewhere the project is not")),
     CRITIC: ProviderPolicy(
         role=CRITIC,
-        candidates=("codex", "claude", "gemini"),
+        candidates=("codex", "agy", "claude", "gemini"),
         original_root_ok=True, writes=False, max_effort="medium",
         rationale=("advisory only; the orchestrator additionally excludes the "
                    "provider that authored the thing under review")),
@@ -192,3 +197,163 @@ def economics(scorecard: dict, provider_id: str, role: str) -> dict:
                  f"this router requires. Unmeasured is not cheap: this pair is "
                  f"ranked on verified success and latency only"),
     }
+
+
+# --------------------------------------------------------------------------
+# Quota: the operator's constraint, which is not the same as cost
+# --------------------------------------------------------------------------
+
+@dataclasses.dataclass(frozen=True)
+class ProviderCap:
+    """A ceiling on one provider, expressed in what the operator actually owns.
+
+    `cost_tier` cannot say this. An Agy subscription already paid for and a
+    Codex allowance are not USD, and an operator who wants Claude used sparingly
+    is stating a constraint about their own budget rather than a belief about
+    which model is better. So the cap is a COUNT, enforced before any score.
+
+    `fallback_allowed=False` is the important default: a capped provider that is
+    still reachable by falling back is not capped, it is discouraged, and the
+    difference shows up as a bill.
+    """
+
+    max_calls: int | None = None
+    #: Enforced only where the provider reports it. `providers/usage.py` parses
+    #: claude's envelope and nothing else's, so a cap here on an unmeasured
+    #: provider would be a limit nobody could apply.
+    max_thinking_tokens: int | None = None
+    fallback_allowed: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
+class ProviderPreferences:
+    """Who to prefer once eligibility is settled. Never a way around eligibility.
+
+    `subscription_first` is the honest name for the default: it ranks by what the
+    operator has already paid for, NOT by measured economics, because
+    `providers/usage.py` can price exactly one provider and ranking three on one
+    measurement would be a formula pretending to be evidence.
+    """
+
+    mode: str = "subscription_first"
+    preferred: tuple = ("agy", "codex")
+    caps: dict = dataclasses.field(default_factory=lambda: {
+        "claude": ProviderCap(max_calls=2, fallback_allowed=False)})
+
+    def cap_for(self, provider_id: str) -> ProviderCap | None:
+        return self.caps.get(provider_id)
+
+    def to_dict(self) -> dict:
+        return {"mode": self.mode, "preferred": list(self.preferred),
+                "caps": {k: dataclasses.asdict(v)
+                         for k, v in self.caps.items()}}
+
+
+#: Order used while a role has too few measurements to rank on. Encodes the
+#: operator's constraint, and every entry is still filtered by `admissible()`
+#: first — Agy appears in `implement` only so it can be a FALLBACK once an
+#: isolated workspace exists, never as the first pick on the original tree.
+STATIC_SUBSCRIPTION_FIRST = {
+    IMPLEMENT: ("codex", "agy", "claude"),
+    ISOLATED_DELEGATE: ("agy", "codex"),
+    CRITIC: ("codex", "agy", "claude"),
+    ARCHITECT: ("codex", "claude"),
+}
+
+
+@dataclasses.dataclass(frozen=True)
+class PlacementContext:
+    """What the scheduler knows that the node does not.
+
+    `isolated` is the load-bearing field. It is not a hint: it decides whether a
+    provider measured writing under a read-only flag may run at all.
+    """
+
+    isolated: bool = False
+    original_root: str = ""
+    preferences: ProviderPreferences = dataclasses.field(
+        default_factory=ProviderPreferences)
+    #: Calls already spent per provider this session, counted at the adapter.
+    provider_calls: dict = dataclasses.field(default_factory=dict)
+
+    def spent(self, provider_id: str) -> int:
+        return int(self.provider_calls.get(provider_id, 0))
+
+    def quota_allows(self, provider_id: str) -> tuple[bool, str]:
+        """`(allowed, why_not)` — the cap, checked before anything is scored."""
+        cap = self.preferences.cap_for(provider_id)
+        if cap is None or cap.max_calls is None:
+            return True, ""
+        spent = self.spent(provider_id)
+        if spent < cap.max_calls:
+            return True, ""
+        return False, (f"{provider_id} has spent {spent}/{cap.max_calls} calls "
+                       f"this session; the cap is the operator's budget and is "
+                       f"not a tie-break")
+
+    def to_dict(self) -> dict:
+        return {"isolated": self.isolated,
+                "original_root": self.original_root,
+                "preferences": self.preferences.to_dict(),
+                "provider_calls": dict(self.provider_calls)}
+
+
+def first_preferred(eligible, role: str, preferences: ProviderPreferences
+                    ) -> str | None:
+    """The first eligible provider in the role's subscription-first order.
+
+    The role order comes first and `preferences.preferred` breaks its ties, so an
+    operator saying "prefer agy" cannot make agy the local implementer — that is
+    a safety property and this is a preference.
+    """
+    order = STATIC_SUBSCRIPTION_FIRST.get(role, ())
+    for pid in order:
+        if pid in eligible:
+            return pid
+    for pid in preferences.preferred:
+        if pid in eligible:
+            return pid
+    return eligible[0] if eligible else None
+
+
+#: Node kind -> role. The scheduler asks the NODE first (`provider_role` in its
+#: config) and falls back to this, so a graph builder that forgot to declare a
+#: role still lands somewhere defensible rather than on whatever the catalog
+#: happened to list first.
+NODE_ROLE = {
+    "implement": IMPLEMENT,
+    "execute": IMPLEMENT,
+    "patch": IMPLEMENT,
+    "scout": ISOLATED_DELEGATE,
+    "investigate": ISOLATED_DELEGATE,
+    "critic": CRITIC,
+    "judge": CRITIC,
+    "review": CRITIC,
+    "plan": ARCHITECT,
+    "architect": ARCHITECT,
+    "report": CRITIC,
+}
+
+
+def node_role_for(node_kind: str) -> str:
+    return NODE_ROLE.get(node_kind, IMPLEMENT)
+
+
+def governed() -> frozenset:
+    """Every provider any role table mentions.
+
+    The policy's SCOPE, stated rather than assumed. It governs the providers the
+    catalog ships and the operator's constraint is written about; a caller who
+    registers a fleet of their own is not covered by a table that has never
+    heard of it, and pretending otherwise would make the policy refuse every
+    node on such a machine.
+
+    This is a scope boundary and not an escape hatch: it applies only when NONE
+    of the installed providers is governed, and the placement records
+    `ungoverned_fleet` when it fires. On a machine with claude, codex or agy
+    installed it never does.
+    """
+    out: set = set()
+    for policy in ROLE_POLICY.values():
+        out.update(policy.candidates)
+    return frozenset(out)
