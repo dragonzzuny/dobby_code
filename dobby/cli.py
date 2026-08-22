@@ -1602,6 +1602,13 @@ def cmd_project(args):
               "events": store.events(project["project_id"])})
         return
 
+    if args.action == "scorecard":
+        # Read-only by construction: a scorecard that changed the thing it
+        # grades would be worthless as an input to changing the policy.
+        from .project.scorecard import policy_scorecard
+        _out(policy_scorecard(data, project["project_id"]))
+        return
+
     if args.action == "next":
         from .runtime.store import RunStore
         from .project.session import _unconfirmed_by_run
@@ -1659,6 +1666,7 @@ def cmd_project(args):
                            architect=args.architect,
                            architect_provider=args.architect_provider,
                            compile_plans=args.compile_plans,
+                           isolate=args.isolate,
                            replan=args.replan,
                            replan_provider=args.architect_provider))
             return
@@ -1668,7 +1676,8 @@ def cmd_project(args):
                      max_steps=args.max_steps,
                      architect=args.architect,
                      architect_provider=args.architect_provider,
-                     compile_plans=args.compile_plans))
+                     compile_plans=args.compile_plans,
+                     isolate=args.isolate))
         return
 
     if args.action == "close":
@@ -2096,7 +2105,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("action",
                    choices=["init", "status", "list", "next", "attach-run",
                             "open", "close", "events", "run", "plan",
-                            "check", "refine"])
+                            "check", "refine", "scorecard"])
     p.add_argument("work_item", nargs="?", default=None,
                    help="work item id for attach-run; session id for close; "
                         "the topic for plan")
@@ -2138,6 +2147,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--architect-provider", default=None,
                    help="run: provider for the architect role (default: the "
                         "catalog's preference for `architect`)")
+    p.add_argument("--isolate", action="store_true",
+                   help="run: execute the item in a detached git worktree and "
+                        "let its changes back in only through the merge gate — "
+                        "every changed path inside the plan's declared "
+                        "write_set, outside protected_paths, and the project's "
+                        "own smoke checks passing afterwards or the whole merge "
+                        "is reverted. Needs an applied plan with a write_set; "
+                        "without one the run stops rather than quietly running "
+                        "unisolated")
     p.add_argument("--replan", action="store_true",
                    help="run: when a blocked item's own checks give nothing to "
                         "repair, carry the run's failure back to the architect "

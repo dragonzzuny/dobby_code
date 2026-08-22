@@ -68,10 +68,16 @@ BASELINE_FAILED = "baseline_failed"
 ITEM_BLOCKED = "item_blocked"
 MAX_ITEMS = "max_items"
 
+#: The caller asked for an isolated run and it could not be given: no git, no
+#: commits, or no declared write set to gate the result against. Reported rather
+#: than quietly downgraded to an unisolated run, because an operator who asked
+#: for isolation and silently did not get it is worse off than one who was told.
+ISOLATION_UNAVAILABLE = "isolation_unavailable"
+
 STOP_REASONS = (PORTFOLIO_COMPLETE, NOTHING_STARTABLE, NEEDS_ARCHITECT,
                 NEEDS_DISCOVERY, NEEDS_HUMAN_APPROVAL, PLAN_REJECTED,
                 NEEDS_RECONCILIATION, BASELINE_FAILED, ITEM_BLOCKED,
-                MAX_ITEMS)
+                ISOLATION_UNAVAILABLE, MAX_ITEMS)
 
 #: A ceiling on an unbounded drain. Not a tuning knob — a runaway guard, so a
 #: portfolio that somehow keeps producing startable items cannot spend a machine
@@ -110,7 +116,8 @@ def advance(data_dir: str, *, project_id: str | None = None,
             provider: str | None = None, execute_command: str | None = None,
             max_items: int = 1, max_steps: int = 100, budget=None,
             architect: bool = False, architect_provider: str | None = None,
-            propose=None, compile_plans: bool = False) -> dict:
+            propose=None, compile_plans: bool = False,
+            isolate: bool = False) -> dict:
     """Carry the portfolio forward, and say why it stopped.
 
     `max_items=0` drains until a stop reason, bounded by `DRAIN_CEILING`.
@@ -149,7 +156,8 @@ def advance(data_dir: str, *, project_id: str | None = None,
             max_steps=max_steps, budget=budget, make_graph=default_graph,
             make_runner=Runner, make_budget=RunBudget,
             architect=architect, architect_provider=architect_provider,
-            propose=propose, compile_plans=compile_plans)
+            propose=propose, compile_plans=compile_plans,
+            isolate=isolate)
         if step is not None:
             iterations.append(step)
             if step["item_state"] == DONE:
@@ -175,7 +183,7 @@ def advance(data_dir: str, *, project_id: str | None = None,
 def _one_item(data_dir, store, project_id, root, *, provider, execute_command,
               static, max_steps, budget, make_graph, make_runner, make_budget,
               architect=False, architect_provider=None, propose=None,
-              compile_plans=False):
+              compile_plans=False, isolate=False):
     """One shift. Returns `(step_record | None, stop | None)`.
 
     A record with no stop means carry on; a stop with no record means the loop
@@ -230,25 +238,75 @@ def _one_item(data_dir, store, project_id, root, *, provider, execute_command,
         make_graph=make_graph, provider=provider,
         execute_command=execute_command, static=static,
         compile_plans=compile_plans)
-    runner = make_runner(root, data_dir=data_dir)
-    run_id = runner.start(item.outcome or item.title, graph,
-                          budget=budget or make_budget())
+    # Isolation runs the graph somewhere the project is NOT, and the changes
+    # come back only through `workspace.merge`'s gate. It makes PK-2 stricter
+    # rather than looser: promotion still needs a SUCCEEDED run with a promoted
+    # artifact, and now additionally that the change was allowed in.
+    workspace_report = None
+    if isolate:
+        from .workspace import (MergeRefused, changed_paths, declared_write_set,
+                                isolated, merge)
+        allowed = declared_write_set(store, project_id, item)
+        if not allowed:
+            return None, (ISOLATION_UNAVAILABLE,
+                          f"{item.work_item_id} has no declared write set: "
+                          f"isolation was requested and its result could not be "
+                          f"gated against anything. Apply a plan whose "
+                          f"implementing step names a write_set, or run without "
+                          f"--isolate")
+        with isolated(root, label=item.work_item_id) as (tree, why):
+            if tree is None:
+                return None, (ISOLATION_UNAVAILABLE, why)
+            runner = make_runner(tree, data_dir=data_dir)
+            run_id = runner.start(item.outcome or item.title, graph,
+                                  budget=budget or make_budget())
+            attach_run(data_dir, item.work_item_id, run_id,
+                       project_id=project_id)
+            result = runner.run(run_id, budget=budget or make_budget(),
+                                max_steps=max_steps)
+            try:
+                workspace_report = merge(
+                    changed_paths(tree), worktree=tree, root=root,
+                    allowed=allowed,
+                    smoke=tuple(project["manifest"].smoke_checks))
+            except MergeRefused as exc:
+                workspace_report = {"merged": False, "refused": str(exc)}
+    else:
+        runner = make_runner(root, data_dir=data_dir)
+        run_id = runner.start(item.outcome or item.title, graph,
+                              budget=budget or make_budget())
 
-    # Attached BEFORE the run, so a crash leaves an item that points at the run
-    # rather than an orphan run and an item that looks untouched.
-    attach_run(data_dir, item.work_item_id, run_id, project_id=project_id)
-    result = runner.run(run_id, budget=budget or make_budget(),
-                        max_steps=max_steps)
+        # Attached BEFORE the run, so a crash leaves an item that points at the
+        # run rather than an orphan run and an item that looks untouched.
+        attach_run(data_dir, item.work_item_id, run_id, project_id=project_id)
+        result = runner.run(run_id, budget=budget or make_budget(),
+                            max_steps=max_steps)
 
     # PK-2, applied by `close_session`: the RUN decides, not this function and
-    # not whatever the report said.
-    closed = close_session(data_dir, envelope.session_id)
+    # not whatever the report said. A refused merge withholds the promotion
+    # instead of overriding it — an item whose changes never entered the project
+    # has not done the work, however cleanly it did it elsewhere.
+    merged_ok = workspace_report is None or workspace_report.get("merged")
+    closed = close_session(data_dir, envelope.session_id, promote=merged_ok)
+    if not merged_ok:
+        blocked = store.load_project(project_id)["portfolio"].get(
+            item.work_item_id)
+        blocked.state = BLOCKED
+        blocked.blocked_reason = (
+            workspace_report.get("refused")
+            or workspace_report.get("note")
+            or "the isolated changes were not merged")
+        store.update_item(
+            blocked,
+            expected_version=store.load_project(project_id)["portfolio"].version,
+            reason="isolated run was not merged")
     judged = store.load_project(project_id)["portfolio"].get(item.work_item_id)
 
     step = {"session_id": envelope.session_id,
             "work_item_id": item.work_item_id,
             "title": item.title,
             "graph": shape,
+            "workspace": workspace_report,
             "run_id": run_id,
             "run_state": result.state,
             "item_state": judged.state,
