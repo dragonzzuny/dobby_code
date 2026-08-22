@@ -25,9 +25,17 @@ import subprocess
 from dataclasses import dataclass, field
 
 from ..core.platform import child_env, resolve_command
-from .contracts import SCHEMAS
-from .failures import (Failure, classify_command_failure,
-                       classify_provider_error, CONTRACT_VIOLATION)
+from . import effects
+from .contracts import (EXTERNAL_IRREVERSIBLE, EXTERNAL_REVERSIBLE,
+                        LOCAL_WRITE, SCHEMAS)
+from .failures import (EFFECT_NOT_OBSERVED, Failure, PERMISSION_DENIED,
+                       classify_command_failure, classify_provider_error,
+                       CONTRACT_VIOLATION)
+
+#: Side-effect classes that mean this node is expected to CHANGE something, and
+#: therefore both needs a permission and owes an observable trace.
+WRITING_CLASSES = frozenset({LOCAL_WRITE, EXTERNAL_REVERSIBLE,
+                             EXTERNAL_IRREVERSIBLE})
 
 #: A node's own wall clock. Separate from the provider timeout because a node
 #: may be a test suite rather than a model call.
@@ -251,9 +259,33 @@ class ProviderWorker(WorkerAdapter):
                 "NON_RETRYABLE", f"unknown provider {provider_id!r}: {exc}"))
 
         prompt = self._prompt(node, context)
+        root = context.get("cwd") or context.get("repo")
+
+        # THE DECLARED SIDE EFFECT HAS TO REACH THE CLI AS A PERMISSION.
+        # It did not, and the measured consequence was a node that returned ok
+        # having created nothing: `write_extra` is the catalog's opt-in for a CLI
+        # that may edit files and this call never passed it, so claude ran under
+        # its default `--permission-mode plan`. The grant is the MINIMUM: only a
+        # writing class gets it, a read-only node is unchanged, and a provider
+        # whose write flag nobody verified has an empty tuple and gets nothing.
+        writes = node.contract.side_effect_class in WRITING_CLASSES
+        grant = tuple(spec.write_extra) if writes else ()
+        if writes and not grant:
+            return WorkerResult(False, failure=Failure(
+                PERMISSION_DENIED,
+                f"node {node.node_id!r} declares "
+                f"{node.contract.side_effect_class} and nobody has verified how "
+                f"to grant {provider_id} edit rights (its write_extra is "
+                f"empty). Running it read-only would produce a call that "
+                f"succeeds and changes nothing",
+                evidence={"provider": provider_id,
+                          "side_effect_class": node.contract.side_effect_class}))
+
+        before = (effects.snapshot(root, node.contract.expected_paths)
+                  if writes and root else None)
         result = run_provider(
             spec, prompt, model=node.config.get("model"),
-            cwd=context.get("cwd") or context.get("repo"),
+            cwd=root, extra=grant,
             timeout_s=node.config.get("timeout_s"))
         meta = {"provider": provider_id, "model": node.config.get("model"),
                 "duration_s": result.duration_s, "prompt_chars": len(prompt)}
@@ -270,6 +302,45 @@ class ProviderWorker(WorkerAdapter):
                     empty_output=(result.exit_code == 0
                                   and not (result.text or "").strip())),
                 meta=meta)
+
+        # A REFUSED TOOL IS NOT A SUCCESSFUL CALL THAT HAPPENED TO DO NOTHING.
+        # The provider says so itself when it reports structured output, and the
+        # distinction is the whole point: "it chose not to" and "it could not"
+        # need different responses, and only one of them is the harness's fault.
+        denials = result.meta.get("permission_denials") or []
+        if writes and denials:
+            return WorkerResult(
+                False, raw=result.text, meta=meta,
+                failure=Failure(
+                    PERMISSION_DENIED,
+                    f"{provider_id} was refused {len(denials)} tool "
+                    f"permission(s) while performing a declared "
+                    f"{node.contract.side_effect_class}; the call returned but "
+                    f"the work was not permitted",
+                    evidence={"provider": provider_id, "denials": denials[:5]}))
+
+        # FAIL-CLOSED ON THE DECLARED EFFECT. This runs BEFORE the schema check
+        # and before any acceptance check, because it answers a smaller and
+        # earlier question than either: did the thing this node said it would do
+        # leave a trace. A well-shaped payload describing work that did not
+        # happen is exactly the failure this was built after.
+        if before is not None:
+            happened, detail = effects.observed(
+                before, effects.snapshot(root, node.contract.expected_paths))
+            meta["effect_observed"] = happened
+            meta["effect_detail"] = detail
+            if not happened:
+                return WorkerResult(
+                    False, raw=result.text, meta=meta,
+                    failure=Failure(
+                        EFFECT_NOT_OBSERVED,
+                        f"node {node.node_id!r} declares "
+                        f"{node.contract.side_effect_class} and the call "
+                        f"reported success, but {detail}. A worker that changed "
+                        f"nothing has not done the work its output describes",
+                        evidence={"provider": provider_id,
+                                  "expected_paths":
+                                      list(node.contract.expected_paths)}))
 
         schema = self._schema(node)
         if not schema:

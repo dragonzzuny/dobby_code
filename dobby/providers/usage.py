@@ -121,8 +121,16 @@ def parse_claude(envelope: dict) -> Usage:
 PARSERS = {"claude": parse_claude}
 
 
-def unwrap(provider_id: str, text: str) -> tuple[str, Usage | None]:
-    """`(answer, usage)` from a provider's structured envelope.
+#: Envelope fields that are not usage but ARE evidence. `permission_denials` is
+#: the provider saying it was refused a tool, which is the difference between "it
+#: chose not to" and "it could not" — and the second must never be reported as a
+#: successful call that simply did nothing.
+SIGNAL_KEYS = ("permission_denials", "is_error", "stop_reason",
+               "terminal_reason", "num_turns")
+
+
+def unwrap(provider_id: str, text: str) -> tuple[str, Usage | None, dict]:
+    """`(answer, usage, signals)` from a provider's structured envelope.
 
     A text that is not the expected envelope comes back UNCHANGED with no usage.
     That is the important half: a CLI that ignored the flag, a version that
@@ -131,18 +139,20 @@ def unwrap(provider_id: str, text: str) -> tuple[str, Usage | None]:
     """
     parser = PARSERS.get(provider_id)
     if parser is None or not text.strip():
-        return text, None
+        return text, None, {}
     try:
         envelope = json.loads(text)
     except (ValueError, TypeError):
-        return text, None
+        return text, None, {}
     if not isinstance(envelope, dict):
-        return text, None
+        return text, None, {}
     key = RESULT_KEY.get(provider_id)
     if key is None or key not in envelope:
-        return text, None
+        return text, None, {}
     answer = envelope.get(key)
-    return (answer if isinstance(answer, str) else text), parser(envelope)
+    signals = {k: envelope[k] for k in SIGNAL_KEYS if k in envelope}
+    return ((answer if isinstance(answer, str) else text), parser(envelope),
+            signals)
 
 
 def total(usages) -> dict:

@@ -258,9 +258,13 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
         # parse and returns the text unchanged with no usage — the honest
         # outcome, since a half-read envelope's numbers would be missing fields
         # rather than wrong ones, and neither is worth guessing at.
-        answer, parsed = unwrap(spec.id, capped)
+        answer, parsed, signals = unwrap(spec.id, capped)
         if parsed is not None:
             capped, usage = answer, parsed.to_dict()
+            # Evidence, not usage: a refused tool is why a call can succeed and
+            # accomplish nothing, and the worker above has to be able to tell
+            # that from a model that simply declined.
+            meta.update({k: v for k, v in signals.items() if v not in (None, [])})
 
     result = ProviderResult(provider=spec.id, ok=True, text=capped,
                             exit_code=0, duration_s=duration,

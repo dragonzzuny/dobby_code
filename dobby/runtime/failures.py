@@ -32,9 +32,21 @@ CONTRACT_VIOLATION = "CONTRACT_VIOLATION"
 QUALITY_FAILURE = "QUALITY_FAILURE"
 POLICY_BLOCKED = "POLICY_BLOCKED"
 NON_RETRYABLE = "NON_RETRYABLE"
+#: The node declared a side effect the provider was not permitted to perform.
+#: Distinct from POLICY_BLOCKED, which is a human withholding approval: this is
+#: the harness having granted less than the work required, and it is the harness
+#: that has to change.
+PERMISSION_DENIED = "PERMISSION_DENIED"
+#: The node declared a side effect, the call reported success, and the effect did
+#: not happen. Its own class because it is not a contract violation — the OUTPUT
+#: may be perfectly well-shaped — and not a quality failure, because no
+#: acceptance check has run yet. It is a worker reporting a result it had no
+#: basis for.
+EFFECT_NOT_OBSERVED = "EFFECT_NOT_OBSERVED"
 
 FAILURE_CLASSES = (TRANSIENT_PROVIDER, CAPACITY, CONTRACT_VIOLATION,
-                   QUALITY_FAILURE, POLICY_BLOCKED, NON_RETRYABLE)
+                   QUALITY_FAILURE, POLICY_BLOCKED, NON_RETRYABLE,
+                   PERMISSION_DENIED, EFFECT_NOT_OBSERVED)
 
 #: What to do about it. `WAIT` is not a failure action in the retry sense — it
 #: parks the node without consuming an attempt, because a node waiting for a
@@ -95,6 +107,14 @@ DEFAULT_POLICY: dict[str, RetryRule] = {
     NON_RETRYABLE: RetryRule(
         FAIL, max_attempts=1, backoff_s=0.0,
         rationale="nothing about repeating this changes its outcome"),
+    PERMISSION_DENIED: RetryRule(
+        FAIL, max_attempts=1, backoff_s=0.0,
+        rationale="the same call with the same grant is refused the same way; "
+                  "this is a configuration to change, not a call to repeat"),
+    EFFECT_NOT_OBSERVED: RetryRule(
+        REPAIR, max_attempts=2, backoff_s=0.0,
+        rationale="the provider answered and changed nothing; the repair states "
+                  "that plainly, which resending the identical prompt does not"),
 }
 
 

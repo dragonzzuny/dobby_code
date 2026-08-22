@@ -193,6 +193,12 @@ class ArtifactContract:
     input_refs: list[str] = field(default_factory=list)
     #: Bumped by hand when the same node id should be allowed to act again.
     effect_version: str = "1"
+    #: Repo-relative paths a WRITING node says it will touch. Checked by
+    #: `runtime/effects.py` before any acceptance check runs: a node that
+    #: declared a side effect and left no trace of it did not do its work,
+    #: whatever its output said. Empty means "check the tree instead", which is
+    #: weaker and still fail-closed. Ignored entirely for non-writing classes.
+    expected_paths: list[str] = field(default_factory=list)
     #: The grounded layer: does the quoted evidence exist, and does a
     #: recomputation agree with the reported number. See `verify.ground`.
     #:

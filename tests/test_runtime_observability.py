@@ -162,10 +162,26 @@ class MetricsOnAnEmptyStore(unittest.TestCase):
         self.assertIn("task_success_at_verifier", report["unmeasured"])
 
     def test_cost_is_reported_as_unmeasurable_rather_than_omitted(self):
+        """The property, not the sentence.
+
+        This asserted the literal phrase "cannot see money" until 2026-08-22,
+        when that stopped being true: `claude -p --output-format json` was probed
+        and returns `total_cost_usd` and full token counts, so the note now says
+        the measurement is MISSING rather than impossible. Pinning the wording
+        made a correction to a false claim look like a regression.
+
+        What must hold is unchanged and is what is checked: on a store with no
+        usage, the value is None and the row is PRESENT with a reason. A metrics
+        table missing the cost row reads as "cost is fine".
+        """
         report = metrics_report(self.store)
-        self.assertIsNone(report["cost_per_verified_task"]["value"])
-        self.assertIn("cannot see money",
-                      report["cost_per_verified_task"]["note"])
+        cost = report["cost_per_verified_task"]
+        self.assertIsNone(cost["value"])
+        self.assertEqual(cost["n"], 0)
+        self.assertTrue(cost["note"].strip(),
+                        "a null cost with no reason is indistinguishable from "
+                        "an omitted one")
+        self.assertIn("cost_per_verified_task", report["unmeasured"])
 
     def test_the_scorecard_is_empty_not_absent(self):
         self.assertEqual(scorecard(self.store), {})
