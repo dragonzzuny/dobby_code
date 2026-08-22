@@ -99,6 +99,15 @@ class ProviderSpec:
     #: as a harness failure when the provider had simply never been allowed to
     #: write.
     write_extra: tuple[str, ...] = ()
+    #: Extra argv that makes this CLI report its own token usage and cost, or ()
+    #: when nobody has verified how. Beside `write_extra` and read the same way:
+    #: empty is a refusal, not "no flag needed".
+    #:
+    #: `claude --output-format json` was probed and returns input/output/thinking
+    #: tokens, both cache counters and `total_cost_usd`. Nobody has run
+    #: `codex exec --json` and looked, so it stays empty and its usage reports as
+    #: not measured rather than as zero.
+    usage_extra: tuple[str, ...] = ()
     #: What is actually known about this CLI's behaviour when `write_extra` is
     #: NOT passed. Four values, because "read-only" has turned out to mean four
     #: different things here and a boolean merged them:
@@ -184,6 +193,11 @@ class ProviderResult:
     error: str | None = None
     #: Free-form provenance for the ledger (argv shape, model, cwd).
     meta: dict = dataclasses.field(default_factory=dict)
+    #: Tokens and cost AS THE PROVIDER REPORTED THEM, or None when this call did
+    #: not ask for them or this provider does not report them. None is not zero:
+    #: `providers/usage.py` keeps the two apart because a zero enters a mean and
+    #: an unmeasured call must not.
+    usage: dict | None = None
 
     def to_dict(self) -> dict:
         d = dataclasses.asdict(self)

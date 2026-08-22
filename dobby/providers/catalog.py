@@ -180,6 +180,10 @@ CATALOG: tuple[ProviderSpec, ...] = (
         # The catalog's own argv ends with `--permission-mode plan`, which is
         # read-only. Extras are appended last and therefore override it.
         write_extra=("--permission-mode", "acceptEdits"),
+        # Probed 2026-08-22: returns total_cost_usd, usage.input_tokens,
+        # usage.output_tokens, usage.output_tokens_details.thinking_tokens and
+        # both cache counters. The cost is the vendor's own figure.
+        usage_extra=("--output-format", "json"),
         capabilities=("files", "shell", "web", "vision", "long_context"),
         # `--permission-mode plan` is documented by the vendor as read-only and the
         # default argv pins it. CLAIMED, not VERIFIED: no write probe has been run

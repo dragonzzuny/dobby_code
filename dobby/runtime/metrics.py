@@ -11,12 +11,20 @@ collapsing the two is how a dashboard comes to show 0% success for a system
 nobody has run. Every summary therefore carries an `n` alongside its value, and
 `unmeasured` lists what could not be computed at all.
 
-Cost is the sharpest case. This kit cannot see money: CLI providers do not
-report token usage, and `spend.py` says so at length about tokens. So
-`cost_per_verified_task` returns `None` with a reason, and the scheduler ranks
-by the catalog's declared `cost_tier` — an ordering, explicitly not a price.
-Presenting a tier as a dollar figure would be the exact defect the rest of this
-repository is written to avoid.
+Cost is the sharpest case, and the claim here has NARROWED. This module used to
+say flatly that the kit cannot see money because CLI providers do not report
+token usage. Measured 2026-08-22, that is false for one of them:
+`claude -p --output-format json` returns `total_cost_usd`, input/output/thinking
+tokens and both cache counters — the vendor's own figures, not a price table this
+repository maintains. `providers/usage.py` parses them and `run_provider` will
+collect them when asked.
+
+What remains true is everything else: no other CLI has been probed, the runs in
+this store predate the instrumentation, and a call made without
+`collect_usage=True` reports nothing. So `cost_per_verified_task` still returns
+`None` here, and now for a reason that can be fixed rather than one that cannot.
+The scheduler still ranks by the catalog's declared `cost_tier` — an ordering,
+explicitly not a price.
 """
 
 from __future__ import annotations
@@ -110,9 +118,13 @@ def cost_per_verified_task(store, *, limit: int = 500) -> Measurement:
     """
     return Measurement(
         None, 0, "usd",
-        "this engine cannot see money: CLI providers do not report token usage "
-        "and no price table is configured. agent_seconds_per_verified_task is "
-        "the measurable neighbour")
+        "no run in this store carries provider usage. Token and cost reporting "
+        "exists as of 2026-08-22 (providers/usage.py, run_provider("
+        "collect_usage=True), verified against claude --output-format json) but "
+        "nothing has yet run through it, and these runs predate it. This is a "
+        "missing measurement, not an impossible one — which is a change from "
+        "what this function used to say. agent_seconds_per_verified_task is the "
+        "neighbour that is measurable today")
 
 
 def agent_seconds_per_verified_task(store, *, limit: int = 500) -> Measurement:

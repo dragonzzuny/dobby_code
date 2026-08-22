@@ -31,6 +31,8 @@ be attacker-influenced, e.g. an issue body — to become shell syntax.
 
 from __future__ import annotations
 
+import contextlib
+
 import os
 import subprocess
 import time
@@ -47,14 +49,62 @@ from .catalog import registry
 DEFAULT_OUTPUT_CAP = 24_000
 
 
+# -- call recording ----------------------------------------------------------
+#: When a recorder is active, every completed `run_provider` call is appended to
+#: it and usage collection defaults ON. This exists so "how many provider calls
+#: did that cost" is a MEASUREMENT taken at the one place calls actually happen,
+#: rather than a number an orchestrator believes about itself. An orchestrator
+#: that counted its own intentions would miss a retry inside a worker, and the
+#: retry is exactly what a benchmark is trying to see.
+_RECORDER: list | None = None
+
+
+@contextlib.contextmanager
+def recording(sink: list | None = None, *, collect_usage: bool = True):
+    """Record every provider call made inside the block. Yields the sink list.
+
+    Nested use is refused rather than silently nesting: two active recorders
+    would each hold a partial count and neither would be wrong in a way anybody
+    could detect.
+    """
+    global _RECORDER, _COLLECT_DEFAULT
+    if _RECORDER is not None:
+        raise RuntimeError(
+            "a provider-call recorder is already active; nesting them produces "
+            "two partial counts and no way to tell which is which")
+    sink = [] if sink is None else sink
+    _RECORDER, previous = sink, _COLLECT_DEFAULT
+    _COLLECT_DEFAULT = collect_usage
+    try:
+        yield sink
+    finally:
+        _RECORDER, _COLLECT_DEFAULT = None, previous
+
+
+#: Default for `run_provider(collect_usage=...)`. False outside a recorder, so
+#: nothing in normal operation changes what a CLI prints.
+_COLLECT_DEFAULT = False
+
+
 def run_provider(spec: ProviderSpec, prompt: str, *,
                  model: str | None = None,
                  extra: Sequence[str] = (),
                  cwd: str | None = None,
                  timeout_s: int | None = None,
                  output_cap: int = DEFAULT_OUTPUT_CAP,
-                 env_extra: dict | None = None) -> ProviderResult:
-    """Run `spec` once on `prompt` and return its outcome as data."""
+                 env_extra: dict | None = None,
+                 collect_usage: bool | None = None) -> ProviderResult:
+    """Run `spec` once on `prompt` and return its outcome as data.
+
+    `collect_usage` appends the spec's `usage_extra` and unwraps the structured
+    envelope the CLI then writes, so `text` still holds the ANSWER and `usage`
+    holds what the provider said it consumed. Off by default and deliberately:
+    the flag changes what the CLI prints, and every existing caller reads `text`
+    as the answer, so switching it on globally would turn all of them into parser
+    bugs at once. A provider with no `usage_extra` is unchanged by asking.
+    """
+    collect_usage = (_COLLECT_DEFAULT if collect_usage is None
+                     else collect_usage)
     if spec.kind != "cli":
         return ProviderResult(
             provider=spec.id, ok=False,
@@ -66,6 +116,13 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
             provider=spec.id, ok=False,
             error=f"binary {spec.binary!r} not on PATH")
 
+    extra = tuple(extra)
+    if collect_usage and spec.usage_extra:
+        # Appended last, like every other extra, so it wins over a default the
+        # argv builder set. A caller that passed its own output-format flag
+        # therefore still overrides this, and the parse below degrades to
+        # "unmeasured" rather than breaking.
+        extra = extra + tuple(spec.usage_extra)
     argv = spec.build_argv(prompt, model, extra)
 
     # Launch the RESOLVED path, not the bare name. `shutil.which` and
@@ -194,9 +251,23 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
                    "output-format flag")),
             meta=meta)
 
-    return ProviderResult(provider=spec.id, ok=True, text=capped,
-                          exit_code=0, duration_s=duration,
-                          truncated=truncated, meta=meta)
+    usage = None
+    if collect_usage and spec.usage_extra:
+        from .usage import unwrap
+        # `capped` may be a TRUNCATED envelope, in which case `unwrap` fails to
+        # parse and returns the text unchanged with no usage — the honest
+        # outcome, since a half-read envelope's numbers would be missing fields
+        # rather than wrong ones, and neither is worth guessing at.
+        answer, parsed = unwrap(spec.id, capped)
+        if parsed is not None:
+            capped, usage = answer, parsed.to_dict()
+
+    result = ProviderResult(provider=spec.id, ok=True, text=capped,
+                            exit_code=0, duration_s=duration,
+                            truncated=truncated, meta=meta, usage=usage)
+    if _RECORDER is not None:
+        _RECORDER.append(result)
+    return result
 
 
 def run_by_id(pid: str, prompt: str, **kwargs) -> ProviderResult:
