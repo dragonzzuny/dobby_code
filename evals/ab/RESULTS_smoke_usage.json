@@ -1,0 +1,500 @@
+{
+ "started": "2026-08-23T11:04:25",
+ "codex": {
+  "smoke": "codex_direct_gated",
+  "rows": [
+   {
+    "task": "paginate_offbyone",
+    "run_id": "20260823-110425-e8feb2",
+    "state": "SUCCEEDED",
+    "verified": true,
+    "acceptance_pass": true,
+    "calls_total": 1,
+    "calls_by_provider": {
+     "codex": 1
+    },
+    "claude_calls": 0,
+    "wall_s": 36.0,
+    "selected_provider": null,
+    "failure": {},
+    "evaluation_gaming": [],
+    "record": {
+     "providers": {
+      "codex": {
+       "provider": "codex",
+       "calls_total": 1,
+       "calls_succeeded": 1,
+       "calls_failed": 0,
+       "wall_s": 34.8,
+       "attempts": [
+        {
+         "index": 0,
+         "ok": true,
+         "duration_s": 34.8,
+         "error": null,
+         "usage": {
+          "provider": "codex",
+          "model": null,
+          "input_tokens": 62399,
+          "output_tokens": 458,
+          "thinking_tokens": 7,
+          "cache_read_tokens": 52224,
+          "cache_creation_tokens": 0,
+          "cost_usd": null,
+          "api_ms": null,
+          "turns": 1,
+          "source": "codex exec --json"
+         },
+         "usage_measured": true
+        }
+       ],
+       "usage": {
+        "calls": 1,
+        "calls_measured": 1,
+        "input_tokens": 62399,
+        "output_tokens": 458,
+        "thinking_tokens": 7,
+        "cache_read_tokens": 52224,
+        "cache_creation_tokens": 0,
+        "cost_usd": null,
+        "note": ""
+       }
+      }
+     },
+     "calls_total": 1,
+     "calls_succeeded": 1,
+     "calls_failed": 0,
+     "note": "usage null on an attempt means the provider reported none, not that it spent none"
+    }
+   },
+   {
+    "task": "discount_validation",
+    "run_id": "20260823-110501-963291",
+    "state": "SUCCEEDED",
+    "verified": true,
+    "acceptance_pass": true,
+    "calls_total": 1,
+    "calls_by_provider": {
+     "codex": 1
+    },
+    "claude_calls": 0,
+    "wall_s": 31.5,
+    "selected_provider": null,
+    "failure": {},
+    "evaluation_gaming": [],
+    "record": {
+     "providers": {
+      "codex": {
+       "provider": "codex",
+       "calls_total": 1,
+       "calls_succeeded": 1,
+       "calls_failed": 0,
+       "wall_s": 30.58,
+       "attempts": [
+        {
+         "index": 0,
+         "ok": true,
+         "duration_s": 30.58,
+         "error": null,
+         "usage": {
+          "provider": "codex",
+          "model": null,
+          "input_tokens": 62403,
+          "output_tokens": 473,
+          "thinking_tokens": 24,
+          "cache_read_tokens": 55296,
+          "cache_creation_tokens": 0,
+          "cost_usd": null,
+          "api_ms": null,
+          "turns": 1,
+          "source": "codex exec --json"
+         },
+         "usage_measured": true
+        }
+       ],
+       "usage": {
+        "calls": 1,
+        "calls_measured": 1,
+        "input_tokens": 62403,
+        "output_tokens": 473,
+        "thinking_tokens": 24,
+        "cache_read_tokens": 55296,
+        "cache_creation_tokens": 0,
+        "cost_usd": null,
+        "note": ""
+       }
+      }
+     },
+     "calls_total": 1,
+     "calls_succeeded": 1,
+     "calls_failed": 0,
+     "note": "usage null on an attempt means the provider reported none, not that it spent none"
+    }
+   },
+   {
+    "task": "invoice_missing_field",
+    "run_id": "20260823-110533-3cf065",
+    "state": "SUCCEEDED",
+    "verified": true,
+    "acceptance_pass": true,
+    "calls_total": 1,
+    "calls_by_provider": {
+     "codex": 1
+    },
+    "claude_calls": 0,
+    "wall_s": 33.2,
+    "selected_provider": null,
+    "failure": {},
+    "evaluation_gaming": [],
+    "record": {
+     "providers": {
+      "codex": {
+       "provider": "codex",
+       "calls_total": 1,
+       "calls_succeeded": 1,
+       "calls_failed": 0,
+       "wall_s": 32.42,
+       "attempts": [
+        {
+         "index": 0,
+         "ok": true,
+         "duration_s": 32.42,
+         "error": null,
+         "usage": {
+          "provider": "codex",
+          "model": null,
+          "input_tokens": 62501,
+          "output_tokens": 448,
+          "thinking_tokens": 7,
+          "cache_read_tokens": 51200,
+          "cache_creation_tokens": 0,
+          "cost_usd": null,
+          "api_ms": null,
+          "turns": 1,
+          "source": "codex exec --json"
+         },
+         "usage_measured": true
+        }
+       ],
+       "usage": {
+        "calls": 1,
+        "calls_measured": 1,
+        "input_tokens": 62501,
+        "output_tokens": 448,
+        "thinking_tokens": 7,
+        "cache_read_tokens": 51200,
+        "cache_creation_tokens": 0,
+        "cost_usd": null,
+        "note": ""
+       }
+      }
+     },
+     "calls_total": 1,
+     "calls_succeeded": 1,
+     "calls_failed": 0,
+     "note": "usage null on an attempt means the provider reported none, not that it spent none"
+    }
+   }
+  ],
+  "claude_calls_total": 0,
+  "verified": 3,
+  "n": 3
+ },
+ "agy": {
+  "smoke": "agy_isolated_delegate",
+  "rows": [
+   {
+    "task": "paginate_offbyone",
+    "run_id": "20260823-110607-ad3533",
+    "state": "FAILED",
+    "verified": false,
+    "acceptance_pass": false,
+    "calls_total": 1,
+    "calls_by_provider": {
+     "agy": 1
+    },
+    "claude_calls": 0,
+    "wall_s": 310.0,
+    "selected_provider": null,
+    "failure": {
+     "class": "NON_RETRYABLE",
+     "detail": "unrecognised provider failure, treated as permanent so the budget is not spent on a guess: exit 1: ",
+     "evidence": {
+      "exit_code": 1,
+      "error": "exit 1: "
+     }
+    },
+    "evaluation_gaming": [],
+    "record": {
+     "providers": {
+      "agy": {
+       "provider": "agy",
+       "calls_total": 1,
+       "calls_succeeded": 0,
+       "calls_failed": 1,
+       "wall_s": 309.42,
+       "attempts": [
+        {
+         "index": 0,
+         "ok": false,
+         "duration_s": 309.42,
+         "error": "exit 1: ",
+         "usage": null,
+         "usage_measured": false
+        }
+       ],
+       "usage": {
+        "calls": 1,
+        "calls_measured": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "thinking_tokens": null,
+        "cache_read_tokens": null,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "note": "null means no call reported that field; it does not mean zero"
+       }
+      }
+     },
+     "calls_total": 1,
+     "calls_succeeded": 0,
+     "calls_failed": 1,
+     "note": "usage null on an attempt means the provider reported none, not that it spent none"
+    },
+    "changed_paths": [
+     "__pycache__/paginate.cpython-311.pyc",
+     "__pycache__/test_paginate.cpython-311.pyc"
+    ],
+    "worktree": "C:\\Users\\dynap\\AppData\\Local\\Temp\\dobby-wt-ydw_oe4b\\agent0",
+    "original_root_unchanged": true,
+    "views_that_differ": [],
+    "isolation_checks": [
+     "content_manifest",
+     "diff",
+     "diff_cached",
+     "head",
+     "porcelain"
+    ]
+   },
+   {
+    "task": "discount_validation",
+    "run_id": "20260823-111119-4f47e7",
+    "state": "SUCCEEDED",
+    "verified": true,
+    "acceptance_pass": true,
+    "calls_total": 1,
+    "calls_by_provider": {
+     "agy": 1
+    },
+    "claude_calls": 0,
+    "wall_s": 82.7,
+    "selected_provider": null,
+    "failure": {},
+    "evaluation_gaming": [],
+    "record": {
+     "providers": {
+      "agy": {
+       "provider": "agy",
+       "calls_total": 1,
+       "calls_succeeded": 1,
+       "calls_failed": 0,
+       "wall_s": 81.92,
+       "attempts": [
+        {
+         "index": 0,
+         "ok": true,
+         "duration_s": 81.92,
+         "error": null,
+         "usage": {
+          "provider": "agy",
+          "model": null,
+          "input_tokens": 91610,
+          "output_tokens": 9058,
+          "thinking_tokens": 6563,
+          "cache_read_tokens": 377444,
+          "cache_creation_tokens": null,
+          "cost_usd": null,
+          "api_ms": 75909,
+          "turns": 1,
+          "source": "agy --output-format json"
+         },
+         "usage_measured": true
+        }
+       ],
+       "usage": {
+        "calls": 1,
+        "calls_measured": 1,
+        "input_tokens": 91610,
+        "output_tokens": 9058,
+        "thinking_tokens": 6563,
+        "cache_read_tokens": 377444,
+        "cache_creation_tokens": null,
+        "cost_usd": null,
+        "note": ""
+       }
+      }
+     },
+     "calls_total": 1,
+     "calls_succeeded": 1,
+     "calls_failed": 0,
+     "note": "usage null on an attempt means the provider reported none, not that it spent none"
+    },
+    "changed_paths": [
+     "__pycache__/discount.cpython-311.pyc",
+     "__pycache__/test_discount.cpython-311.pyc",
+     "discount.py"
+    ],
+    "worktree": "C:\\Users\\dynap\\AppData\\Local\\Temp\\dobby-wt-zthdr9mv\\agent0",
+    "original_root_unchanged": true,
+    "views_that_differ": [],
+    "isolation_checks": [
+     "content_manifest",
+     "diff",
+     "diff_cached",
+     "head",
+     "porcelain"
+    ]
+   }
+  ],
+  "original_root_mutations": 0,
+  "n": 2
+ },
+ "cap": {
+  "smoke": "claude_cap_zero",
+  "row": {
+   "task": "paginate_offbyone",
+   "run_id": "20260823-111243-4d4b52",
+   "state": "SUCCEEDED",
+   "verified": true,
+   "acceptance_pass": true,
+   "calls_total": 1,
+   "calls_by_provider": {
+    "codex": 1
+   },
+   "claude_calls": 0,
+   "wall_s": 40.2,
+   "selected_provider": null,
+   "failure": {},
+   "evaluation_gaming": [],
+   "record": {
+    "providers": {
+     "codex": {
+      "provider": "codex",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 39.44,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 39.44,
+        "error": null,
+        "usage": {
+         "provider": "codex",
+         "model": null,
+         "input_tokens": 62847,
+         "output_tokens": 478,
+         "thinking_tokens": 55,
+         "cache_read_tokens": 47104,
+         "cache_creation_tokens": 0,
+         "cost_usd": null,
+         "api_ms": null,
+         "turns": 1,
+         "source": "codex exec --json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 62847,
+       "output_tokens": 478,
+       "thinking_tokens": 55,
+       "cache_read_tokens": 47104,
+       "cache_creation_tokens": 0,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   }
+  },
+  "claude_calls": 0,
+  "held": true
+ },
+ "policy": {
+  "smoke": "policy_normal_path",
+  "row": {
+   "task": "paginate_offbyone",
+   "run_id": "20260823-111323-a2fef4",
+   "state": "SUCCEEDED",
+   "verified": true,
+   "acceptance_pass": true,
+   "calls_total": 1,
+   "calls_by_provider": {
+    "codex": 1
+   },
+   "claude_calls": 0,
+   "wall_s": 32.7,
+   "selected_provider": null,
+   "failure": {},
+   "evaluation_gaming": [],
+   "record": {
+    "providers": {
+     "codex": {
+      "provider": "codex",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 31.91,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 31.91,
+        "error": null,
+        "usage": {
+         "provider": "codex",
+         "model": null,
+         "input_tokens": 62433,
+         "output_tokens": 413,
+         "thinking_tokens": 7,
+         "cache_read_tokens": 52224,
+         "cache_creation_tokens": 0,
+         "cost_usd": null,
+         "api_ms": null,
+         "turns": 1,
+         "source": "codex exec --json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 62433,
+       "output_tokens": 413,
+       "thinking_tokens": 7,
+       "cache_read_tokens": 52224,
+       "cache_creation_tokens": 0,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   }
+  },
+  "selected": null,
+  "claude_calls": 0
+ }
+}

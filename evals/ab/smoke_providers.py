@@ -38,12 +38,42 @@ from dobby.project.models import WorkItem
 from dobby.providers.policy import (PlacementContext, ProviderCap,
                                     ProviderPreferences)
 from dobby.providers.run import recording
+from dobby.providers.usage import roll_up
 from dobby.runtime.runner import Runner
 from dobby.runtime.scheduler import RunBudget
 
 sys.path.insert(0, os.path.dirname(__file__))
 from corpus_pilot import pilot_corpus          # noqa: E402
 from runner import fingerprint, fresh_tree, run_check, tampered  # noqa: E402
+
+
+def git_views(root: str) -> dict:
+    """The three views a reviewer asked for, plus a content manifest.
+
+    A HEAD comparison is not enough and neither is any one of these alone:
+    `git diff` misses staged changes, `--cached` misses unstaged ones, and both
+    miss untracked files entirely — which is the shape a delegate's output most
+    often takes. `--untracked-files=all` catches those, and the content manifest
+    catches a file rewritten to the same length with different bytes.
+    """
+    def run(*args):
+        proc = subprocess.run(["git", "-C", root, *args], capture_output=True,
+                              text=True, encoding="utf-8", errors="replace")
+        return (proc.stdout or "").strip()
+
+    return {
+        "head": run("rev-parse", "HEAD"),
+        "diff": run("diff", "--no-ext-diff"),
+        "diff_cached": run("diff", "--cached", "--no-ext-diff"),
+        "porcelain": run("status", "--porcelain", "--untracked-files=all"),
+        "content_manifest": tree_hash(root),
+    }
+
+
+def views_identical(before: dict, after: dict) -> tuple:
+    """`(unchanged, differing_views)` — named, not counted."""
+    differing = sorted(k for k in before if before[k] != after.get(k))
+    return (not differing), differing
 
 
 def tree_hash(root: str) -> str:
@@ -137,7 +167,10 @@ def run_once(task, root, *, provider, isolated=False, caps=None,
             "selected_provider"),
         "failure": (node.failure or {}) if node else {},
         "evaluation_gaming": gamed,
-        "usage": [c.usage for c in calls if c.usage],
+        # The unified record: per-provider calls_total / succeeded / failed and
+        # summed usage with its own denominator, so three CLIs that report three
+        # different subsets are still comparable on what they all report.
+        "record": roll_up(calls),
     }
 
 
@@ -166,7 +199,7 @@ def smoke_agy_isolated(base: str, corpus) -> dict:
         subprocess.run(["git", "-C", root, "-c", "user.email=t@t",
                         "-c", "user.name=t", "commit", "-qm", "fixture"],
                        capture_output=True)
-        before = tree_hash(root)
+        before = git_views(root)
 
         with isolate_tree(root) as (tree, why):
             if tree is None:
@@ -177,7 +210,10 @@ def smoke_agy_isolated(base: str, corpus) -> dict:
             manifest = changed_paths(tree)
             row["changed_paths"] = list(manifest.paths)
             row["worktree"] = tree
-        row["original_root_unchanged"] = (tree_hash(root) == before)
+        unchanged, differing = views_identical(before, git_views(root))
+        row["original_root_unchanged"] = unchanged
+        row["views_that_differ"] = differing
+        row["isolation_checks"] = sorted(before)
         rows.append(row)
 
     return {"smoke": "agy_isolated_delegate", "rows": rows,
@@ -208,10 +244,62 @@ def smoke_policy_path(base: str, corpus) -> dict:
             "claude_calls": row["claude_calls"]}
 
 
+def compare_providers(base: str, corpus, providers=("claude", "codex", "agy")
+                      ) -> dict:
+    """The same three fixtures through each provider, one gated call each.
+
+    Same harness, same gate, same acceptance command, fresh tree per provider.
+    The earlier comparison put claude's numbers from a different run beside
+    codex's from this one, which measures the harness as much as the provider.
+
+    agy runs isolated because it may not run anywhere else; that is a real
+    asymmetry and it is reported rather than hidden, since isolation costs a
+    worktree creation the other two do not pay.
+    """
+    from dobby.project.workspace import isolated as isolate_tree
+
+    out: dict = {}
+    for provider in providers:
+        rows = []
+        for task in corpus:
+            root = fresh_tree(base, task, f"cmp_{provider}")
+            if provider == "agy":
+                subprocess.run(["git", "-C", root, "init", "-q"],
+                               capture_output=True)
+                subprocess.run(["git", "-C", root, "add", "-A"],
+                               capture_output=True)
+                subprocess.run(["git", "-C", root, "-c", "user.email=t@t",
+                                "-c", "user.name=t", "commit", "-qm", "fx"],
+                               capture_output=True)
+                before = git_views(root)
+                with isolate_tree(root) as (tree, why):
+                    if tree is None:
+                        rows.append({"task": task.task_id, "skipped": why})
+                        continue
+                    row = run_once(task, tree, provider=provider,
+                                   isolated=True, override=provider)
+                unchanged, differing = views_identical(before, git_views(root))
+                row["original_root_unchanged"] = unchanged
+                row["views_that_differ"] = differing
+            else:
+                row = run_once(task, root, provider=provider,
+                               override=provider)
+            rows.append(row)
+        out[provider] = {"provider": provider, "rows": rows}
+    return out
+
+
 def main(base: str, out: str) -> None:
     corpus = pilot_corpus()
     os.makedirs(base, exist_ok=True)
     report = {"started": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    if os.environ.get("SMOKE_COMPARE"):
+        report["compare"] = compare_providers(base, corpus)
+        with open(out, "w", encoding="utf-8") as fh:
+            json.dump(report, fh, ensure_ascii=False, indent=1, default=str)
+        print("WROTE", out, flush=True)
+        return
+
     for name, fn in (("codex", smoke_codex),
                      ("agy", smoke_agy_isolated),
                      ("cap", smoke_claude_cap),

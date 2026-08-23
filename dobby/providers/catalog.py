@@ -201,6 +201,11 @@ CATALOG: tuple[ProviderSpec, ...] = (
         # exists and is deliberately not used - an agent that can write anywhere
         # is a liability, not a measurement.
         write_extra=("-s", "workspace-write"),
+        # Probed 2026-08-23: `--json` prints JSONL events and the terminal
+        # `turn.completed` carries input/output/reasoning/cached/cache-write
+        # counts. No cost. See `usage.unwrap_codex` for why the names are
+        # mapped rather than passed through.
+        usage_extra=("--json",),
         capabilities=("files", "shell", "long_context"),
         # Sandboxed by default per the note below; `-s workspace-write` is the
         # opt-in. CLAIMED for the same reason as claude — documented, not probed.
@@ -241,6 +246,9 @@ CATALOG: tuple[ProviderSpec, ...] = (
         # run unprompted — which is acceptable exactly where the directory it
         # was launched in is disposable, and nowhere else.
         isolated_extra=("--dangerously-skip-permissions",),
+        # Probed 2026-08-23: input/output/thinking/cache_read counts and a
+        # duration. No cost figure, which stays None rather than a zero.
+        usage_extra=("--output-format", "json"),
         capabilities=("files", "shell", "long_context"),
         # MEASURED to write under the default argv: the four-configuration probe
         # in `_agy` above created a file in all four mode/permission combinations.

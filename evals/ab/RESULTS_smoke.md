@@ -15,7 +15,7 @@ has repeatedly found to be wrong.
 |---|---|---|
 | 1 | codex direct-gated | **3/3 SUCCEEDED**, one codex call each, **claude_calls = 0** |
 | 2 | agy isolated delegate | **2/2 SUCCEEDED**, one agy call each, **original_root_mutations = 0** |
-| 3 | claude cap = 0 | **held**: claude_calls = 0, codex performed the work instead |
+| 3 | claude cap = 0 | **claude excluded at eligibility**: claude_calls = 0, codex dispatched first — see the correction below |
 | 4 | policy path, no override | **SUCCEEDED**, codex selected, claude_calls = 0 |
 
 ### 1. codex direct-gated
@@ -79,22 +79,39 @@ exactly where the directory it was launched in is disposable, and nowhere else.
 Sending it on the original tree would hand the one provider measured writing
 under a read-only mode a free hand in the project.
 
-## A live re-confirmation, recorded because it is the whole argument
+## A claim I published here and then had to withdraw
 
-Probing agy at the start of this session, in the repository root, with
-`--mode plan`:
+This section first said that agy "reported creating something it did not
+create". **That was wrong, and the error was mine.**
 
-    agy: "I have created the implementation plan for this request.
-          Please review the plan in [pong_plan.md](file:///C:/Users/dynap...)"
+Probing agy in the repository root with `--mode plan`, it answered that it had
+created `pong_plan.md` and linked to it. `git status --porcelain` reported zero
+lines, and `find ~ -maxdepth 3 -name pong_plan.md` found nothing — so I wrote
+that the file did not exist.
 
-    git status --porcelain  ->  0 lines
-    find ~ -name pong_plan.md -newermt "-30 minutes"  ->  nothing
+It exists. The link's full path, truncated in the output I first read, is
 
-The file does not exist. agy reported creating something it did not create. The
-2026-08-04 probe found the opposite failure — agy writing files under a mode
-documented as read-only — and both point the same way: **this provider's account
-of what it did is not evidence in either direction**, which is why
-`runtime/effects.py` decides instead of the worker's own report.
+    ~/.gemini/antigravity-cli/brain/<conversation-id>/pong_plan.md
+
+which is five levels deep and outside the range my search covered. Both probes'
+files are there. I searched too shallow and reported the absence of evidence as
+evidence of absence — the exact error this repository has a rule about.
+
+**What the probe actually shows, corrected:** agy in `--mode plan` wrote its
+artefact into its OWN state directory and left the repository untouched. That is
+better behaviour than the 2026-08-04 probe recorded, where agy created a file in
+the fresh temp directory it was launched in under all four mode/permission
+combinations.
+
+The two observations do not cancel out and neither is retracted. `--mode plan`
+is still not a containment control, because the 2026-08-04 result stands: the
+directory it is launched in is the only demonstrated boundary. What changes is
+that the alarming reading — a provider fabricating a file it never wrote — was
+my measurement error, not its behaviour, and the corrected record says so.
+
+The reason `runtime/effects.py` decides rather than the worker's own report is
+unaffected, and is now supported by a cleaner example: a provider can truthfully
+report writing a file that is nowhere near the tree anyone cared about.
 
 ## Rollout acceptance criteria, scored
 
@@ -102,9 +119,39 @@ of what it did is not evidence in either direction**, which is why
 |---|---|
 | normal focused patch shows codex selected and claude_calls = 0 | **met** (smokes 1 and 4) |
 | agy runs only outside the original root; no isolation means no process | **met** (smoke 2, and the pre-fix run launched nothing when refused) |
-| an exhausted Claude cap causes no automatic fallback to Claude | **met** (smoke 3: codex took the work, claude_calls = 0) |
+| an exhausted Claude cap causes no automatic fallback to Claude | **met, and by the stronger route** — see below |
 | existing suites plus the new integration suite pass | see the suite verdict in the ledger |
 | the run record separates provider, role and selection basis | **met**: `SCHEDULER_DECISION` carries `provider_role`, `isolated`, `eligible`, `rejected`, `selection_basis`, `claude_cap_remaining` |
+
+## A correction: smoke 3 was pre-dispatch routing, not a runtime fallback
+
+The first draft of this file said "claude cap = 0 held: codex performed the work
+instead" and, one table down, "an exhausted Claude cap causes no automatic
+fallback to Claude". Read together those contradict each other, and the wording
+hid which of two very different things happened.
+
+What happened: **claude was removed at the ELIGIBILITY stage and codex was the
+first provider ever dispatched.** No claude process was launched, nothing failed,
+and nothing fell back.
+
+    ProviderPlacement.eligible()
+      claude  -> rejected: "claude has spent 0/0 calls this session;
+                            the cap is the operator's budget and is not a
+                            tie-break"
+      codex   -> eligible
+    selection_basis: subscription_first_static_preference
+    calls_by_provider: {"codex": 1}
+
+The distinction matters and is a policy difference, not a phrasing one:
+
+| | what it means | what it costs |
+|---|---|---|
+| runtime fallback | claude was chosen, launched, failed or was refused, and another provider was tried | a launched call, its latency, and whatever it spent before failing |
+| **pre-dispatch routing** | claude was never a candidate; the cap was applied before any process existed | nothing |
+
+A cap enforced only as a runtime fallback would still spend the call it was
+meant to prevent. This one is applied in `eligible()`, before scoring and before
+dispatch, which is the only place it can cost zero.
 
 ## Not done
 
@@ -113,3 +160,15 @@ of what it did is not evidence in either direction**, which is why
   order instead — which is what `subscription_first` means and why it is named
   that rather than `cheapest_first`.
 - Anything about these providers on work harder than a one-file fix.
+
+## The standing of the "codex is the default implementer" claim
+
+**Smoke-verified only.** Three known single-file bugs, each with a pre-written
+failing test, each fixed in one call. That is the easiest shape of work there is,
+and a provider that is fast and accurate on it may still take many more calls on
+a multi-file change or an unfamiliar module — which is exactly what the S1–S4
+corpus is for.
+
+Until that runs, the accurate phrasing is: *codex is the default implementer by
+policy, and has been verified on one-shot single-file fixtures.* Not "codex is
+the better implementer".

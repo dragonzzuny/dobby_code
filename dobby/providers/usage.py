@@ -32,12 +32,30 @@ HOW rather than "no flag needed". `write_extra` documents that lesson at length
 after `swebench` hardcoded one CLI's flag and appended it to every provider. This
 does not repeat it.
 
-WHAT IS NOT MEASURED
+ALL THREE CLIs REPORT USAGE, AND NONE OF THEM AGREES ON ANYTHING
 
-Every provider whose `usage_extra` is empty. `codex exec --json` prints JSONL
-events and may well carry usage; nobody here has run it and looked, so it reports
-`None` and the caller says "not measured" rather than "zero". A zero would enter
-a mean and move it.
+Probed 2026-08-23. The paragraph above used to end by saying codex "may well
+carry usage; nobody here has run it and looked" — somebody has now looked, and
+so has agy:
+
+    claude   result envelope   input / output / thinking / cache read+create
+                              AND `total_cost_usd`, the vendor's own figure
+    agy      response envelope input / output / thinking / cache read
+                              no cost, no cache-creation counter
+    codex    JSONL events      input / output / reasoning / cached / cache-write
+                              no cost, and no envelope at all
+
+The names are mapped into one shape rather than passed through, because
+`reasoning_output_tokens`, `thinking_tokens` and
+`output_tokens_details.thinking_tokens` are the same quantity under three
+spellings, and three fields meaning one thing is a comparison nobody can make.
+
+WHAT IS STILL NOT MEASURED
+
+**Money, for two of the three.** Only claude reports a cost. `cost_usd` stays
+None for codex and agy rather than becoming zero, so no routing decision can
+treat "unpriced" as "free" — which would send work to whichever provider is
+least instrumented. Token counts are comparable across all three; prices are not.
 """
 
 from __future__ import annotations
@@ -48,7 +66,9 @@ import json
 #: The envelope key that holds the actual answer when a CLI is asked for JSON.
 #: Per provider, because there is no convention and guessing produces a caller
 #: that silently treats a whole envelope as the model's reply.
-RESULT_KEY = {"claude": "result"}
+#: Probed 2026-08-23: claude uses `result`, agy uses `response`, and codex emits
+#: JSONL events with no single envelope at all — see `unwrap_codex`.
+RESULT_KEY = {"claude": "result", "agy": "response"}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -118,7 +138,111 @@ def parse_claude(envelope: dict) -> Usage:
         source="claude --output-format json")
 
 
-PARSERS = {"claude": parse_claude}
+def parse_agy(envelope: dict) -> Usage:
+    """agy `--output-format json`. Probed 2026-08-23:
+
+        {"conversation_id": ..., "status": "SUCCESS", "response": "...",
+         "duration_seconds": 8.8, "num_turns": 1,
+         "usage": {"input_tokens": 18328, "output_tokens": 1624,
+                   "thinking_tokens": 1306, "cache_read_tokens": 12201,
+                   "total_tokens": 19952}}
+
+    No cost figure and no cache-CREATION counter. Both stay None rather than
+    zero: agy may not cache, or may simply not report it, and this module cannot
+    tell those apart from the outside.
+    """
+    usage = envelope.get("usage") or {}
+    seconds = envelope.get("duration_seconds")
+    return Usage(
+        provider="agy",
+        model=None,
+        input_tokens=_int(usage.get("input_tokens")),
+        output_tokens=_int(usage.get("output_tokens")),
+        thinking_tokens=_int(usage.get("thinking_tokens")),
+        cache_read_tokens=_int(usage.get("cache_read_tokens")),
+        cache_creation_tokens=None,
+        cost_usd=None,
+        api_ms=(int(seconds * 1000)
+                if isinstance(seconds, (int, float)) else None),
+        turns=_int(envelope.get("num_turns")),
+        source="agy --output-format json")
+
+
+def parse_codex(events: list):
+    """codex `--json`. Probed 2026-08-23, the terminal event:
+
+        {"type": "turn.completed",
+         "usage": {"input_tokens": 14957, "cached_input_tokens": 11008,
+                   "cache_write_input_tokens": 0, "output_tokens": 6,
+                   "reasoning_output_tokens": 0}}
+
+    The names differ from every other provider here and are MAPPED rather than
+    passed through: `reasoning_output_tokens` is what the other two call
+    thinking, `cached_input_tokens` is a cache read, `cache_write_input_tokens`
+    is a cache creation. Keeping the vendor's spelling would leave three fields
+    meaning one thing and a comparison nobody could make.
+
+    Turns are SUMMED across `turn.completed` events. Taking only the last would
+    report the cost of the final turn as the cost of the whole call.
+    """
+    totals = {"input": 0, "output": 0, "thinking": 0, "read": 0, "write": 0}
+    turns = 0
+    seen = False
+    for event in events:
+        if not isinstance(event, dict) or event.get("type") != "turn.completed":
+            continue
+        usage = event.get("usage") or {}
+        seen = True
+        turns += 1
+        totals["input"] += _int(usage.get("input_tokens")) or 0
+        totals["output"] += _int(usage.get("output_tokens")) or 0
+        totals["thinking"] += _int(usage.get("reasoning_output_tokens")) or 0
+        totals["read"] += _int(usage.get("cached_input_tokens")) or 0
+        totals["write"] += _int(usage.get("cache_write_input_tokens")) or 0
+    if not seen:
+        return None
+    return Usage(
+        provider="codex", model=None,
+        input_tokens=totals["input"], output_tokens=totals["output"],
+        thinking_tokens=totals["thinking"],
+        cache_read_tokens=totals["read"],
+        cache_creation_tokens=totals["write"],
+        cost_usd=None, api_ms=None, turns=turns,
+        source="codex exec --json")
+
+
+def unwrap_codex(text: str):
+    """`(answer, usage, signals)` from codex's JSONL stream.
+
+    Not an envelope, so it does not go through `unwrap`: the answer is the last
+    `agent_message` item and the usage is summed over `turn.completed`. Lines
+    that are not JSON are skipped rather than failing the parse, because codex
+    prints human notices such as "Reading additional input from stdin" alongside
+    its events.
+    """
+    events = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            events.append(json.loads(line))
+        except (ValueError, TypeError):
+            continue
+    if not events:
+        return text, None, {}
+
+    answer = None
+    for event in events:
+        item = event.get("item") if isinstance(event, dict) else None
+        if isinstance(item, dict) and item.get("type") == "agent_message":
+            answer = item.get("text") or answer
+    usage = parse_codex(events)
+    return ((answer if isinstance(answer, str) else text), usage,
+            {"turns": usage.turns} if usage else {})
+
+
+PARSERS = {"claude": parse_claude, "agy": parse_agy}
 
 
 #: Envelope fields that are not usage but ARE evidence. `permission_denials` is
@@ -137,6 +261,9 @@ def unwrap(provider_id: str, text: str) -> tuple[str, Usage | None, dict]:
     changed its output, or a crash that printed a traceback must degrade to "the
     answer, unmeasured" rather than to an exception or to an empty answer.
     """
+    if provider_id == "codex":
+        # JSONL rather than one envelope, so it has its own reader.
+        return unwrap_codex(text)
     parser = PARSERS.get(provider_id)
     if parser is None or not text.strip():
         return text, None, {}
@@ -153,6 +280,57 @@ def unwrap(provider_id: str, text: str) -> tuple[str, Usage | None, dict]:
     signals = {k: envelope[k] for k in SIGNAL_KEYS if k in envelope}
     return ((answer if isinstance(answer, str) else text), parser(envelope),
             signals)
+
+
+def roll_up(results) -> dict:
+    """One run record from a sequence of `ProviderResult`, per provider.
+
+    Three counts, kept apart on purpose. `calls_total` is what was launched,
+    `calls_succeeded` is what came back usable, and `calls_failed` is the
+    difference — a provider that fails half its calls and a provider that makes
+    half as many are the same number to a single counter and completely
+    different to an operator.
+
+    Attempts are kept individually as well as summed. A retried node's cost is
+    the sum, and which attempt cost what is how a retry policy gets evaluated.
+    """
+    by_provider: dict = {}
+    for index, result in enumerate(results):
+        pid = getattr(result, "provider", "unknown")
+        row = by_provider.setdefault(pid, {
+            "provider": pid, "calls_total": 0, "calls_succeeded": 0,
+            "calls_failed": 0, "wall_s": 0.0, "attempts": []})
+        ok = bool(getattr(result, "ok", False))
+        usage = getattr(result, "usage", None)
+        row["calls_total"] += 1
+        row["calls_succeeded"] += 1 if ok else 0
+        row["calls_failed"] += 0 if ok else 1
+        row["wall_s"] = round(row["wall_s"]
+                              + float(getattr(result, "duration_s", 0.0)), 2)
+        row["attempts"].append({
+            "index": index, "ok": ok,
+            "duration_s": getattr(result, "duration_s", None),
+            "error": (getattr(result, "error", None) or "")[:200] or None,
+            "usage": usage,
+            # A failed call still LAUNCHED. Recording it with usage None keeps
+            # the launch visible without inventing a token count for it.
+            "usage_measured": usage is not None})
+
+    for row in by_provider.values():
+        measured = [Usage(**{k: v for k, v in a["usage"].items()
+                             if k in Usage.__dataclass_fields__})
+                    for a in row["attempts"] if a["usage"]]
+        summed = total(measured + [None] * (row["calls_total"]
+                                            - len(measured)))
+        row["usage"] = summed
+    return {"providers": by_provider,
+            "calls_total": sum(r["calls_total"] for r in by_provider.values()),
+            "calls_succeeded": sum(r["calls_succeeded"]
+                                   for r in by_provider.values()),
+            "calls_failed": sum(r["calls_failed"]
+                                for r in by_provider.values()),
+            "note": ("usage null on an attempt means the provider reported "
+                     "none, not that it spent none")}
 
 
 def total(usages) -> dict:
