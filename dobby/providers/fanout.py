@@ -152,7 +152,8 @@ def _has_commits(repo: str) -> bool:
     multi-line `--orphan` hint with one sentence the caller can act on.
     """
     proc = subprocess.run(["git", "-C", repo, "rev-parse", "--verify", "HEAD"],
-                          capture_output=True, text=True, env=child_env())
+                          capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", env=child_env())
     return proc.returncode == 0
 
 
@@ -232,7 +233,8 @@ class WorktreeSet:
             subprocess.run(
                 ["git", "-C", self.toplevel or self.repo,
                  "worktree", "remove", "--force", path],
-                capture_output=True, text=True, env=child_env())
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace", env=child_env())
         self.paths = []
         if self.root and os.path.isdir(self.root):
             shutil.rmtree(self.root, ignore_errors=True)

@@ -246,7 +246,8 @@ class TestCiStepDriver(unittest.TestCase):
         proc = subprocess.run(
             [sys.executable, os.path.join(REPO, "tools", "ci_step.py"),
              "--title", "t"],
-            capture_output=True, text=True, cwd=REPO, timeout=120)
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", cwd=REPO, timeout=120)
         self.assertEqual(proc.returncode, 2)
 
 
@@ -328,7 +329,8 @@ class TestAnnotateEntryPoint(unittest.TestCase):
         proc = subprocess.run(
             [sys.executable, os.path.join(REPO, "tools", "ci_annotate.py"),
              os.path.join(REPO, "no-such-file.log")],
-            capture_output=True, text=True, cwd=REPO, timeout=120)
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", cwd=REPO, timeout=120)
         self.assertEqual(proc.returncode, 0)
         self.assertIn("no log at", proc.stdout)
 

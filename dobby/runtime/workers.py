@@ -32,6 +32,23 @@ from .failures import (EFFECT_NOT_OBSERVED, Failure, PERMISSION_DENIED,
                        classify_command_failure, classify_provider_error,
                        CONTRACT_VIOLATION)
 
+#: The smallest built-in tool set each kind of node can do its job with. Derived
+#: from the node's DECLARED side effect, not guessed from its prompt: a node that
+#: says it will not write has no business carrying an editing tool's schema, and
+#: a node that says it will write needs one.
+#:
+#: Priced 2026-08-24 against the tools-disabled floor of 22,565 tokens per claude
+#: call: `Read` costs 509, `Read,Edit,Bash` costs 2,050, and the full built-in
+#: set costs 7,603. A read-only node handed everything therefore pays about 7,100
+#: tokens per call for schemas it is forbidden to use.
+READ_ONLY_TOOLS = "Read,Grep,Glob"
+WRITING_TOOLS = "Read,Grep,Glob,Edit,Write,Bash"
+
+#: `node.config["tools"]` may be an explicit list, the string "auto" to derive it
+#: from the contract, or absent to keep the CLI's own default surface. Absent is
+#: the default so that nothing already running changes behaviour.
+AUTO_TOOLS = "auto"
+
 #: Side-effect classes that mean this node is expected to CHANGE something, and
 #: therefore both needs a permission and owes an observable trace.
 WRITING_CLASSES = frozenset({LOCAL_WRITE, EXTERNAL_REVERSIBLE,
@@ -40,6 +57,23 @@ WRITING_CLASSES = frozenset({LOCAL_WRITE, EXTERNAL_REVERSIBLE,
 #: A node's own wall clock. Separate from the provider timeout because a node
 #: may be a test suite rather than a model call.
 DEFAULT_NODE_TIMEOUT_S = 900
+
+
+def tools_for(node):
+    """Which built-in tools this node should carry, or None to leave it alone.
+
+    `None` means the caller expressed no preference and the CLI keeps its own
+    default surface — the behaviour everything had before this existed. `"auto"`
+    derives the set from the node's declared side-effect class, which is the same
+    field that already decides whether it may edit at all, so the tool list and
+    the permission cannot drift apart. Anything else is passed through verbatim
+    for a caller that knows better than the contract does.
+    """
+    requested = node.config.get("tools")
+    if requested != AUTO_TOOLS:
+        return requested
+    writes = node.contract.side_effect_class in WRITING_CLASSES
+    return WRITING_TOOLS if writes else READ_ONLY_TOOLS
 
 
 @dataclass
@@ -284,6 +318,15 @@ class ProviderWorker(WorkerAdapter):
                 f"succeeds and changes nothing",
                 evidence={"provider": provider_id,
                           "side_effect_class": node.contract.side_effect_class}))
+
+        # Narrowing the tool surface is a TOKEN decision, applied after the
+        # permission decision above and never instead of it. A node that says
+        # which tools it needs stops paying for the schemas of the ones it does
+        # not: measured 5,550 tokens per call between the full built-in set and
+        # `Read,Edit,Bash` (providers/base.ProviderSpec.tool_scope_extra). A node
+        # that says nothing keeps the CLI's default surface, so this changes no
+        # existing behaviour until a caller opts in.
+        grant = grant + spec.tool_scope(tools_for(node))
 
         before = (effects.snapshot(root, node.contract.expected_paths)
                   if writes and root else None)

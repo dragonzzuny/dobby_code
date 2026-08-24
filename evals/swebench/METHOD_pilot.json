@@ -1,0 +1,125 @@
+{
+ "D_dobby": {
+  "arm": "D_dobby",
+  "instance_id": "django__django-11532",
+  "total_calls": 5,
+  "providers_used": [
+   "claude",
+   "codex"
+  ],
+  "provider_count": 2,
+  "single_call": false,
+  "nodes": 5,
+  "node_states": {
+   "scout-1": "SUCCEEDED",
+   "implement-2": "FAILED",
+   "critic-3": "SKIPPED",
+   "verify": "SKIPPED",
+   "report": "SKIPPED"
+  },
+  "attempts": 4,
+  "rework_ratio": 0.8,
+  "contract_violations": 1,
+  "contract_violation_rate": 0.25,
+  "writing_attempts": 2,
+  "effect_observation_rate": 0.0,
+  "promoted_artifacts": 1,
+  "claims": 9,
+  "evidence_citations": 35,
+  "evidence_density": 3.889,
+  "has_loop_record": true,
+  "investigation_share": 0.5
+ },
+ "E_fable": {
+  "arm": "E_fable",
+  "instance_id": "django__django-11532",
+  "total_calls": 1,
+  "providers_used": [
+   "claude"
+  ],
+  "provider_count": 1,
+  "single_call": true,
+  "has_loop_record": false,
+  "nodes": 0,
+  "attempts": 0,
+  "rework_ratio": null,
+  "contract_violations": 0,
+  "contract_violation_rate": null,
+  "writing_attempts": 0,
+  "effect_observation_rate": null,
+  "promoted_artifacts": 0,
+  "claims": 0,
+  "evidence_citations": 0,
+  "evidence_density": null,
+  "investigation_share": null
+ },
+ "A_claude": {
+  "arm": "A_claude",
+  "instance_id": "django__django-11532",
+  "total_calls": 1,
+  "providers_used": [
+   "claude"
+  ],
+  "provider_count": 1,
+  "single_call": true,
+  "has_loop_record": false,
+  "nodes": 0,
+  "attempts": 0,
+  "rework_ratio": null,
+  "contract_violations": 0,
+  "contract_violation_rate": null,
+  "writing_attempts": 0,
+  "effect_observation_rate": null,
+  "promoted_artifacts": 0,
+  "claims": 0,
+  "evidence_citations": 0,
+  "evidence_density": null,
+  "investigation_share": null
+ },
+ "C_agy": {
+  "arm": "C_agy",
+  "instance_id": "django__django-11532",
+  "total_calls": 1,
+  "providers_used": [
+   "agy"
+  ],
+  "provider_count": 1,
+  "single_call": true,
+  "has_loop_record": false,
+  "nodes": 0,
+  "attempts": 0,
+  "rework_ratio": null,
+  "contract_violations": 0,
+  "contract_violation_rate": null,
+  "writing_attempts": 0,
+  "effect_observation_rate": null,
+  "promoted_artifacts": 0,
+  "claims": 0,
+  "evidence_citations": 0,
+  "evidence_density": null,
+  "investigation_share": null
+ },
+ "B_codex": {
+  "arm": "B_codex",
+  "instance_id": "django__django-11532",
+  "total_calls": 1,
+  "providers_used": [
+   "codex"
+  ],
+  "provider_count": 1,
+  "single_call": true,
+  "has_loop_record": false,
+  "nodes": 0,
+  "attempts": 0,
+  "rework_ratio": null,
+  "contract_violations": 0,
+  "contract_violation_rate": null,
+  "writing_attempts": 0,
+  "effect_observation_rate": null,
+  "promoted_artifacts": 0,
+  "claims": 0,
+  "evidence_citations": 0,
+  "evidence_density": null,
+  "investigation_share": null
+ }
+}

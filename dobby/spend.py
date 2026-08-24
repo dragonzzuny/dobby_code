@@ -68,6 +68,32 @@ class Entry:
     ok: bool
     label: str = ""
     round_id: str = ""
+    #: Everything below is optional and defaulted, because `_read_tail` builds
+    #: an Entry with `Entry(**json.loads(line))` and a ledger written before
+    #: these existed must keep parsing. A missing token count is 0 here and
+    #: `measured` is what says whether that 0 is a measurement or an absence.
+    #: WHICH MODEL. A token count with no model attached cannot be read: codex
+    #: and agy do not name theirs in their JSON, so it is recorded from what the
+    #: caller pinned. Discovered 2026-08-24 the hard way — an agy row of
+    #: 1,601,155 tokens that could have been Gemini Flash or Claude Opus.
+    model: str = ""
+    #: The skill or command that caused this call, so a status bar can say what
+    #: the spend was FOR rather than only how much it was.
+    skill: str = ""
+    measured: bool = False
+    input_tokens: int = 0
+    output_tokens: int = 0
+    thinking_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    #: None, never 0, when the provider bills by subscription and reports no
+    #: figure. Zero would sum into a total that reads as "this was free".
+    cost_usd: float | None = None
+
+    @property
+    def tokens(self) -> int:
+        return (self.input_tokens + self.output_tokens + self.thinking_tokens
+                + self.cache_read_tokens + self.cache_creation_tokens)
 
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
@@ -80,11 +106,30 @@ def _path(data_dir: str) -> str:
 
 
 def record(data_dir: str, *, provider: str, duration_s: float, ok: bool,
-           role: str = "", label: str = "", round_id: str = "") -> Entry:
-    """Append one call to the ledger."""
-    entry = Entry(t=time.time(), provider=provider, role=role,
-                  duration_s=round(float(duration_s), 3), ok=bool(ok),
-                  label=label, round_id=round_id)
+           role: str = "", label: str = "", round_id: str = "",
+           model: str = "", skill: str = "", usage: dict | None = None) -> Entry:
+    """Append one call to the ledger.
+
+    `usage` is the provider's own envelope as `providers/usage.py` normalises
+    it. Passing None records the call WITHOUT inventing zeros for it: a call
+    whose provider reported nothing and a call that consumed nothing are
+    different facts, and `measured` is the field that keeps them apart.
+    """
+    usage = usage or {}
+    entry = Entry(
+        t=time.time(), provider=provider, role=role,
+        duration_s=round(float(duration_s), 3), ok=bool(ok),
+        label=label, round_id=round_id,
+        model=model or str(usage.get("model") or ""),
+        skill=skill,
+        measured=bool(usage),
+        input_tokens=int(usage.get("input_tokens") or 0),
+        output_tokens=int(usage.get("output_tokens") or 0),
+        thinking_tokens=int(usage.get("thinking_tokens") or 0),
+        cache_read_tokens=int(usage.get("cache_read_tokens") or 0),
+        cache_creation_tokens=int(usage.get("cache_creation_tokens") or 0),
+        cost_usd=(None if usage.get("cost_usd") is None
+                  else float(usage["cost_usd"])))
     append_jsonl(_path(data_dir), entry.to_dict())
     return entry
 
@@ -135,17 +180,32 @@ def summarize(data_dir: str, *, window_s: float | None = None,
 
     per: dict[str, dict] = {}
     for e in entries:
-        row = per.setdefault(e.provider, {"calls": 0, "agent_s": 0.0,
-                                          "failed": 0, "slowest_s": 0.0})
+        row = per.setdefault(e.provider, {
+            "calls": 0, "agent_s": 0.0, "failed": 0, "slowest_s": 0.0,
+            "calls_measured": 0, "tokens": 0, "input_tokens": 0,
+            "output_tokens": 0, "thinking_tokens": 0, "cache_read_tokens": 0,
+            "cache_creation_tokens": 0, "cost_usd": None, "models": []})
         row["calls"] += 1
         row["agent_s"] += e.duration_s
         row["failed"] += 0 if e.ok else 1
         row["slowest_s"] = max(row["slowest_s"], e.duration_s)
+        row["calls_measured"] += 1 if e.measured else 0
+        for field in ("input_tokens", "output_tokens", "thinking_tokens",
+                      "cache_read_tokens", "cache_creation_tokens"):
+            row[field] += getattr(e, field)
+        row["tokens"] += e.tokens
+        if e.cost_usd is not None:
+            row["cost_usd"] = round((row["cost_usd"] or 0.0) + e.cost_usd, 4)
+        if e.model and e.model not in row["models"]:
+            row["models"].append(e.model)
 
     for row in per.values():
         row["agent_s"] = round(row["agent_s"], 1)
         row["slowest_s"] = round(row["slowest_s"], 1)
         row["mean_s"] = round(row["agent_s"] / row["calls"], 2)
+        # A total over calls that did not all report is a FLOOR. Saying so here
+        # means a status bar cannot accidentally present it as complete.
+        row["complete"] = row["calls_measured"] == row["calls"]
 
     agent_s = sum(r["agent_s"] for r in per.values())
 
@@ -178,11 +238,29 @@ def summarize(data_dir: str, *, window_s: float | None = None,
     parallelism = (agent_s / wall_s) if wall_s > 0 else 1.0
     parallelism = min(parallelism, float(len(entries)))
 
+    measured = sum(1 for e in entries if e.measured)
+    costed = [e.cost_usd for e in entries if e.cost_usd is not None]
     return {
         "calls": len(entries),
         "failed": sum(1 for e in entries if not e.ok),
         "agent_s": round(agent_s, 1),
         "wall_s": round(wall_s, 1),
+        "tokens": sum(e.tokens for e in entries),
+        "calls_measured": measured,
+        "tokens_complete": measured == len(entries),
+        # Summed only over the providers that reported one. A subscription CLI
+        # contributes tokens and no dollars, so this total is what the metered
+        # providers cost and never what the run cost.
+        "cost_usd_reported": round(sum(costed), 4) if costed else None,
+        # False as soon as one call reported no dollars: the total is then the
+        # metered providers' spend and not the run's.
+        "dollars_complete": len(costed) == len(entries),
+        # Oldest call to now, so a status bar can say how long this has been
+        # going. `t - duration` is when the first call STARTED; the timestamp
+        # alone is when it finished.
+        "session_s": round(time.time() - min(e.t - e.duration_s
+                                             for e in entries), 1),
+        "skills": sorted({e.skill for e in entries if e.skill}),
         # Both numbers are reported because each misleads alone: wall clock hides
         # the spend, summed agent time implies the user waited for all of it.
         "parallelism": round(parallelism, 2),
@@ -231,16 +309,153 @@ def statusline(data_dir: str, *, active: Sequence[dict] = (),
 
     summary = summarize(data_dir, window_s=window_s)
     if summary["calls"]:
+        if summary.get("skills"):
+            shown = summary["skills"][:2]
+            parts.append("skill " + ",".join(shown)
+                         + ("+" if len(summary["skills"]) > len(shown) else ""))
+
         seg = (f"agents {summary['calls']} · {_short(summary['agent_s'])} spent "
                f"· {summary['parallelism']}x parallel")
         if summary["failed"]:
             seg += f" · {summary['failed']} failed"
         parts.append(seg)
+
+        # KEPT: the busiest provider by TIME. The per-provider cells below are
+        # ordered by tokens, and the two orderings disagree exactly when it
+        # matters — a slow cheap model against a fast expensive one — so
+        # dropping this in favour of those would lose the answer to "what was
+        # everyone waiting on".
         top = summary["busiest"]
-        row = summary["providers"][top]
-        parts.append(f"top {top} {_short(row['agent_s'])}")
+        parts.append(f"top {top} {_short(summary['providers'][top]['agent_s'])}")
+
+        # Per provider, because "which of the three did the work" is the whole
+        # question a decomposing harness is asked. Ordered by tokens rather than
+        # by seconds, for the reason just given.
+        rows = sorted(summary["providers"].items(),
+                      key=lambda kv: -kv[1]["tokens"])
+        for provider, row in rows[:3]:
+            if not row["tokens"]:
+                parts.append(f"{provider} {row['calls']}c")
+                continue
+            cell = f"{provider} {row['calls']}c {_tokens(row['tokens'])}"
+            if not row["complete"]:
+                cell += "+"          # a floor: some calls reported nothing
+            if row["cost_usd"] is not None:
+                cell += f" ${row['cost_usd']:.2f}"
+            parts.append(cell)
+
+        if summary["tokens"]:
+            total = f"total {_tokens(summary['tokens'])}"
+            if not summary["tokens_complete"]:
+                total += "+"
+            if summary["cost_usd_reported"] is not None:
+                total += f" ${summary['cost_usd_reported']:.2f}"
+            parts.append(total)
 
     return " | ".join(parts) if parts else "dobby: idle"
+
+
+def _bar(share: float, width: int = BAR_WIDTH) -> str:
+    """`[####----]` for a 0..1 share, clamped. Never wider than `width`."""
+    share = 0.0 if share != share else max(0.0, min(1.0, share))   # NaN -> 0
+    filled = int(round(width * share))
+    return "[" + "#" * filled + "-" * (width - filled) + "]"
+
+
+def _ratio(used, ceiling) -> str:
+    """`[###-----]27k/80k`, or the raw count when there is no ceiling.
+
+    A dimension with no ceiling gets no bar rather than a full one: an unbounded
+    budget drawn as 100% used reads as exhausted, which is the opposite of true.
+    """
+    if not ceiling:
+        return _tokens(int(used or 0))
+    return f"{_bar((used or 0) / ceiling)}{_tokens(int(used or 0))}/{_tokens(int(ceiling))}"
+
+
+def dashboard(data_dir: str, *, skill: str = "", detail: str = "",
+              window_s: float | None = None, quota=None,
+              context_used: float | None = None) -> str:
+    """A multi-line status block: what is running, what it spent, what is left.
+
+    `statusline` stays one line because a host may only have one. This is for a
+    host that has three, and it exists because a single line cannot hold a
+    per-provider breakdown AND a quota AND still be read at a glance.
+
+    Only what dobby actually knows is drawn. There is deliberately no 5-hour or
+    weekly subscription window here: those belong to the host's account, dobby
+    has no way to observe them, and a bar drawn from a number nobody measured is
+    worse than no bar.
+    """
+    summary = summarize(data_dir, window_s=window_s)
+    lines = []
+
+    head = []
+    if skill:
+        head.append(f"skill:{skill}" + (f"({_clip(detail, 24)})" if detail else ""))
+    if summary["calls"]:
+        head.append(f"session:{_short(summary['session_s'])}")
+        head.append(f"agents:{summary['calls']} par:{summary['parallelism']}x")
+        if summary["failed"]:
+            head.append(f"failed:{summary['failed']}")
+    if context_used is not None:
+        head.append(f"ctx:{_bar(context_used)}{context_used:.0%}")
+    if head:
+        lines.append(" | ".join(head))
+
+    if summary["calls"]:
+        total = summary["tokens"] or 1
+        cells = []
+        for provider, row in sorted(summary["providers"].items(),
+                                    key=lambda kv: -kv[1]["tokens"]):
+            share = row["tokens"] / total
+            cell = (f"{provider}:{_bar(share)}{share:.0%} "
+                    f"{_tokens(row['tokens'])}" + ("+" if not row["complete"] else ""))
+            if row["cost_usd"] is not None:
+                cell += f" ${row['cost_usd']:.2f}"
+            cells.append(cell)
+        if cells:
+            lines.append(" · ".join(cells))
+
+    if quota is not None:
+        remaining = quota.remaining() if hasattr(quota, "remaining") else quota
+        config = getattr(quota, "config", None)
+        row = ["quota claude"]
+        for key, ceiling_attr, label in (
+                ("calls", "max_calls", "calls"),
+                ("thinking_tokens", "max_thinking_tokens", "think"),
+                ("billable_tokens", "max_billable_tokens", "bill")):
+            ceiling = getattr(config, ceiling_attr, None) if config else None
+            left = remaining.get(key) if isinstance(remaining, dict) else None
+            used = None if (left is None or ceiling is None) else ceiling - left
+            row.append(f"{label}:{_ratio(used, ceiling)}")
+        lines.append(" ".join(row))
+
+    if summary["calls"] and summary["tokens"]:
+        tail = f"total:{_tokens(summary['tokens'])}"
+        if not summary["tokens_complete"]:
+            tail += "+"
+        if summary["cost_usd_reported"] is not None:
+            tail += f" ${summary['cost_usd_reported']:.2f}"
+            if not summary["dollars_complete"]:
+                tail += " (metered only)"
+        lines.append(tail)
+
+    return "\n".join(lines) if lines else "dobby: idle"
+
+
+def _clip(text: str, width: int) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= width else text[:width - 1] + "…"
+
+
+def _tokens(count: int) -> str:
+    """Compact token counts. A status bar has one line and no room for commas."""
+    if count < 1_000:
+        return str(count)
+    if count < 1_000_000:
+        return f"{count / 1_000:.1f}k".replace(".0k", "k")
+    return f"{count / 1_000_000:.2f}M".replace(".00M", "M")
 
 
 def render_detail(data_dir: str, *, window_s: float | None = None) -> str:

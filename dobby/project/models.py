@@ -169,6 +169,12 @@ class WorkItem:
     evidence_refs: list = field(default_factory=list)
     latest_run_id: str | None = None
     blocked_reason: str = ""
+    #: Whether one call could plausibly finish this. `None` means "derive it
+    #: from scope and uncertainty", which is the default and covers most items.
+    #: An operator or a corpus that KNOWS a task spans several files in ways a
+    #: single pass gets partially right can say so, and the execution policy
+    #: stops guessing from a path count that does not capture it.
+    one_shot_plausible: bool | None = None
     #: Paths this item is expected to change, when somebody knows them without
     #: an architect having compiled a plan. Feeds the effect contract, so a
     #: declared scope is checked rather than described. Empty means "check the

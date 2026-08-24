@@ -122,6 +122,40 @@ class ProviderSpec:
     #: Sending it on the original tree would be granting the one provider
     #: measured writing under a read-only mode a free hand in the project.
     isolated_extra: tuple[str, ...] = ()
+    #: Extra argv that narrows this CLI's BUILT-IN TOOL SURFACE, as a template
+    #: whose `{tools}` is filled with a comma-separated tool list. Empty when the
+    #: CLI has no such flag, and empty is a refusal: a caller must not invent one.
+    #:
+    #: This is a token lever, not a safety one — `write_extra` is what decides
+    #: whether the CLI may edit at all. Measured on this machine 2026-08-24 with
+    #: an identical trivial prompt to `claude -p`, cold cache, reading
+    #: `cache_creation_tokens`:
+    #:
+    #:     --tools ""                22,565   (the floor: system prompt, no tools)
+    #:     --tools Read              23,074   (+509)
+    #:     --tools Read,Edit,Bash    24,615   (+2,050)
+    #:     default, all tools        30,168   (+7,603)
+    #:
+    #: So a node that needs three tools and is handed all of them pays about
+    #: 5,550 tokens for schemas it cannot use, every call. That is the whole
+    #: efficiency argument for a decomposing harness: it makes many calls, and a
+    #: per-call constant it does not trim is a constant it pays many times.
+    tool_scope_extra: tuple[str, ...] = ()
+    #: Extra argv naming the directory this CLI should treat as its workspace,
+    #: as a template whose `{root}` is filled with an absolute path. Empty means
+    #: the CLI takes its workspace from the process working directory, which is
+    #: what `cwd=` already gives it.
+    #:
+    #: Not every CLI does. MEASURED 2026-08-24: `agy` invoked with `cwd` set to a
+    #: fresh django clone answered "I will list the contents of
+    #: C:\\Users\\dynap\\.gemini\\antigravity-cli\\scratch to understand the
+    #: workspace structure", then "I will list the directory contents of
+    #: C:\\Users\\dynap to locate where the Django repository or workspace is",
+    #: and gave up with status CANCELED. Every agy row in every eval this
+    #: repository has run — `exit 1` with an empty stderr — is that, and the
+    #: empty stderr is why it looked like a broken binary rather than a CLI
+    #: looking in the wrong place.
+    workspace_extra: tuple[str, ...] = ()
     #: What is actually known about this CLI's behaviour when `write_extra` is
     #: NOT passed. Four values, because "read-only" has turned out to mean four
     #: different things here and a boolean merged them:
@@ -167,6 +201,36 @@ class ProviderSpec:
         """Required env vars that are absent. Cheap, and never logs values."""
         import os
         return [v for v in self.required_env if not os.environ.get(v)]
+
+    def tool_scope(self, tools) -> tuple[str, ...]:
+        """Argv narrowing the built-in tools to `tools`, or () when it cannot.
+
+        A provider with no `tool_scope_extra` returns () rather than raising:
+        the caller is asking for an optimisation, and a CLI that cannot take it
+        should run with its default surface rather than not run at all. Asking
+        for no tools at all is NOT the same as asking for nothing — `tools=""`
+        is a real request and produces the flag, while `tools=None` means the
+        caller expressed no preference.
+        """
+        if tools is None or not self.tool_scope_extra:
+            return ()
+        names = tools if isinstance(tools, str) else ",".join(tools)
+        return tuple(part.format(tools=names) for part in self.tool_scope_extra)
+
+    def workspace(self, root: str | None) -> tuple[str, ...]:
+        """Argv pointing this CLI at `root`, or () when `cwd` is enough.
+
+        Returning () for a CLI that has no such flag is correct rather than
+        lenient: those CLIs DO honour the working directory, so there is nothing
+        to add. The ones that need this are the ones that do not, and for them
+        `cwd` alone is silently the wrong workspace.
+        """
+        if not root or not self.workspace_extra:
+            return ()
+        import os
+
+        absolute = os.path.abspath(root)
+        return tuple(part.format(root=absolute) for part in self.workspace_extra)
 
     @property
     def may_fill_a_read_only_role(self) -> bool:

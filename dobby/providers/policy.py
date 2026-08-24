@@ -52,6 +52,11 @@ IMPLEMENT = "implement"
 ISOLATED_DELEGATE = "isolated_delegate"
 CRITIC = "critic"
 ARCHITECT = "architect"
+#: Reading the tree to find out what is true, in place and without writing.
+#: NOT the isolated delegate: mapping scouting onto that made every compiled
+#: plan's first step unreachable without a worktree, and a read-only look at the
+#: project one is an ordinary thing to want.
+SCOUT = "scout"
 
 #: Samples of a (provider, role) pair below which its economics are not a number
 #: anybody should route on. Eight, matching `runtime/bench.MIN_TASKS`, and for
@@ -109,6 +114,15 @@ ROLE_POLICY: dict[str, ProviderPolicy] = {
         original_root_ok=True, writes=False, max_effort="medium",
         rationale=("advisory only; the orchestrator additionally excludes the "
                    "provider that authored the thing under review")),
+    SCOUT: ProviderPolicy(
+        role=SCOUT,
+        # agy is listed and gated: read-only in the original tree is exactly
+        # what it was measured not to honour, so `admissible` refuses it here
+        # unless a worktree exists.
+        candidates=("codex", "agy", "claude", "gemini"),
+        original_root_ok=True, writes=False, max_effort="medium",
+        rationale=("read the tree and report; the cheapest useful role and the "
+                   "one a compiled plan starts with")),
     ARCHITECT: ProviderPolicy(
         role=ARCHITECT,
         candidates=("claude", "codex", "gemini"),
@@ -256,8 +270,17 @@ class ProviderPreferences:
 STATIC_SUBSCRIPTION_FIRST = {
     IMPLEMENT: ("codex", "agy", "claude"),
     ISOLATED_DELEGATE: ("agy", "codex"),
+    SCOUT: ("codex", "agy", "claude"),
     CRITIC: ("codex", "agy", "claude"),
-    ARCHITECT: ("codex", "claude"),
+    # claude LEADS here and nowhere else. This is the one role where model
+    # depth is the product: a plan is read once and then executed N times, so a
+    # bad plan is paid for N times over while a good one is paid for once.
+    #
+    # It is also the whole tension in "spend less on claude", made explicit:
+    # claude for judgement, never for typing. Bounded by
+    # `architecture.ARCHITECT_CALL_CEILING` and by the quota ledger, which
+    # refuses a third call outright.
+    ARCHITECT: ("claude", "codex"),
 }
 
 
@@ -324,8 +347,8 @@ NODE_ROLE = {
     "implement": IMPLEMENT,
     "execute": IMPLEMENT,
     "patch": IMPLEMENT,
-    "scout": ISOLATED_DELEGATE,
-    "investigate": ISOLATED_DELEGATE,
+    "scout": SCOUT,
+    "investigate": SCOUT,
     "critic": CRITIC,
     "judge": CRITIC,
     "review": CRITIC,

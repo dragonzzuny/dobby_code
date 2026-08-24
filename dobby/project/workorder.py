@@ -314,8 +314,21 @@ def compile_graph(plan, *, item, manifest, provider: str | None = None,
         if node_worker == "provider":
             # scout runs somewhere the project is not; implement writes the
             # original tree. The roles differ and so must their candidate sets.
-            config["provider_role"] = ("isolated_delegate"
-                                       if order.role == SCOUT else "implement")
+            # A scout READS; it does not need a worktree and must not be
+            # routed to a role that requires one. Mapping it to
+            # `isolated_delegate` made the first step of every compiled plan
+            # unplaceable, and the run failed before any work happened.
+            config["provider_role"] = ("scout" if order.role == SCOUT
+                                       else "implement")
+            # Carry only the tools the node's declared side effect needs.
+            # `workers.tools_for` reads "auto" and derives the set from that
+            # same field, so the tool list and the write permission cannot
+            # drift apart. Priced 2026-08-24 against a claude call with every
+            # tool disabled (22,565 tokens): the full built-in set adds 7,603,
+            # `Read,Grep,Glob` adds about 509. A scout handed an editing tool's
+            # schema pays roughly 7,100 tokens per call for something it is not
+            # allowed to use, and a compiled plan makes several such calls.
+            config["tools"] = "auto"
         nodes.append(G.TaskNode(
             node_id=order.work_id, kind=order.role,
             depends_on=list(order.depends_on), worker=node_worker,
@@ -324,7 +337,23 @@ def compile_graph(plan, *, item, manifest, provider: str | None = None,
                 output_schema=(SCHEMAS.get("test_report", {})
                                if node_worker == "command"
                                else SCHEMAS.get(order.output_schema, {})),
-                side_effect_class=order.side_effect_class),
+                side_effect_class=order.side_effect_class,
+                # THE PLAN'S WRITE SET REACHES THE EFFECT CHECK.
+                #
+                # It did not, and on a real repository the consequence was a
+                # solved instance reported as a failure. `effects.snapshot`
+                # falls back to walking the whole tree when this is empty, and
+                # that walk stops at `MAX_WALKED = 3000` files. Measured
+                # 2026-08-24 on django__django-11532: the clone holds 6,138
+                # files, both snapshots truncated at the same 3,000, the three
+                # files the implementer actually edited were not among them, and
+                # `observed()` concluded nothing had changed. Both implement
+                # attempts failed EFFECT_NOT_OBSERVED while the tree was
+                # correct — FAIL_TO_PASS 1/1, zero regressions.
+                #
+                # With the write set here the snapshot is a three-entry path map
+                # instead of a truncated tree walk: exact, and cheaper.
+                expected_paths=list(order.write_set)),
             config=config))
 
     tail = [n.node_id for n in nodes]

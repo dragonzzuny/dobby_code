@@ -59,7 +59,15 @@ MAX_WALKED_FILES = 4000
 #: project changing — which would make the digest report drift that is not real.
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", "dist",
              "build", ".mypy_cache", ".pytest_cache", ".tox", ".idea",
-             ".dobby"}
+             ".dobby",
+             # An agent runtime's own session state is not the project, and this
+             # repository's `.gitignore` already says so in those words. Leaving
+             # it in cost a real architect call: claude ran in a fixture tree,
+             # its plugin created `.omc/`, the read-only fingerprint moved, and
+             # `readonly.run_read_only` discarded a perfectly good plan as the
+             # work of a process that had edited the repository. Every architect
+             # call in a fresh directory would have failed the same way.
+             ".omc", ".claude"}
 
 
 def _git(root: str, *args: str) -> tuple[int, str]:

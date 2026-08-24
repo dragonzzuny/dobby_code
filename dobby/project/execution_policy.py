@@ -130,6 +130,14 @@ def profile_item(item, *, store=None, project_id: str | None = None,
     scoped = len(expected) <= MAX_SCOPED_PATHS
     derived = scoped and uncertainty < UNCERTAINTY_ESCALATION
 
+    # Caller first, then the ITEM's own declaration, then derivation. A path
+    # count is a poor proxy: an S2 fixture touching three files scored as
+    # "scoped" and went down the fast path with no plan, which is the measured
+    # reason this field exists.
+    declared = getattr(item, "one_shot_plausible", None)
+    if one_shot_plausible is None:
+        one_shot_plausible = declared
+
     return TaskProfile(
         one_shot_plausible=(derived if one_shot_plausible is None
                             else bool(one_shot_plausible)),

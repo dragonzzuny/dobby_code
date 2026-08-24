@@ -1,0 +1,142 @@
+{
+ "source": {
+  "A_claude/B_codex/C_agy": "evals/ab/RESULTS_s1_s2.jsonl (2026-08-23, pre-fix runner)",
+  "D_dobby": "evals/ab/RESULTS_d_only.jsonl (2026-08-24, post-fix runner)"
+ },
+ "caveat": "NOT a paired comparison: the D rows come from a different run than A/B/C. `fresh_input` and `prefix_write` are not comparable across providers — claude caches its prefix, codex reports it as input. Only `total` compares across arms. C_agy measured 7 of 12 calls, so its totals are a floor.",
+ "arms": {
+  "A_claude": {
+   "arm": "A_claude",
+   "totals": {
+    "prefix_write": 414298,
+    "prefix_reread": 5132416,
+    "fresh_input": 204,
+    "generated": 32905,
+    "total": 5579823
+   },
+   "units": 12,
+   "attempted": 12,
+   "calls": 12,
+   "calls_measured": 12,
+   "complete": true
+  },
+  "B_codex": {
+   "arm": "B_codex",
+   "totals": {
+    "prefix_write": 0,
+    "prefix_reread": 673024,
+    "fresh_input": 810129,
+    "generated": 8309,
+    "total": 1491462
+   },
+   "units": 12,
+   "attempted": 12,
+   "calls": 12,
+   "calls_measured": 12,
+   "complete": true
+  },
+  "C_agy": {
+   "arm": "C_agy",
+   "totals": {
+    "prefix_write": 0,
+    "prefix_reread": 8624250,
+    "fresh_input": 1637097,
+    "generated": 191218,
+    "total": 10452565
+   },
+   "units": 5,
+   "attempted": 12,
+   "calls": 12,
+   "calls_measured": 7,
+   "complete": false
+  },
+  "D_dobby": {
+   "arm": "D_dobby",
+   "totals": {
+    "prefix_write": 393053,
+    "prefix_reread": 2819797,
+    "fresh_input": 1942854,
+    "generated": 50512,
+    "total": 5206216
+   },
+   "units": 12,
+   "attempted": 12,
+   "calls": 36,
+   "calls_measured": 36,
+   "complete": true
+  }
+ },
+ "comparison": {
+  "baseline": "B_codex",
+  "arms": {
+   "A_claude": {
+    "per_unit": {
+     "prefix_write": 34524.8,
+     "prefix_reread": 427701.3,
+     "fresh_input": 17.0,
+     "generated": 2742.1,
+     "total": 464985.2
+    },
+    "units": 12,
+    "ratio_to_baseline": {
+     "prefix_write": null,
+     "prefix_reread": 7.63,
+     "fresh_input": 0.0,
+     "generated": 3.96,
+     "total": 3.74
+    }
+   },
+   "B_codex": {
+    "per_unit": {
+     "prefix_write": 0.0,
+     "prefix_reread": 56085.3,
+     "fresh_input": 67510.8,
+     "generated": 692.4,
+     "total": 124288.5
+    },
+    "units": 12,
+    "ratio_to_baseline": {
+     "prefix_write": null,
+     "prefix_reread": 1.0,
+     "fresh_input": 1.0,
+     "generated": 1.0,
+     "total": 1.0
+    }
+   },
+   "C_agy": {
+    "per_unit": {
+     "prefix_write": 0.0,
+     "prefix_reread": 1724850.0,
+     "fresh_input": 327419.4,
+     "generated": 38243.6,
+     "total": 2090513.0
+    },
+    "units": 5,
+    "ratio_to_baseline": {
+     "prefix_write": null,
+     "prefix_reread": 30.75,
+     "fresh_input": 4.85,
+     "generated": 55.23,
+     "total": 16.82
+    }
+   },
+   "D_dobby": {
+    "per_unit": {
+     "prefix_write": 32754.4,
+     "prefix_reread": 234983.1,
+     "fresh_input": 161904.5,
+     "generated": 4209.3,
+     "total": 433851.3
+    },
+    "units": 12,
+    "ratio_to_baseline": {
+     "prefix_write": null,
+     "prefix_reread": 4.19,
+     "fresh_input": 2.4,
+     "generated": 6.08,
+     "total": 3.49
+    }
+   }
+  }
+ }
+}

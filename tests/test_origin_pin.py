@@ -134,7 +134,8 @@ class TestFreshCloneVerifies(unittest.TestCase):
             ["git", "-C", REPO, "status", "--porcelain", "--",
              "dobby/core/skills.py", ".dobby/registry/skills.json",
              ".claude/skills"],
-            capture_output=True, text=True, env=child_env())
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", env=child_env())
         if (proc.stdout or "").strip():
             self.skipTest("relevant files have uncommitted changes; a clone "
                           "would test committed HEAD instead")
@@ -144,7 +145,8 @@ class TestFreshCloneVerifies(unittest.TestCase):
         clone = subprocess.run(
             ["git", "clone", "--quiet", "--depth", "1", REPO,
              os.path.join(target, "c")],
-            capture_output=True, text=True, env=child_env(), timeout=300)
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", env=child_env(), timeout=300)
         if clone.returncode != 0:
             self.skipTest(f"clone failed: {(clone.stderr or '')[-160:]}")
 

@@ -1,0 +1,155 @@
+{
+ "E_fable": {
+  "resolved_local": true,
+  "fail_to_pass_total": 1,
+  "fail_to_pass_fixed": 1,
+  "fail_to_pass_missing": [],
+  "regressions": [],
+  "regression_count": 0,
+  "ran": 163,
+  "crashed": false,
+  "fix_rate": 1.0,
+  "excluded_as_environment": [
+   "mail.tests.LocmemBackendTests.test_send_unicode",
+   "mail.tests.MailTests.test_dont_base64_encode"
+  ],
+  "tail": [
+   "  File \"C:\\Users\\dynap\\AppData\\Local\\Temp\\claude\\C--Users-dynap-Downloads-----\\1c9def70-a7fd-4309-b7a4-5d008fc76c58\\scratchpad\\swebench_run\\score_E_fable\\django\\core\\mail\\message.py\", line 162, in set_payload",
+   "    has_long_lines = any(",
+   "                     ^^^^",
+   "  File \"C:\\Users\\dynap\\AppData\\Local\\Temp\\claude\\C--Users-dynap-Downloads-----\\1c9def70-a7fd-4309-b7a4-5d008fc76c58\\scratchpad\\swebench_run\\score_E_fable\\django\\core\\mail\\message.py\", line 163, in <genexpr>",
+   "    len(l.encode()) > RFC5322_EMAIL_LINE_LENGTH_LIMIT",
+   "        ^^^^^^^^^^",
+   "UnicodeEncodeError: 'utf-8' codec can't encode characters in position 28-33: surrogates not allowed",
+   "",
+   "----------------------------------------------------------------------",
+   "Ran 163 tests in 5.224s",
+   "",
+   "FAILED (errors=2, skipped=2)"
+  ]
+ },
+ "D_dobby": {
+  "resolved_local": true,
+  "fail_to_pass_total": 1,
+  "fail_to_pass_fixed": 1,
+  "fail_to_pass_missing": [],
+  "regressions": [],
+  "regression_count": 0,
+  "ran": 163,
+  "crashed": false,
+  "fix_rate": 1.0,
+  "excluded_as_environment": [
+   "mail.tests.LocmemBackendTests.test_send_unicode",
+   "mail.tests.MailTests.test_dont_base64_encode"
+  ],
+  "tail": [
+   "  File \"C:\\Users\\dynap\\AppData\\Local\\Temp\\claude\\C--Users-dynap-Downloads-----\\1c9def70-a7fd-4309-b7a4-5d008fc76c58\\scratchpad\\swebench_run\\score_D_dobby\\django\\core\\mail\\message.py\", line 162, in set_payload",
+   "    has_long_lines = any(",
+   "                     ^^^^",
+   "  File \"C:\\Users\\dynap\\AppData\\Local\\Temp\\claude\\C--Users-dynap-Downloads-----\\1c9def70-a7fd-4309-b7a4-5d008fc76c58\\scratchpad\\swebench_run\\score_D_dobby\\django\\core\\mail\\message.py\", line 163, in <genexpr>",
+   "    len(l.encode()) > RFC5322_EMAIL_LINE_LENGTH_LIMIT",
+   "        ^^^^^^^^^^",
+   "UnicodeEncodeError: 'utf-8' codec can't encode characters in position 28-33: surrogates not allowed",
+   "",
+   "----------------------------------------------------------------------",
+   "Ran 163 tests in 5.121s",
+   "",
+   "FAILED (errors=2, skipped=2)"
+  ]
+ },
+ "A_claude": {
+  "resolved_local": true,
+  "fail_to_pass_total": 1,
+  "fail_to_pass_fixed": 1,
+  "fail_to_pass_missing": [],
+  "regressions": [],
+  "regression_count": 0,
+  "ran": 163,
+  "crashed": false,
+  "fix_rate": 1.0,
+  "excluded_as_environment": [
+   "mail.tests.LocmemBackendTests.test_send_unicode",
+   "mail.tests.MailTests.test_dont_base64_encode"
+  ],
+  "tail": [
+   "  File \"C:\\Users\\dynap\\AppData\\Local\\Temp\\claude\\C--Users-dynap-Downloads-----\\1c9def70-a7fd-4309-b7a4-5d008fc76c58\\scratchpad\\swebench_run\\score_A_claude\\django\\core\\mail\\message.py\", line 162, in set_payload",
+   "    has_long_lines = any(",
+   "                     ^^^^",
+   "  File \"C:\\Users\\dynap\\AppData\\Local\\Temp\\claude\\C--Users-dynap-Downloads-----\\1c9def70-a7fd-4309-b7a4-5d008fc76c58\\scratchpad\\swebench_run\\score_A_claude\\django\\core\\mail\\message.py\", line 163, in <genexpr>",
+   "    len(l.encode()) > RFC5322_EMAIL_LINE_LENGTH_LIMIT",
+   "        ^^^^^^^^^^",
+   "UnicodeEncodeError: 'utf-8' codec can't encode characters in position 28-33: surrogates not allowed",
+   "",
+   "----------------------------------------------------------------------",
+   "Ran 163 tests in 5.320s",
+   "",
+   "FAILED (errors=2, skipped=2)"
+  ]
+ },
+ "B_codex": {
+  "resolved_local": false,
+  "fail_to_pass_total": 1,
+  "fail_to_pass_fixed": 1,
+  "fail_to_pass_missing": [],
+  "regressions": [
+   "mail.tests.SMTPBackendTests.test_email_tls_attempts_starttls",
+   "mail.tests.SMTPBackendTests.test_send",
+   "mail.tests.SMTPBackendTests.test_send_many",
+   "mail.tests.SMTPBackendTests.test_send_unicode",
+   "mail.tests.SMTPBackendTests.test_send_verbose_name"
+  ],
+  "regression_count": 5,
+  "ran": 163,
+  "crashed": false,
+  "fix_rate": 1.0,
+  "excluded_as_environment": [
+   "mail.tests.LocmemBackendTests.test_send_unicode",
+   "mail.tests.MailTests.test_dont_base64_encode"
+  ],
+  "tail": [
+   "    self.putcmd(self.ehlo_msg, name or self.local_hostname)",
+   "  File \"C:\\Users\\dynap\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\smtplib.py\", line 378, in putcmd",
+   "    self.send(f'{s}{CRLF}')",
+   "  File \"C:\\Users\\dynap\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\smtplib.py\", line 357, in send",
+   "    s = s.encode(self.command_encoding)",
+   "        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+   "UnicodeEncodeError: 'ascii' codec can't encode characters in position 5-6: ordinal not in range(128)",
+   "",
+   "----------------------------------------------------------------------",
+   "Ran 163 tests in 5.600s",
+   "",
+   "FAILED (errors=20, skipped=2)"
+  ]
+ },
+ "C_agy": {
+  "resolved_local": true,
+  "fail_to_pass_total": 1,
+  "fail_to_pass_fixed": 1,
+  "fail_to_pass_missing": [],
+  "regressions": [],
+  "regression_count": 0,
+  "ran": 163,
+  "crashed": false,
+  "fix_rate": 1.0,
+  "excluded_as_environment": [
+   "mail.tests.LocmemBackendTests.test_send_unicode",
+   "mail.tests.MailTests.test_dont_base64_encode"
+  ],
+  "tail": [
+   "  File \"C:\\Users\\dynap\\AppData\\Local\\Temp\\claude\\C--Users-dynap-Downloads-----\\1c9def70-a7fd-4309-b7a4-5d008fc76c58\\scratchpad\\swebench_run\\django__django-11532__C_agy\\django\\core\\mail\\message.py\", line 162, in set_payload",
+   "    has_long_lines = any(",
+   "                     ^^^^",
+   "  File \"C:\\Users\\dynap\\AppData\\Local\\Temp\\claude\\C--Users-dynap-Downloads-----\\1c9def70-a7fd-4309-b7a4-5d008fc76c58\\scratchpad\\swebench_run\\django__django-11532__C_agy\\django\\core\\mail\\message.py\", line 163, in <genexpr>",
+   "    len(l.encode()) > RFC5322_EMAIL_LINE_LENGTH_LIMIT",
+   "        ^^^^^^^^^^",
+   "UnicodeEncodeError: 'utf-8' codec can't encode characters in position 28-33: surrogates not allowed",
+   "",
+   "----------------------------------------------------------------------",
+   "Ran 163 tests in 6.139s",
+   "",
+   "FAILED (errors=2, skipped=2)"
+  ],
+  "arm": "C_agy",
+  "instance_id": "django__django-11532"
+ }
+}

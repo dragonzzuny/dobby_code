@@ -184,6 +184,11 @@ CATALOG: tuple[ProviderSpec, ...] = (
         # usage.output_tokens, usage.output_tokens_details.thinking_tokens and
         # both cache counters. The cost is the vendor's own figure.
         usage_extra=("--output-format", "json"),
+        # `--tools` is documented as "the list of available tools from the
+        # built-in set", with "" disabling all of them. Measured here 2026-08-24:
+        # the full set costs 7,603 tokens of schema per call above the
+        # tools-disabled floor of 22,565. See ProviderSpec.tool_scope_extra.
+        tool_scope_extra=("--tools", "{tools}"),
         capabilities=("files", "shell", "web", "vision", "long_context"),
         # `--permission-mode plan` is documented by the vendor as read-only and the
         # default argv pins it. CLAIMED, not VERIFIED: no write probe has been run
@@ -241,6 +246,14 @@ CATALOG: tuple[ProviderSpec, ...] = (
         # filled by agy will edit; a scout role filled by agy CAN ALSO edit, and
         # only cwd/worktree isolation and the prompt stand between it and the tree.
         write_extra=("--mode", "accept-edits"),
+        # agy does NOT take its workspace from the process working directory,
+        # and every agy row this repository has recorded is that. Measured
+        # 2026-08-24 in a fresh django clone with `cwd` set correctly: agy
+        # searched its own `~/.gemini/antigravity-cli/scratch`, then `~`, then
+        # gave up with status CANCELED and exit 1 with NOTHING on stderr — which
+        # is why five earlier runs read as a broken binary. With `--add-dir` it
+        # found `django/core/mail/utils.py` and `DNS_NAME` on the first turn.
+        workspace_extra=("--add-dir", "{root}"),
         # Only ever sent inside a worktree. Without it agy refuses its own tools
         # headlessly and returns exit 1 having done nothing; with it, its tools
         # run unprompted — which is acceptable exactly where the directory it

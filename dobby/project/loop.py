@@ -208,7 +208,30 @@ def _one_item(data_dir, store, project_id, root, *, provider, execute_command,
         raise ProjectError(
             f"session {envelope.session_id} names work item "
             f"{envelope.active_work_item_id!r}, which is not in the portfolio")
-    if item.needs_architect:
+    # AN ITEM PAST THE FAST PATH NEEDS A PLAN, AND THAT IS WHAT A PLAN IS FOR.
+    #
+    # `needs_architect` fires on a missing acceptance check or high uncertainty.
+    # Neither covers the ordinary case the adaptive policy routes to
+    # COMPILED_SERIAL: an item that is perfectly gradeable and simply too wide
+    # for one call. Without this, such an item reached the compiler with no plan
+    # to compile and fell back to the generic graph — which is the shape the
+    # pilot priced at 3x.
+    #
+    # Asking here is the whole Fable-shaped claim: ONE deep call decides how the
+    # work splits, and cheap calls carry it out. It is bounded by
+    # `ARCHITECT_CALL_CEILING` and by the Claude quota, and it happens only when
+    # the class says the fast path was not enough.
+    wants_plan = False
+    if policy == "adaptive" and (architect or propose):
+        from .execution_policy import (ExecutionClass, choose_execution,
+                                       profile_item)
+        shape = choose_execution(profile_item(item, store=store,
+                                              project_id=project_id,
+                                              worktree_available=isolate))
+        wants_plan = (shape is ExecutionClass.COMPILED_SERIAL
+                      and not item.planned_by)
+
+    if item.needs_architect or wants_plan:
         if not (architect or propose):
             return None, (NEEDS_ARCHITECT, envelope.next_action)
         decision = _ask_the_architect(

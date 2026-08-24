@@ -58,6 +58,32 @@ DEFAULT_OUTPUT_CAP = 24_000
 #: retry is exactly what a benchmark is trying to see.
 _RECORDER: list | None = None
 
+#: Where every provider call is also appended as a spend-ledger row, or None to
+#: keep the ledger untouched. Set by `spend_ledger()`, never by a library call:
+#: a module that writes to disk because it was imported is a module nobody can
+#: use in a test.
+_SPEND_DIR: str | None = None
+#: What the current spend rows are attributed to — the skill or command running.
+_SPEND_SKILL: str = ""
+
+
+@contextlib.contextmanager
+def spend_ledger(data_dir: str | None, *, skill: str = ""):
+    """Append every provider call inside the block to `data_dir`'s spend ledger.
+
+    The ledger existed and only `dobby panel` wrote to it, so `dobby spend`
+    reported "no agent calls recorded" after a run that had made five. This is
+    the seam that fills it: opt-in, scoped to a block, and holding the skill name
+    so a status line can say what the spend was FOR and not only how much.
+    """
+    global _SPEND_DIR, _SPEND_SKILL
+    previous, previous_skill = _SPEND_DIR, _SPEND_SKILL
+    _SPEND_DIR, _SPEND_SKILL = data_dir, skill
+    try:
+        yield
+    finally:
+        _SPEND_DIR, _SPEND_SKILL = previous, previous_skill
+
 
 def _recorded(result: ProviderResult) -> ProviderResult:
     """Append to the active recorder, whatever the outcome.
@@ -70,6 +96,20 @@ def _recorded(result: ProviderResult) -> ProviderResult:
     """
     if _RECORDER is not None:
         _RECORDER.append(result)
+    if _SPEND_DIR:
+        try:
+            from ..spend import record
+
+            record(_SPEND_DIR, provider=result.provider,
+                   duration_s=result.duration_s or 0.0, ok=bool(result.ok),
+                   model=str((result.usage or {}).get("model")
+                             or (result.meta or {}).get("model") or ""),
+                   skill=_SPEND_SKILL, usage=result.usage)
+        except Exception:                          # noqa: BLE001
+            # The ledger is bookkeeping. A failure to write it must never take
+            # down the call it was recording — the answer is already in hand and
+            # losing it to an accounting error would be the worse trade.
+            pass
     return result
 
 
@@ -268,13 +308,23 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
     usage = None
     if collect_usage and spec.usage_extra:
         from .usage import unwrap
-        # `capped` may be a TRUNCATED envelope, in which case `unwrap` fails to
-        # parse and returns the text unchanged with no usage — the honest
-        # outcome, since a half-read envelope's numbers would be missing fields
-        # rather than wrong ones, and neither is worth guessing at.
-        answer, parsed, signals = unwrap(spec.id, capped)
+        # UNWRAP THE FULL OUTPUT, THEN CAP THE ANSWER — not the other way round.
+        #
+        # This used to parse `capped`, and the comment here said a truncated
+        # envelope yielding no usage was "the honest outcome". It was honest and
+        # it was avoidable: the whole stream is in `safe` and only the ANSWER
+        # needs bounding. Codex is the case that proves it — it streams JSONL and
+        # puts `turn.completed`, which carries every token count, at the END, so
+        # any task long enough to exceed the 24,000-char cap reported
+        # `calls_measured: 0`. Measured 2026-08-24 on a django SWE-bench
+        # instance: a real call, real tokens spent, and a row that could only say
+        # it did not know. The cap exists to keep an answer out of somebody's
+        # context window; it was never a reason to stop counting.
+        answer, parsed, signals = unwrap(spec.id, safe)
         if parsed is not None:
-            capped, usage = answer, parsed.to_dict()
+            usage = parsed.to_dict()
+            capped = cap_output(answer, output_cap)
+            truncated = len(answer) > len(capped)
             # Evidence, not usage: a refused tool is why a call can succeed and
             # accomplish nothing, and the worker above has to be able to tell
             # that from a model that simply declined.

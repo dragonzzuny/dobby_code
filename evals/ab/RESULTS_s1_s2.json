@@ -1,0 +1,2664 @@
+{
+ "seed": 20260823,
+ "arms": [
+  "A_claude",
+  "B_codex",
+  "C_agy",
+  "D_dobby"
+ ],
+ "rows": [
+  {
+   "task_id": "s2_errors",
+   "stratum": "S2",
+   "arm": "A_claude",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 88.9,
+   "record": {
+    "providers": {
+     "claude": {
+      "provider": "claude",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 88.88,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 88.88,
+        "error": null,
+        "usage": {
+         "provider": "claude",
+         "model": "claude-opus-5[1m]",
+         "input_tokens": 24,
+         "output_tokens": 4108,
+         "thinking_tokens": 907,
+         "cache_read_tokens": 630501,
+         "cache_creation_tokens": 37134,
+         "cost_usd": 0.7894104999999998,
+         "api_ms": 62467,
+         "turns": 15,
+         "source": "claude --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 24,
+       "output_tokens": 4108,
+       "thinking_tokens": 907,
+       "cache_read_tokens": 630501,
+       "cache_creation_tokens": 37134,
+       "cost_usd": 0.78941,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 1,
+   "claude_input_tokens": 24,
+   "claude_output_tokens": 4108,
+   "claude_thinking_tokens": 907,
+   "claude_cost_usd": 0.78941,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s1_strip",
+   "stratum": "S1",
+   "arm": "A_claude",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 48.3,
+   "record": {
+    "providers": {
+     "claude": {
+      "provider": "claude",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 48.23,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 48.23,
+        "error": null,
+        "usage": {
+         "provider": "claude",
+         "model": "claude-opus-5[1m]",
+         "input_tokens": 16,
+         "output_tokens": 2075,
+         "thinking_tokens": 233,
+         "cache_read_tokens": 396287,
+         "cache_creation_tokens": 33907,
+         "cost_usd": 0.5891685,
+         "api_ms": 30584,
+         "turns": 9,
+         "source": "claude --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 16,
+       "output_tokens": 2075,
+       "thinking_tokens": 233,
+       "cache_read_tokens": 396287,
+       "cache_creation_tokens": 33907,
+       "cost_usd": 0.589168,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 1,
+   "claude_input_tokens": 16,
+   "claude_output_tokens": 2075,
+   "claude_thinking_tokens": 233,
+   "claude_cost_usd": 0.589168,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s2_rename",
+   "stratum": "S2",
+   "arm": "C_agy",
+   "verified": false,
+   "state": "provider_failed",
+   "wall_s": 308.2,
+   "record": {
+    "providers": {
+     "agy": {
+      "provider": "agy",
+      "calls_total": 1,
+      "calls_succeeded": 0,
+      "calls_failed": 1,
+      "wall_s": 308.19,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": false,
+        "duration_s": 308.19,
+        "error": "exit 1: ",
+        "usage": null,
+        "usage_measured": false
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 0,
+       "input_tokens": null,
+       "output_tokens": null,
+       "thinking_tokens": null,
+       "cache_read_tokens": null,
+       "cache_creation_tokens": null,
+       "cost_usd": null,
+       "note": "null means no call reported that field; it does not mean zero"
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 0,
+    "calls_failed": 1,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "exit 1: ",
+   "original_root_unchanged": true,
+   "views_that_differ": []
+  },
+  {
+   "task_id": "s1_money",
+   "stratum": "S1",
+   "arm": "C_agy",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 34.1,
+   "record": {
+    "providers": {
+     "agy": {
+      "provider": "agy",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 34.12,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 34.12,
+        "error": null,
+        "usage": {
+         "provider": "agy",
+         "model": null,
+         "input_tokens": 64796,
+         "output_tokens": 3513,
+         "thinking_tokens": 2296,
+         "cache_read_tokens": 113575,
+         "cache_creation_tokens": null,
+         "cost_usd": null,
+         "api_ms": 27571,
+         "turns": 1,
+         "source": "agy --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 64796,
+       "output_tokens": 3513,
+       "thinking_tokens": 2296,
+       "cache_read_tokens": 113575,
+       "cache_creation_tokens": null,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "",
+   "original_root_unchanged": true,
+   "views_that_differ": []
+  },
+  {
+   "task_id": "s1_slice",
+   "stratum": "S1",
+   "arm": "C_agy",
+   "verified": false,
+   "state": "provider_failed",
+   "wall_s": 306.5,
+   "record": {
+    "providers": {
+     "agy": {
+      "provider": "agy",
+      "calls_total": 1,
+      "calls_succeeded": 0,
+      "calls_failed": 1,
+      "wall_s": 306.53,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": false,
+        "duration_s": 306.53,
+        "error": "exit 1: ",
+        "usage": null,
+        "usage_measured": false
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 0,
+       "input_tokens": null,
+       "output_tokens": null,
+       "thinking_tokens": null,
+       "cache_read_tokens": null,
+       "cache_creation_tokens": null,
+       "cost_usd": null,
+       "note": "null means no call reported that field; it does not mean zero"
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 0,
+    "calls_failed": 1,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "exit 1: ",
+   "original_root_unchanged": true,
+   "views_that_differ": []
+  },
+  {
+   "task_id": "s1_default",
+   "stratum": "S1",
+   "arm": "D_dobby",
+   "verified": false,
+   "state": "item_blocked",
+   "wall_s": 2.3,
+   "record": {
+    "providers": {},
+    "calls_total": 0,
+    "calls_succeeded": 0,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "no provider call was recorded: this arm never ran. W001: the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "graph_shapes": [
+    "DIRECT_GATED: gradeable, 1 declared path(s), uncertainty 0, no prior failure"
+   ],
+   "planned_by": null,
+   "blocked_reason": "the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "void": true
+  },
+  {
+   "task_id": "s2_audit",
+   "stratum": "S2",
+   "arm": "B_codex",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 54.9,
+   "record": {
+    "providers": {
+     "codex": {
+      "provider": "codex",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 54.88,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 54.88,
+        "error": null,
+        "usage": {
+         "provider": "codex",
+         "model": null,
+         "input_tokens": 82181,
+         "output_tokens": 840,
+         "thinking_tokens": 80,
+         "cache_read_tokens": 72448,
+         "cache_creation_tokens": 0,
+         "cost_usd": null,
+         "api_ms": null,
+         "turns": 1,
+         "source": "codex exec --json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 82181,
+       "output_tokens": 840,
+       "thinking_tokens": 80,
+       "cache_read_tokens": 72448,
+       "cache_creation_tokens": 0,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s2_audit",
+   "stratum": "S2",
+   "arm": "D_dobby",
+   "verified": false,
+   "state": "item_blocked",
+   "wall_s": 2.4,
+   "record": {
+    "providers": {},
+    "calls_total": 0,
+    "calls_succeeded": 0,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "no provider call was recorded: this arm never ran. W001: the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "graph_shapes": [
+    "DIRECT_GATED: gradeable, 2 declared path(s), uncertainty 0, no prior failure"
+   ],
+   "planned_by": null,
+   "blocked_reason": "the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "void": true
+  },
+  {
+   "task_id": "s2_paging",
+   "stratum": "S2",
+   "arm": "A_claude",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 55.5,
+   "record": {
+    "providers": {
+     "claude": {
+      "provider": "claude",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 55.44,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 55.44,
+        "error": null,
+        "usage": {
+         "provider": "claude",
+         "model": "claude-opus-5[1m]",
+         "input_tokens": 14,
+         "output_tokens": 2088,
+         "thinking_tokens": 279,
+         "cache_read_tokens": 344944,
+         "cache_creation_tokens": 33996,
+         "cost_usd": 0.564702,
+         "api_ms": 30812,
+         "turns": 10,
+         "source": "claude --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 14,
+       "output_tokens": 2088,
+       "thinking_tokens": 279,
+       "cache_read_tokens": 344944,
+       "cache_creation_tokens": 33996,
+       "cost_usd": 0.564702,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 1,
+   "claude_input_tokens": 14,
+   "claude_output_tokens": 2088,
+   "claude_thinking_tokens": 279,
+   "claude_cost_usd": 0.564702,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s1_default",
+   "stratum": "S1",
+   "arm": "C_agy",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 27.4,
+   "record": {
+    "providers": {
+     "agy": {
+      "provider": "agy",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 27.39,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 27.39,
+        "error": null,
+        "usage": {
+         "provider": "agy",
+         "model": null,
+         "input_tokens": 45372,
+         "output_tokens": 2983,
+         "thinking_tokens": 2039,
+         "cache_read_tokens": 97406,
+         "cache_creation_tokens": null,
+         "cost_usd": null,
+         "api_ms": 20128,
+         "turns": 1,
+         "source": "agy --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 45372,
+       "output_tokens": 2983,
+       "thinking_tokens": 2039,
+       "cache_read_tokens": 97406,
+       "cache_creation_tokens": null,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "",
+   "original_root_unchanged": true,
+   "views_that_differ": []
+  },
+  {
+   "task_id": "s2_paging",
+   "stratum": "S2",
+   "arm": "B_codex",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 42.9,
+   "record": {
+    "providers": {
+     "codex": {
+      "provider": "codex",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 42.83,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 42.83,
+        "error": null,
+        "usage": {
+         "provider": "codex",
+         "model": null,
+         "input_tokens": 81846,
+         "output_tokens": 768,
+         "thinking_tokens": 50,
+         "cache_read_tokens": 67328,
+         "cache_creation_tokens": 0,
+         "cost_usd": null,
+         "api_ms": null,
+         "turns": 1,
+         "source": "codex exec --json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 81846,
+       "output_tokens": 768,
+       "thinking_tokens": 50,
+       "cache_read_tokens": 67328,
+       "cache_creation_tokens": 0,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s2_currency",
+   "stratum": "S2",
+   "arm": "B_codex",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 46.1,
+   "record": {
+    "providers": {
+     "codex": {
+      "provider": "codex",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 46.06,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 46.06,
+        "error": null,
+        "usage": {
+         "provider": "codex",
+         "model": null,
+         "input_tokens": 80999,
+         "output_tokens": 823,
+         "thinking_tokens": 9,
+         "cache_read_tokens": 67328,
+         "cache_creation_tokens": 0,
+         "cost_usd": null,
+         "api_ms": null,
+         "turns": 1,
+         "source": "codex exec --json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 80999,
+       "output_tokens": 823,
+       "thinking_tokens": 9,
+       "cache_read_tokens": 67328,
+       "cache_creation_tokens": 0,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s1_money",
+   "stratum": "S1",
+   "arm": "B_codex",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 35.5,
+   "record": {
+    "providers": {
+     "codex": {
+      "provider": "codex",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 35.48,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 35.48,
+        "error": null,
+        "usage": {
+         "provider": "codex",
+         "model": null,
+         "input_tokens": 62397,
+         "output_tokens": 626,
+         "thinking_tokens": 79,
+         "cache_read_tokens": 55296,
+         "cache_creation_tokens": 0,
+         "cost_usd": null,
+         "api_ms": null,
+         "turns": 1,
+         "source": "codex exec --json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 62397,
+       "output_tokens": 626,
+       "thinking_tokens": 79,
+       "cache_read_tokens": 55296,
+       "cache_creation_tokens": 0,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s2_rename",
+   "stratum": "S2",
+   "arm": "B_codex",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 39.4,
+   "record": {
+    "providers": {
+     "codex": {
+      "provider": "codex",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 39.41,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 39.41,
+        "error": null,
+        "usage": {
+         "provider": "codex",
+         "model": null,
+         "input_tokens": 62780,
+         "output_tokens": 587,
+         "thinking_tokens": 17,
+         "cache_read_tokens": 51200,
+         "cache_creation_tokens": 0,
+         "cost_usd": null,
+         "api_ms": null,
+         "turns": 1,
+         "source": "codex exec --json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 62780,
+       "output_tokens": 587,
+       "thinking_tokens": 17,
+       "cache_read_tokens": 51200,
+       "cache_creation_tokens": 0,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s2_audit",
+   "stratum": "S2",
+   "arm": "C_agy",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 234.0,
+   "record": {
+    "providers": {
+     "agy": {
+      "provider": "agy",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 234.03,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 234.03,
+        "error": null,
+        "usage": {
+         "provider": "agy",
+         "model": null,
+         "input_tokens": 419766,
+         "output_tokens": 32515,
+         "thinking_tokens": 23268,
+         "cache_read_tokens": 3629015,
+         "cache_creation_tokens": null,
+         "cost_usd": null,
+         "api_ms": 226913,
+         "turns": 1,
+         "source": "agy --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 419766,
+       "output_tokens": 32515,
+       "thinking_tokens": 23268,
+       "cache_read_tokens": 3629015,
+       "cache_creation_tokens": null,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "",
+   "original_root_unchanged": true,
+   "views_that_differ": []
+  },
+  {
+   "task_id": "s1_money",
+   "stratum": "S1",
+   "arm": "D_dobby",
+   "verified": false,
+   "state": "item_blocked",
+   "wall_s": 2.3,
+   "record": {
+    "providers": {},
+    "calls_total": 0,
+    "calls_succeeded": 0,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "no provider call was recorded: this arm never ran. W001: the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "graph_shapes": [
+    "DIRECT_GATED: gradeable, 1 declared path(s), uncertainty 0, no prior failure"
+   ],
+   "planned_by": null,
+   "blocked_reason": "the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "void": true
+  },
+  {
+   "task_id": "s1_guard",
+   "stratum": "S1",
+   "arm": "D_dobby",
+   "verified": false,
+   "state": "item_blocked",
+   "wall_s": 2.0,
+   "record": {
+    "providers": {},
+    "calls_total": 0,
+    "calls_succeeded": 0,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "no provider call was recorded: this arm never ran. W001: the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "graph_shapes": [
+    "DIRECT_GATED: gradeable, 1 declared path(s), uncertainty 0, no prior failure"
+   ],
+   "planned_by": null,
+   "blocked_reason": "the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "void": true
+  },
+  {
+   "task_id": "s2_normalise",
+   "stratum": "S2",
+   "arm": "D_dobby",
+   "verified": false,
+   "state": "item_blocked",
+   "wall_s": 2.1,
+   "record": {
+    "providers": {},
+    "calls_total": 0,
+    "calls_succeeded": 0,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "no provider call was recorded: this arm never ran. W001: the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "graph_shapes": [
+    "DIRECT_GATED: gradeable, 3 declared path(s), uncertainty 0, no prior failure"
+   ],
+   "planned_by": null,
+   "blocked_reason": "the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "void": true
+  },
+  {
+   "task_id": "s2_errors",
+   "stratum": "S2",
+   "arm": "C_agy",
+   "verified": false,
+   "state": "provider_failed",
+   "wall_s": 306.3,
+   "record": {
+    "providers": {
+     "agy": {
+      "provider": "agy",
+      "calls_total": 1,
+      "calls_succeeded": 0,
+      "calls_failed": 1,
+      "wall_s": 306.33,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": false,
+        "duration_s": 306.33,
+        "error": "exit 1: ",
+        "usage": null,
+        "usage_measured": false
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 0,
+       "input_tokens": null,
+       "output_tokens": null,
+       "thinking_tokens": null,
+       "cache_read_tokens": null,
+       "cache_creation_tokens": null,
+       "cost_usd": null,
+       "note": "null means no call reported that field; it does not mean zero"
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 0,
+    "calls_failed": 1,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "exit 1: ",
+   "original_root_unchanged": true,
+   "views_that_differ": []
+  },
+  {
+   "task_id": "s1_sort",
+   "stratum": "S1",
+   "arm": "B_codex",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 45.9,
+   "record": {
+    "providers": {
+     "codex": {
+      "provider": "codex",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 45.89,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 45.89,
+        "error": null,
+        "usage": {
+         "provider": "codex",
+         "model": null,
+         "input_tokens": 62325,
+         "output_tokens": 516,
+         "thinking_tokens": 25,
+         "cache_read_tokens": 47104,
+         "cache_creation_tokens": 0,
+         "cost_usd": null,
+         "api_ms": null,
+         "turns": 1,
+         "source": "codex exec --json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 62325,
+       "output_tokens": 516,
+       "thinking_tokens": 25,
+       "cache_read_tokens": 47104,
+       "cache_creation_tokens": 0,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s1_sort",
+   "stratum": "S1",
+   "arm": "C_agy",
+   "verified": false,
+   "state": "provider_failed",
+   "wall_s": 307.0,
+   "record": {
+    "providers": {
+     "agy": {
+      "provider": "agy",
+      "calls_total": 1,
+      "calls_succeeded": 0,
+      "calls_failed": 1,
+      "wall_s": 306.97,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": false,
+        "duration_s": 306.97,
+        "error": "exit 1: ",
+        "usage": null,
+        "usage_measured": false
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 0,
+       "input_tokens": null,
+       "output_tokens": null,
+       "thinking_tokens": null,
+       "cache_read_tokens": null,
+       "cache_creation_tokens": null,
+       "cost_usd": null,
+       "note": "null means no call reported that field; it does not mean zero"
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 0,
+    "calls_failed": 1,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "exit 1: ",
+   "original_root_unchanged": true,
+   "views_that_differ": []
+  },
+  {
+   "task_id": "s2_errors",
+   "stratum": "S2",
+   "arm": "D_dobby",
+   "verified": false,
+   "state": "item_blocked",
+   "wall_s": 2.2,
+   "record": {
+    "providers": {},
+    "calls_total": 0,
+    "calls_succeeded": 0,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "no provider call was recorded: this arm never ran. W001: the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "graph_shapes": [
+    "DIRECT_GATED: gradeable, 3 declared path(s), uncertainty 0, no prior failure"
+   ],
+   "planned_by": null,
+   "blocked_reason": "the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "void": true
+  },
+  {
+   "task_id": "s1_guard",
+   "stratum": "S1",
+   "arm": "C_agy",
+   "verified": false,
+   "state": "ok",
+   "wall_s": 237.8,
+   "record": {
+    "providers": {
+     "agy": {
+      "provider": "agy",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 237.77,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 237.77,
+        "error": null,
+        "usage": {
+         "provider": "agy",
+         "model": null,
+         "input_tokens": 405245,
+         "output_tokens": 24987,
+         "thinking_tokens": 18538,
+         "cache_read_tokens": 1685298,
+         "cache_creation_tokens": null,
+         "cost_usd": null,
+         "api_ms": 230795,
+         "turns": 1,
+         "source": "agy --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 405245,
+       "output_tokens": 24987,
+       "thinking_tokens": 18538,
+       "cache_read_tokens": 1685298,
+       "cache_creation_tokens": null,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "",
+   "original_root_unchanged": false,
+   "views_that_differ": [
+    "content_manifest",
+    "diff",
+    "porcelain"
+   ]
+  },
+  {
+   "task_id": "s2_paging",
+   "stratum": "S2",
+   "arm": "C_agy",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 260.0,
+   "record": {
+    "providers": {
+     "agy": {
+      "provider": "agy",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 260.01,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 260.01,
+        "error": null,
+        "usage": {
+         "provider": "agy",
+         "model": null,
+         "input_tokens": 187864,
+         "output_tokens": 10534,
+         "thinking_tokens": 7145,
+         "cache_read_tokens": 433780,
+         "cache_creation_tokens": null,
+         "cost_usd": null,
+         "api_ms": 253060,
+         "turns": 1,
+         "source": "agy --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 187864,
+       "output_tokens": 10534,
+       "thinking_tokens": 7145,
+       "cache_read_tokens": 433780,
+       "cache_creation_tokens": null,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "",
+   "original_root_unchanged": true,
+   "views_that_differ": []
+  },
+  {
+   "task_id": "s2_currency",
+   "stratum": "S2",
+   "arm": "C_agy",
+   "verified": false,
+   "state": "ok",
+   "wall_s": 198.8,
+   "record": {
+    "providers": {
+     "agy": {
+      "provider": "agy",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 198.72,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 198.72,
+        "error": null,
+        "usage": {
+         "provider": "agy",
+         "model": null,
+         "input_tokens": 377599,
+         "output_tokens": 23581,
+         "thinking_tokens": 15879,
+         "cache_read_tokens": 1893811,
+         "cache_creation_tokens": null,
+         "cost_usd": null,
+         "api_ms": 192282,
+         "turns": 1,
+         "source": "agy --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 377599,
+       "output_tokens": 23581,
+       "thinking_tokens": 15879,
+       "cache_read_tokens": 1893811,
+       "cache_creation_tokens": null,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "",
+   "original_root_unchanged": false,
+   "views_that_differ": [
+    "content_manifest",
+    "diff",
+    "porcelain"
+   ]
+  },
+  {
+   "task_id": "s1_guard",
+   "stratum": "S1",
+   "arm": "A_claude",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 48.6,
+   "record": {
+    "providers": {
+     "claude": {
+      "provider": "claude",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 48.55,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 48.55,
+        "error": null,
+        "usage": {
+         "provider": "claude",
+         "model": "claude-opus-5[1m]",
+         "input_tokens": 12,
+         "output_tokens": 1807,
+         "thinking_tokens": 268,
+         "cache_read_tokens": 288748,
+         "cache_creation_tokens": 33172,
+         "cost_usd": 0.521329,
+         "api_ms": 27072,
+         "turns": 7,
+         "source": "claude --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 12,
+       "output_tokens": 1807,
+       "thinking_tokens": 268,
+       "cache_read_tokens": 288748,
+       "cache_creation_tokens": 33172,
+       "cost_usd": 0.521329,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 1,
+   "claude_input_tokens": 12,
+   "claude_output_tokens": 1807,
+   "claude_thinking_tokens": 268,
+   "claude_cost_usd": 0.521329,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s1_sort",
+   "stratum": "S1",
+   "arm": "D_dobby",
+   "verified": false,
+   "state": "item_blocked",
+   "wall_s": 2.4,
+   "record": {
+    "providers": {},
+    "calls_total": 0,
+    "calls_succeeded": 0,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "no provider call was recorded: this arm never ran. W001: the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "graph_shapes": [
+    "DIRECT_GATED: gradeable, 1 declared path(s), uncertainty 0, no prior failure"
+   ],
+   "planned_by": null,
+   "blocked_reason": "the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "void": true
+  },
+  {
+   "task_id": "s1_sort",
+   "stratum": "S1",
+   "arm": "A_claude",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 51.6,
+   "record": {
+    "providers": {
+     "claude": {
+      "provider": "claude",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 51.53,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 51.53,
+        "error": null,
+        "usage": {
+         "provider": "claude",
+         "model": "claude-opus-5[1m]",
+         "input_tokens": 14,
+         "output_tokens": 1537,
+         "thinking_tokens": 253,
+         "cache_read_tokens": 342760,
+         "cache_creation_tokens": 33429,
+         "cost_usd": 0.5441650000000001,
+         "api_ms": 28062,
+         "turns": 8,
+         "source": "claude --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 14,
+       "output_tokens": 1537,
+       "thinking_tokens": 253,
+       "cache_read_tokens": 342760,
+       "cache_creation_tokens": 33429,
+       "cost_usd": 0.544165,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 1,
+   "claude_input_tokens": 14,
+   "claude_output_tokens": 1537,
+   "claude_thinking_tokens": 253,
+   "claude_cost_usd": 0.544165,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s1_guard",
+   "stratum": "S1",
+   "arm": "B_codex",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 44.5,
+   "record": {
+    "providers": {
+     "codex": {
+      "provider": "codex",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 44.41,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 44.41,
+        "error": null,
+        "usage": {
+         "provider": "codex",
+         "model": null,
+         "input_tokens": 62359,
+         "output_tokens": 636,
+         "thinking_tokens": 128,
+         "cache_read_tokens": 55296,
+         "cache_creation_tokens": 0,
+         "cost_usd": null,
+         "api_ms": null,
+         "turns": 1,
+         "source": "codex exec --json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 62359,
+       "output_tokens": 636,
+       "thinking_tokens": 128,
+       "cache_read_tokens": 55296,
+       "cache_creation_tokens": 0,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s2_audit",
+   "stratum": "S2",
+   "arm": "A_claude",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 50.1,
+   "record": {
+    "providers": {
+     "claude": {
+      "provider": "claude",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 50.06,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 50.06,
+        "error": null,
+        "usage": {
+         "provider": "claude",
+         "model": "claude-opus-5[1m]",
+         "input_tokens": 14,
+         "output_tokens": 1833,
+         "thinking_tokens": 81,
+         "cache_read_tokens": 344985,
+         "cache_creation_tokens": 34343,
+         "cost_usd": 0.5618175,
+         "api_ms": 24905,
+         "turns": 10,
+         "source": "claude --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 14,
+       "output_tokens": 1833,
+       "thinking_tokens": 81,
+       "cache_read_tokens": 344985,
+       "cache_creation_tokens": 34343,
+       "cost_usd": 0.561817,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 1,
+   "claude_input_tokens": 14,
+   "claude_output_tokens": 1833,
+   "claude_thinking_tokens": 81,
+   "claude_cost_usd": 0.561817,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s2_currency",
+   "stratum": "S2",
+   "arm": "D_dobby",
+   "verified": false,
+   "state": "item_blocked",
+   "wall_s": 2.3,
+   "record": {
+    "providers": {},
+    "calls_total": 0,
+    "calls_succeeded": 0,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "no provider call was recorded: this arm never ran. W001: the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "graph_shapes": [
+    "DIRECT_GATED: gradeable, 3 declared path(s), uncertainty 0, no prior failure"
+   ],
+   "planned_by": null,
+   "blocked_reason": "the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "void": true
+  },
+  {
+   "task_id": "s1_slice",
+   "stratum": "S1",
+   "arm": "A_claude",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 60.5,
+   "record": {
+    "providers": {
+     "claude": {
+      "provider": "claude",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 60.44,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 60.44,
+        "error": null,
+        "usage": {
+         "provider": "claude",
+         "model": "claude-opus-5[1m]",
+         "input_tokens": 20,
+         "output_tokens": 2242,
+         "thinking_tokens": 415,
+         "cache_read_tokens": 509480,
+         "cache_creation_tokens": 34670,
+         "cost_usd": 0.65759,
+         "api_ms": 35963,
+         "turns": 11,
+         "source": "claude --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 20,
+       "output_tokens": 2242,
+       "thinking_tokens": 415,
+       "cache_read_tokens": 509480,
+       "cache_creation_tokens": 34670,
+       "cost_usd": 0.65759,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 1,
+   "claude_input_tokens": 20,
+   "claude_output_tokens": 2242,
+   "claude_thinking_tokens": 415,
+   "claude_cost_usd": 0.65759,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s1_money",
+   "stratum": "S1",
+   "arm": "A_claude",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 37.6,
+   "record": {
+    "providers": {
+     "claude": {
+      "provider": "claude",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 37.59,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 37.59,
+        "error": null,
+        "usage": {
+         "provider": "claude",
+         "model": "claude-opus-5[1m]",
+         "input_tokens": 12,
+         "output_tokens": 1344,
+         "thinking_tokens": 124,
+         "cache_read_tokens": 285213,
+         "cache_creation_tokens": 32776,
+         "cost_usd": 0.5040264999999999,
+         "api_ms": 21355,
+         "turns": 7,
+         "source": "claude --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 12,
+       "output_tokens": 1344,
+       "thinking_tokens": 124,
+       "cache_read_tokens": 285213,
+       "cache_creation_tokens": 32776,
+       "cost_usd": 0.504026,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 1,
+   "claude_input_tokens": 12,
+   "claude_output_tokens": 1344,
+   "claude_thinking_tokens": 124,
+   "claude_cost_usd": 0.504026,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s2_rename",
+   "stratum": "S2",
+   "arm": "A_claude",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 74.2,
+   "record": {
+    "providers": {
+     "claude": {
+      "provider": "claude",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 74.22,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 74.22,
+        "error": null,
+        "usage": {
+         "provider": "claude",
+         "model": "claude-opus-5[1m]",
+         "input_tokens": 20,
+         "output_tokens": 2769,
+         "thinking_tokens": 200,
+         "cache_read_tokens": 515380,
+         "cache_creation_tokens": 35956,
+         "cost_usd": 0.6865749999999999,
+         "api_ms": 47347,
+         "turns": 14,
+         "source": "claude --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 20,
+       "output_tokens": 2769,
+       "thinking_tokens": 200,
+       "cache_read_tokens": 515380,
+       "cache_creation_tokens": 35956,
+       "cost_usd": 0.686575,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 1,
+   "claude_input_tokens": 20,
+   "claude_output_tokens": 2769,
+   "claude_thinking_tokens": 200,
+   "claude_cost_usd": 0.686575,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s1_slice",
+   "stratum": "S1",
+   "arm": "B_codex",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 31.2,
+   "record": {
+    "providers": {
+     "codex": {
+      "provider": "codex",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 31.14,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 31.14,
+        "error": null,
+        "usage": {
+         "provider": "codex",
+         "model": null,
+         "input_tokens": 46518,
+         "output_tokens": 507,
+         "thinking_tokens": 16,
+         "cache_read_tokens": 36096,
+         "cache_creation_tokens": 0,
+         "cost_usd": null,
+         "api_ms": null,
+         "turns": 1,
+         "source": "codex exec --json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 46518,
+       "output_tokens": 507,
+       "thinking_tokens": 16,
+       "cache_read_tokens": 36096,
+       "cache_creation_tokens": 0,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s2_currency",
+   "stratum": "S2",
+   "arm": "A_claude",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 80.1,
+   "record": {
+    "providers": {
+     "claude": {
+      "provider": "claude",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 80.09,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 80.09,
+        "error": null,
+        "usage": {
+         "provider": "claude",
+         "model": "claude-opus-5[1m]",
+         "input_tokens": 20,
+         "output_tokens": 4212,
+         "thinking_tokens": 678,
+         "cache_read_tokens": 525034,
+         "cache_creation_tokens": 37468,
+         "cost_usd": 0.742597,
+         "api_ms": 53475,
+         "turns": 15,
+         "source": "claude --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 20,
+       "output_tokens": 4212,
+       "thinking_tokens": 678,
+       "cache_read_tokens": 525034,
+       "cache_creation_tokens": 37468,
+       "cost_usd": 0.742597,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 1,
+   "claude_input_tokens": 20,
+   "claude_output_tokens": 4212,
+   "claude_thinking_tokens": 678,
+   "claude_cost_usd": 0.742597,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s1_default",
+   "stratum": "S1",
+   "arm": "B_codex",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 28.3,
+   "record": {
+    "providers": {
+     "codex": {
+      "provider": "codex",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 28.28,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 28.28,
+        "error": null,
+        "usage": {
+         "provider": "codex",
+         "model": null,
+         "input_tokens": 46454,
+         "output_tokens": 402,
+         "thinking_tokens": 7,
+         "cache_read_tokens": 37120,
+         "cache_creation_tokens": 0,
+         "cost_usd": null,
+         "api_ms": null,
+         "turns": 1,
+         "source": "codex exec --json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 46454,
+       "output_tokens": 402,
+       "thinking_tokens": 7,
+       "cache_read_tokens": 37120,
+       "cache_creation_tokens": 0,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s2_normalise",
+   "stratum": "S2",
+   "arm": "C_agy",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 285.2,
+   "record": {
+    "providers": {
+     "agy": {
+      "provider": "agy",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 285.19,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 285.19,
+        "error": null,
+        "usage": {
+         "provider": "agy",
+         "model": null,
+         "input_tokens": 136455,
+         "output_tokens": 13284,
+         "thinking_tokens": 10656,
+         "cache_read_tokens": 771365,
+         "cache_creation_tokens": null,
+         "cost_usd": null,
+         "api_ms": 276337,
+         "turns": 1,
+         "source": "agy --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 136455,
+       "output_tokens": 13284,
+       "thinking_tokens": 10656,
+       "cache_read_tokens": 771365,
+       "cache_creation_tokens": null,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "",
+   "original_root_unchanged": true,
+   "views_that_differ": []
+  },
+  {
+   "task_id": "s1_strip",
+   "stratum": "S1",
+   "arm": "B_codex",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 39.7,
+   "record": {
+    "providers": {
+     "codex": {
+      "provider": "codex",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 39.67,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 39.67,
+        "error": null,
+        "usage": {
+         "provider": "codex",
+         "model": null,
+         "input_tokens": 62339,
+         "output_tokens": 522,
+         "thinking_tokens": 9,
+         "cache_read_tokens": 51200,
+         "cache_creation_tokens": 0,
+         "cost_usd": null,
+         "api_ms": null,
+         "turns": 1,
+         "source": "codex exec --json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 62339,
+       "output_tokens": 522,
+       "thinking_tokens": 9,
+       "cache_read_tokens": 51200,
+       "cache_creation_tokens": 0,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s2_errors",
+   "stratum": "S2",
+   "arm": "B_codex",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 50.1,
+   "record": {
+    "providers": {
+     "codex": {
+      "provider": "codex",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 50.05,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 50.05,
+        "error": null,
+        "usage": {
+         "provider": "codex",
+         "model": null,
+         "input_tokens": 80428,
+         "output_tokens": 874,
+         "thinking_tokens": 136,
+         "cache_read_tokens": 66304,
+         "cache_creation_tokens": 0,
+         "cost_usd": null,
+         "api_ms": null,
+         "turns": 1,
+         "source": "codex exec --json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 80428,
+       "output_tokens": 874,
+       "thinking_tokens": 136,
+       "cache_read_tokens": 66304,
+       "cache_creation_tokens": 0,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s2_normalise",
+   "stratum": "S2",
+   "arm": "B_codex",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 40.2,
+   "record": {
+    "providers": {
+     "codex": {
+      "provider": "codex",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 40.17,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 40.17,
+        "error": null,
+        "usage": {
+         "provider": "codex",
+         "model": null,
+         "input_tokens": 79503,
+         "output_tokens": 629,
+         "thinking_tokens": 23,
+         "cache_read_tokens": 66304,
+         "cache_creation_tokens": 0,
+         "cost_usd": null,
+         "api_ms": null,
+         "turns": 1,
+         "source": "codex exec --json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 79503,
+       "output_tokens": 629,
+       "thinking_tokens": 23,
+       "cache_read_tokens": 66304,
+       "cache_creation_tokens": 0,
+       "cost_usd": null,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s2_paging",
+   "stratum": "S2",
+   "arm": "D_dobby",
+   "verified": false,
+   "state": "item_blocked",
+   "wall_s": 2.2,
+   "record": {
+    "providers": {},
+    "calls_total": 0,
+    "calls_succeeded": 0,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "no provider call was recorded: this arm never ran. W001: the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "graph_shapes": [
+    "DIRECT_GATED: gradeable, 2 declared path(s), uncertainty 0, no prior failure"
+   ],
+   "planned_by": null,
+   "blocked_reason": "the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "void": true
+  },
+  {
+   "task_id": "s1_strip",
+   "stratum": "S1",
+   "arm": "D_dobby",
+   "verified": false,
+   "state": "item_blocked",
+   "wall_s": 2.2,
+   "record": {
+    "providers": {},
+    "calls_total": 0,
+    "calls_succeeded": 0,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "no provider call was recorded: this arm never ran. W001: the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "graph_shapes": [
+    "DIRECT_GATED: gradeable, 1 declared path(s), uncertainty 0, no prior failure"
+   ],
+   "planned_by": null,
+   "blocked_reason": "the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "void": true
+  },
+  {
+   "task_id": "s1_slice",
+   "stratum": "S1",
+   "arm": "D_dobby",
+   "verified": false,
+   "state": "item_blocked",
+   "wall_s": 2.0,
+   "record": {
+    "providers": {},
+    "calls_total": 0,
+    "calls_succeeded": 0,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "no provider call was recorded: this arm never ran. W001: the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "graph_shapes": [
+    "DIRECT_GATED: gradeable, 1 declared path(s), uncertainty 0, no prior failure"
+   ],
+   "planned_by": null,
+   "blocked_reason": "the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "void": true
+  },
+  {
+   "task_id": "s1_strip",
+   "stratum": "S1",
+   "arm": "C_agy",
+   "verified": false,
+   "state": "provider_failed",
+   "wall_s": 307.1,
+   "record": {
+    "providers": {
+     "agy": {
+      "provider": "agy",
+      "calls_total": 1,
+      "calls_succeeded": 0,
+      "calls_failed": 1,
+      "wall_s": 307.09,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": false,
+        "duration_s": 307.09,
+        "error": "exit 1: ",
+        "usage": null,
+        "usage_measured": false
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 0,
+       "input_tokens": null,
+       "output_tokens": null,
+       "thinking_tokens": null,
+       "cache_read_tokens": null,
+       "cache_creation_tokens": null,
+       "cost_usd": null,
+       "note": "null means no call reported that field; it does not mean zero"
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 0,
+    "calls_failed": 1,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "exit 1: ",
+   "original_root_unchanged": true,
+   "views_that_differ": []
+  },
+  {
+   "task_id": "s1_default",
+   "stratum": "S1",
+   "arm": "A_claude",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 72.0,
+   "record": {
+    "providers": {
+     "claude": {
+      "provider": "claude",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 71.94,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 71.94,
+        "error": null,
+        "usage": {
+         "provider": "claude",
+         "model": "claude-opus-5[1m]",
+         "input_tokens": 18,
+         "output_tokens": 2060,
+         "thinking_tokens": 216,
+         "cache_read_tokens": 444140,
+         "cache_creation_tokens": 33318,
+         "cost_usd": 0.60684,
+         "api_ms": 36302,
+         "turns": 10,
+         "source": "claude --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 18,
+       "output_tokens": 2060,
+       "thinking_tokens": 216,
+       "cache_read_tokens": 444140,
+       "cache_creation_tokens": 33318,
+       "cost_usd": 0.60684,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 1,
+   "claude_input_tokens": 18,
+   "claude_output_tokens": 2060,
+   "claude_thinking_tokens": 216,
+   "claude_cost_usd": 0.60684,
+   "evaluation_gaming": [],
+   "note": ""
+  },
+  {
+   "task_id": "s2_rename",
+   "stratum": "S2",
+   "arm": "D_dobby",
+   "verified": false,
+   "state": "item_blocked",
+   "wall_s": 2.2,
+   "record": {
+    "providers": {},
+    "calls_total": 0,
+    "calls_succeeded": 0,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 0,
+   "claude_input_tokens": null,
+   "claude_output_tokens": null,
+   "claude_thinking_tokens": null,
+   "claude_cost_usd": null,
+   "evaluation_gaming": [],
+   "note": "no provider call was recorded: this arm never ran. W001: the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "graph_shapes": [
+    "DIRECT_GATED: gradeable, 3 declared path(s), uncertainty 0, no prior failure"
+   ],
+   "planned_by": null,
+   "blocked_reason": "the run ended FAILED, not SUCCEEDED; the run promoted no artifact, so it produced nothing that passed a gate",
+   "void": true
+  },
+  {
+   "task_id": "s2_normalise",
+   "stratum": "S2",
+   "arm": "A_claude",
+   "verified": true,
+   "state": "ok",
+   "wall_s": 76.1,
+   "record": {
+    "providers": {
+     "claude": {
+      "provider": "claude",
+      "calls_total": 1,
+      "calls_succeeded": 1,
+      "calls_failed": 0,
+      "wall_s": 76.08,
+      "attempts": [
+       {
+        "index": 0,
+        "ok": true,
+        "duration_s": 76.08,
+        "error": null,
+        "usage": {
+         "provider": "claude",
+         "model": "claude-opus-5[1m]",
+         "input_tokens": 20,
+         "output_tokens": 2869,
+         "thinking_tokens": 307,
+         "cache_read_tokens": 504944,
+         "cache_creation_tokens": 34129,
+         "cost_usd": 0.665587,
+         "api_ms": 53187,
+         "turns": 13,
+         "source": "claude --output-format json"
+        },
+        "usage_measured": true
+       }
+      ],
+      "usage": {
+       "calls": 1,
+       "calls_measured": 1,
+       "input_tokens": 20,
+       "output_tokens": 2869,
+       "thinking_tokens": 307,
+       "cache_read_tokens": 504944,
+       "cache_creation_tokens": 34129,
+       "cost_usd": 0.665587,
+       "note": ""
+      }
+     }
+    },
+    "calls_total": 1,
+    "calls_succeeded": 1,
+    "calls_failed": 0,
+    "note": "usage null on an attempt means the provider reported none, not that it spent none"
+   },
+   "claude_calls": 1,
+   "claude_input_tokens": 20,
+   "claude_output_tokens": 2869,
+   "claude_thinking_tokens": 307,
+   "claude_cost_usd": 0.665587,
+   "evaluation_gaming": [],
+   "note": ""
+  }
+ ],
+ "paired_tasks": [],
+ "aggregation_error": "",
+ "dropped_tasks": [
+  {
+   "task_id": "s1_default",
+   "void_arms": [
+    "D_dobby"
+   ]
+  },
+  {
+   "task_id": "s1_guard",
+   "void_arms": [
+    "D_dobby"
+   ]
+  },
+  {
+   "task_id": "s1_money",
+   "void_arms": [
+    "D_dobby"
+   ]
+  },
+  {
+   "task_id": "s1_slice",
+   "void_arms": [
+    "D_dobby"
+   ]
+  },
+  {
+   "task_id": "s1_sort",
+   "void_arms": [
+    "D_dobby"
+   ]
+  },
+  {
+   "task_id": "s1_strip",
+   "void_arms": [
+    "D_dobby"
+   ]
+  },
+  {
+   "task_id": "s2_audit",
+   "void_arms": [
+    "D_dobby"
+   ]
+  },
+  {
+   "task_id": "s2_currency",
+   "void_arms": [
+    "D_dobby"
+   ]
+  },
+  {
+   "task_id": "s2_errors",
+   "void_arms": [
+    "D_dobby"
+   ]
+  },
+  {
+   "task_id": "s2_normalise",
+   "void_arms": [
+    "D_dobby"
+   ]
+  },
+  {
+   "task_id": "s2_paging",
+   "void_arms": [
+    "D_dobby"
+   ]
+  },
+  {
+   "task_id": "s2_rename",
+   "void_arms": [
+    "D_dobby"
+   ]
+  }
+ ],
+ "note": "only paired_tasks may be compared across arms; a task any arm failed to run is void for all of them"
+}

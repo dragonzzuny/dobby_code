@@ -119,7 +119,9 @@ def find_interpreters(only: str | None) -> list[tuple[str, str]]:
     """
     found: dict[str, str] = {}
     if os.name == "nt" and shutil.which("py"):
-        proc = subprocess.run(["py", "-0p"], capture_output=True, text=True)
+        proc = subprocess.run(["py", "-0p"], capture_output=True,
+                              text=True, encoding="utf-8",
+                              errors="replace")
         for line in (proc.stdout or "").splitlines():
             parts = line.split()
             if len(parts) >= 2 and parts[0].startswith("-"):
@@ -160,7 +162,8 @@ def parse_workflow_steps() -> list[str]:
 def clone_head(dest: str) -> str:
     clone = os.path.join(dest, "c")
     proc = subprocess.run(["git", "clone", "--quiet", REPO, clone],
-                          capture_output=True, text=True, env=CHILD_ENV,
+                          capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", env=CHILD_ENV,
                           timeout=900)
     if proc.returncode != 0:
         raise SystemExit(f"clone failed: {(proc.stderr or '')[-400:]}")
@@ -214,6 +217,7 @@ def main() -> int:
     probe = clone_head(os.path.join(tmp, "probe"))
     head = subprocess.run(["git", "-C", probe, "rev-parse", "--short", "HEAD"],
                           capture_output=True, text=True,
+                          encoding="utf-8", errors="replace",
                           env=CHILD_ENV).stdout.strip()
     boot = os.path.exists(os.path.join(probe, ".dobby", "knowledge",
                                        "kg.bootstrap.json"))
@@ -228,7 +232,9 @@ def main() -> int:
 
     for label, exe in interpreters:
         print(f"--- python {label} ({exe}) ---", flush=True)
-        ver = subprocess.run([exe, "-V"], capture_output=True, text=True)
+        ver = subprocess.run([exe, "-V"], capture_output=True,
+                             text=True, encoding="utf-8",
+                             errors="replace")
         print(f"  {(ver.stdout or ver.stderr).strip()}", flush=True)
 
         # Show the encoding the tests will actually get. This is the variable
@@ -236,12 +242,13 @@ def main() -> int:
         enc = subprocess.run(
             [exe, "-c", "import sys;print(sys.stdout.encoding,"
              "sys.getfilesystemencoding(),sys.flags.utf8_mode)"],
-            capture_output=True, text=True, env=CHILD_ENV)
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", env=CHILD_ENV)
         print(f"  stdout/fs encoding, utf8_mode: "
               f"{(enc.stdout or '').strip()}", flush=True)
 
         dep = subprocess.run([exe, "-c", "import yaml"], capture_output=True,
-                             text=True)
+                             text=True, encoding="utf-8", errors="replace")
         if dep.returncode != 0:
             print("  SKIP  PyYAML missing for this interpreter "
                   "(pip install PyYAML to include it)", flush=True)

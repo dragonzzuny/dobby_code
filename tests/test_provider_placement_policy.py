@@ -226,7 +226,29 @@ class TheRoleComesFromTheNodeThenTheKind(unittest.TestCase):
 
     def test_an_undeclared_kind_falls_back_to_the_table(self):
         self.assertEqual(P.node_role_for("plan"), P.ARCHITECT)
-        self.assertEqual(P.node_role_for("scout"), P.ISOLATED_DELEGATE)
+        self.assertEqual(P.node_role_for("scout"), P.SCOUT)
+
+    def test_a_scout_is_placeable_without_a_worktree(self):
+        """This assertion used to say ISOLATED_DELEGATE, and it was wrong.
+
+        Measured 2026-08-23: every compiled S2 plan began with a scout step,
+        `isolated_delegate` requires isolation, the benchmark arm ran without a
+        worktree, and so `scout-1` FAILED with no provider placed and the whole
+        run ended `item_blocked` having done nothing. Reading the tree is not
+        the isolated delegate; it is its own read-only role.
+        """
+        from dobby.providers.detect import Availability
+
+        available = {i: Availability(id=i, state="available", detail="",
+                                     path="x", cost_tier="standard", kind="cli",
+                                     verified_here=True)
+                     for i in ("codex", "claude")}
+        self.assertTrue(P.candidates_for(P.SCOUT, availability=available))
+        self.assertFalse(P.candidates_for(P.ISOLATED_DELEGATE,
+                                          availability=available))
+
+    def test_a_scout_still_may_not_write(self):
+        self.assertFalse(P.ROLE_POLICY[P.SCOUT].writes)
 
     def test_an_unknown_kind_lands_on_implement_rather_than_anywhere(self):
         self.assertEqual(P.node_role_for("something-new"), P.IMPLEMENT)

@@ -1307,11 +1307,22 @@ def cmd_sandbox(args):
 
 def cmd_spend(args):
     """Where the session's agent time went."""
-    from .spend import render_detail, statusline, summarize
+    from .spend import dashboard, render_detail, statusline, summarize
     data = _data(args)
     window = args.window * 60 if args.window else None
     if args.line:
         print(statusline(data, window_s=window))
+        return
+    if getattr(args, "dash", False):
+        # `ctx` is the HOST's context window and dobby cannot observe it, so it
+        # is passed in or omitted. A bar drawn from a number nobody measured
+        # would be the one part of this display that is decoration.
+        used = None
+        if getattr(args, "ctx", None) is not None:
+            used = max(0.0, min(1.0, float(args.ctx) / 100.0))
+        print(dashboard(data, skill=getattr(args, "skill", "") or "",
+                        detail=getattr(args, "detail", "") or "",
+                        window_s=window, context_used=used))
         return
     print(render_detail(data, window_s=window))
     if args.json:
@@ -1470,10 +1481,13 @@ def cmd_runtime(args):
 def cmd_project(args):
     """The unit above a run: a portfolio that survives the session working it.
 
-    Nothing here calls a provider. `init` scans and runs the smoke checks;
-    `next` ranks arithmetically. The one judgement left to a model — whether an
-    item is well enough understood to implement — is REPORTED as
-    `needs_architect` rather than made here.
+    Two actions call providers and the rest do not. `run` does the work, and
+    `review` asks a panel of distinct models whether the resulting diff delivers
+    the item — the question the deterministic gate cannot answer. Everything
+    else is arithmetic or disk: `init` scans and runs the smoke checks, `next`
+    ranks. The one judgement left to a model inside `run` — whether an item is
+    well enough understood to implement — is REPORTED as `needs_architect`
+    rather than made here.
     """
     from .project import (ProjectStore, advance, attach_run, close_session,
                           initialise, open_session, select_next)
@@ -1607,6 +1621,75 @@ def cmd_project(args):
         # grades would be worthless as an input to changing the policy.
         from .project.scorecard import policy_scorecard
         _out(policy_scorecard(data, project["project_id"]))
+        return
+
+    if args.action == "review":
+        # The deterministic gate answers "did the declared checks pass". It
+        # cannot answer "is this the change the item asked for", and until this
+        # command existed nothing did: `providers/fanout.run_round` was fully
+        # built, tested, and reachable only from the hand-typed `dobby panel`.
+        # Measured 2026-08-24 on a diff that passed its own check by dropping a
+        # requirement the check never exercised — two critics named the
+        # omission, the gate saw a pass.
+        import subprocess
+
+        from .core.platform import child_env
+        from .project.readonly import ReadOnlyViolation
+        from .project.review_panel import review_change
+
+        item = None
+        if args.work_item:
+            item = project["portfolio"].get(args.work_item)
+            if item is None:
+                _die(f"no work item {args.work_item!r} in "
+                     f"{project['project_id']!r}")
+        root = project["root"]
+        argv = ["git", "-C", root, "diff"] + (["--staged"] if args.staged
+                                              else [])
+        proc = subprocess.run(argv, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace",
+                              env=child_env())
+        if proc.returncode != 0:
+            _die(f"could not read the diff in {root}: "
+                 f"{(proc.stderr or '').strip()[:300]}")
+        diff = proc.stdout or ""
+        if not diff.strip():
+            # No providers are called. An empty diff is not an approval, and
+            # buying three model calls to say so would be worse than saying it.
+            what = "the staged diff" if args.staged else "the working tree"
+            _out({"reviewed": False, "approved": False,
+                  "note": (f"{what} in {root} has no changes, so there was "
+                           f"nothing to review. Not an approval")})
+            return
+        try:
+            verdict = review_change(
+                diff, root=root,
+                outcome=(item.outcome or item.title) if item else
+                        "(no work item named; review the diff on its own terms)",
+                acceptance_checks=tuple(item.acceptance_checks) if item else (),
+                size=args.reviewers, allow_network=_allow_network(args),
+                # None keeps the catalog's own per-provider default; the
+                # `project` parser has no --timeout of its own.
+                timeout_s=getattr(args, "timeout", None))
+        except ReadOnlyViolation as exc:
+            _die(str(exc))
+        out = verdict.to_dict()
+        out["reviewed"] = True
+        out["work_item"] = args.work_item
+        out["diff_bytes"] = len(diff)
+        if item is None:
+            # Measured 2026-08-24: without an item the critics were handed a
+            # placeholder objective, read it differently, and split. The
+            # diversity score said so ("scattered ... the prompt admitted
+            # different readings"), which is the metric working — but a split
+            # about the QUESTION reads in a report exactly like a split about
+            # the diff, so the difference is stated here rather than inferred.
+            out["caveat"] = (
+                "no work item was named, so the critics were asked to judge the "
+                "diff on its own terms. Disagreement here may be about what the "
+                "change was FOR rather than whether it is right; pass a work "
+                "item id to ask the sharper question")
+        _out(out)
         return
 
     if args.action == "next":
@@ -2037,6 +2120,14 @@ def build_parser() -> argparse.ArgumentParser:
                        help="agent time per provider; --line for a status bar")
     p.add_argument("--line", action="store_true",
                    help="one-line form, for a host statusLine command")
+    p.add_argument("--dash", action="store_true",
+                   help="multi-line block: per-provider token bars, quota, session")
+    p.add_argument("--skill", default="",
+                   help="dash: name the skill or command the spend is for")
+    p.add_argument("--detail", default="",
+                   help="dash: the skill's argument, clipped")
+    p.add_argument("--ctx", type=float, default=None,
+                   help="dash: host context window used, 0-100. dobby cannot observe this and draws no bar without it")
     p.add_argument("--window", type=float, default=None,
                    help="restrict to the last N minutes")
     p.add_argument("--json", action="store_true")
@@ -2107,7 +2198,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("action",
                    choices=["init", "status", "list", "next", "attach-run",
                             "open", "close", "events", "run", "plan",
-                            "check", "refine", "scorecard"])
+                            "check", "refine", "scorecard", "review"])
     p.add_argument("work_item", nargs="?", default=None,
                    help="work item id for attach-run; session id for close; "
                         "the topic for plan")
@@ -2128,6 +2219,14 @@ def build_parser() -> argparse.ArgumentParser:
                         "before any item may start)")
     p.add_argument("--rebaseline", action="store_true",
                    help="open: re-take the baseline instead of refusing")
+    p.add_argument("--reviewers", type=int, default=3,
+                   help="review: how many DISTINCT providers to ask. Fewer are "
+                        "used when the machine has fewer; a provider is never "
+                        "repeated to reach the number, because three answers "
+                        "from one model are one answer")
+    p.add_argument("--staged", action="store_true",
+                   help="review: review the staged diff instead of the working "
+                        "tree")
     p.add_argument("--no-promote", action="store_true",
                    help="close: do not judge the active item by its run")
     p.add_argument("--until", choices=["item", "empty"], default="item",
