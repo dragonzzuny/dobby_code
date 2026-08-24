@@ -60,8 +60,9 @@ if _DOBBY_ROOT and _DOBBY_ROOT not in sys.path:
 
 from src.models.base_model import BaseModel  # noqa: E402
 
-from contract import (DEFAULT_RETRY_CHAIN, carries_workflow,  # noqa: E402
-                      retry_chain, summarise)
+from contract import (DEFAULT_RETRY_CHAIN, EXECUTION_FRAMING,  # noqa: E402
+                      carries_workflow, expects_workflow, parse_tool_call,
+                      render_tools, retry_chain, summarise)
 
 
 class DobbyModel(BaseModel):
@@ -112,15 +113,29 @@ class DobbyModel(BaseModel):
 
     def _call_sync(self, provider_id: str, prompt: str) -> Any:
         from dobby.providers.catalog import registry
-        from dobby.providers.run import run_by_id
+        from dobby.providers.run import run_by_id, spend_ledger
         from dobby.swebench import write_extra_for
 
         spec = registry().get(provider_id)
         extra = tuple(write_extra_for(provider_id)) + spec.workspace(os.getcwd())
+        # Turn the CLI's own tools off where it supports that. `tool_scope`
+        # returns () for a provider with no such flag, so this is a no-op for
+        # codex and agy rather than an invented argument.
+        extra += spec.tool_scope("")
         model = self.cli_model if provider_id == self.provider else None
-        return run_by_id(provider_id, prompt, model=model, extra=extra,
-                         timeout_s=self.timeout_s, collect_usage=True,
-                         output_cap=400_000)
+        # Also record into dobby's own ledger when asked, because the
+        # benchmark's cost figure cannot be trusted for these arms: `pricing.py`
+        # carries "fallback prices for unknown models" and none of
+        # claude-opus-5, claude-fable-5, gpt-5.6-sol or gemini-3.5-flash is in
+        # its table. The first smoke reported total_cost 2.413185 for an arm
+        # whose real per-call cost the provider had already stated. dobby's
+        # ledger keeps the VENDOR's figure, the model that produced it, and a
+        # null where a subscription provider reports none.
+        sink = os.environ.get("DOBBY_SPEND_DIR")
+        with spend_ledger(sink, skill=f"orchestration-bench:{self.arm}"):
+            return run_by_id(provider_id, prompt, model=model, extra=extra,
+                             timeout_s=self.timeout_s, collect_usage=True,
+                             output_cap=400_000)
 
     def _account(self, result) -> None:
         usage = result.usage or {}
@@ -142,9 +157,19 @@ class DobbyModel(BaseModel):
     async def generate_response(self, prompt: str,
                                 system_prompt: Optional[str] = None,
                                 **kwargs) -> str:
-        full = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
-        chain = ((self.provider,) if self.arm == "solo"
-                 else retry_chain(self.provider, self.retry_chain))
+        # The framing goes FIRST and on every arm. See contract.EXECUTION_FRAMING
+        # for the measurement that made it necessary: without it these CLIs try
+        # to invoke the benchmark's fictional tools and answer with the failure.
+        full = f"{EXECUTION_FRAMING}\n{system_prompt}\n\n{prompt}" \
+            if system_prompt else f"{EXECUTION_FRAMING}\n{prompt}"
+
+        # The contract applies only where a workflow was asked for. A sub-agent
+        # is asked for a TOOL CALL, and checking its correct answer for
+        # `workflow_` failed it and retried the whole chain — see
+        # `contract.expects_workflow` for what that cost.
+        governed = self.arm != "solo" and expects_workflow(system_prompt)
+        chain = (retry_chain(self.provider, self.retry_chain) if governed
+                 else (self.provider,))
 
         last_text = ""
         for index, provider_id in enumerate(chain):
@@ -160,20 +185,48 @@ class DobbyModel(BaseModel):
                 "chars": len(text)})
             if ok:
                 last_text = text or last_text
-            # A solo arm returns whatever came back, right or wrong. That IS the
-            # arm: adding a check to it would make every arm the dobby arm.
-            if self.arm == "solo" or passed:
+            # An ungoverned turn returns whatever came back. That is the solo
+            # arm by definition, and it is also every sub-agent turn on the
+            # dobby arm: those were asked for a tool call, not a workflow.
+            if not governed or passed:
                 return text
         return last_text
 
     async def generate_chat_response(self, messages: List[Dict[str, str]],
-                                     **kwargs) -> str:
+                                     **kwargs) -> Dict[str, Any]:
+        """A MESSAGE DICT, not a string, whatever the base class annotates.
+
+        `BaseModel.generate_chat_response` is typed `-> str`, and the caller
+        passes the result straight to `type_utils.normalize_chat_response`,
+        which accepts an SDK message object or a dict carrying `role` — and
+        raises `ValueError: Unsupported chat response format` on a bare string.
+        Measured by returning one. The annotation is the thing that is wrong
+        here, so this follows the consumer.
+
+        `tool_calls` is empty on purpose: these CLIs answer in prose carrying a
+        workflow document, and the benchmark's scorer reads that document out of
+        `content`. Synthesising tool-call objects the provider never emitted
+        would be inventing structure to be graded on.
+        """
         system = "\n\n".join(m.get("content", "") for m in messages
                              if m.get("role") == "system")
         body = "\n\n".join(f"{m.get('role')}: {m.get('content', '')}"
                            for m in messages if m.get("role") != "system")
-        return await self.generate_response(body, system_prompt=system or None,
+        # The caller hands the agent card's tools over as a kwarg, for an API's
+        # `tools=` parameter. A CLI has no such channel, so they go into the
+        # prompt or they never reach the model — see `contract.render_tools` for
+        # what dropping them measured.
+        tools = render_tools(kwargs.pop("tools", None))
+        if tools:
+            system = f"{system}\n\n{tools}" if system else tools
+        text = await self.generate_response(body, system_prompt=system or None,
                                             **kwargs)
+        # An API model returns its call in a structured field; a CLI
+        # returns text. `parse_tool_call` puts it back into the shape
+        # `eval_utils` reads, and returns [] for the XML rejection
+        # answers so a refusal is never rewritten as an action.
+        return {"role": "assistant", "content": text,
+                "tool_calls": parse_tool_call(text)}
 
     # -- what the arm did, for the report ------------------------------------
 
