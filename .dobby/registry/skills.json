@@ -469,6 +469,65 @@
     "path": ".claude/skills/agy-delegation/SKILL.md",
     "date": "2026-08-04"
    }
+  },
+  {
+   "name": "runnable-gates",
+   "description": "Write acceptance gates as runnable commands BEFORE the work, then let a script decide whether they passed: CHECK/EXPECT/EVIDENCE graded by dobby.gates, approval bound to an oracle fingerprint",
+   "applicable_when": [
+    "any producing task",
+    "about to write done|fixed|passing|verified",
+    "completion would otherwise be asserted in prose",
+    "게이트|완료 판정|검증 기준"
+   ],
+   "not_applicable_when": [
+    "read-only questions that produce no artifact",
+    "a claim no command can decide — declare it a manual gate instead"
+   ],
+   "inputs": [
+    "GATES.md written before the first change"
+   ],
+   "outputs": [
+    "GATES.md with machine-written EVIDENCE lines",
+    "approval records outside the repo",
+    "an exit code: 0 met / 1 unmet / 2 unparseable"
+   ],
+   "validation_commands": [
+    "{python} -m dobby.cli gates status --file GATES.md",
+    "{python} -m dobby.cli gates verify --file GATES.md --write-evidence",
+    "{python} -m unittest tests.test_gates"
+   ],
+   "version": "1.0",
+   "path": ".claude/skills/runnable-gates/SKILL.md",
+   "provenance": {
+    "source": "ported from Leonxlnx/unlazy (MIT)",
+    "method": "curated",
+    "date": "2026-08-24",
+    "confidence": "strongly_supported"
+   },
+   "requires": {
+    "any_bins": [
+     "python3",
+     "python",
+     "py"
+    ]
+   },
+   "state": "candidate",
+   "proposed_by": "claude-opus-5",
+   "eval_passes": [],
+   "approved_by": null,
+   "created": "2026-08-24",
+   "history": [
+    {
+     "to": "candidate",
+     "by": "claude-opus-5",
+     "date": "2026-08-24"
+    }
+   ],
+   "origin": {
+    "pinned_sha256": "12ac87098884e6896878d8e2bd6d02845aef8a11bd00b358e3937c9516dad60c",
+    "path": ".claude/skills/runnable-gates/SKILL.md",
+    "date": "2026-08-24"
+   }
   }
  ]
 }

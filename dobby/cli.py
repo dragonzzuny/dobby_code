@@ -63,6 +63,17 @@ def _out(obj) -> None:
     print(json.dumps(obj, ensure_ascii=False, indent=1, default=str))
 
 
+def gates_default_timeout() -> int:
+    """One source of truth for the CHECK timeout, read at parser build.
+
+    Imported lazily like every other subsystem here, so `dobby --help` does not
+    pay for a module it may not use.
+    """
+    from .gates import DEFAULT_TIMEOUT_S
+
+    return DEFAULT_TIMEOUT_S
+
+
 def _repo(args) -> str:
     return os.path.abspath(getattr(args, "repo", ".") or ".")
 
@@ -1258,6 +1269,98 @@ def cmd_ml(args):
     _out(ml_gate(ExperimentSetup(**setup_kwargs), **gate_kwargs))
 
 
+def cmd_gates(args):
+    """Grade a runnable acceptance ledger. Exit code IS the verdict.
+
+    0  every runnable gate met, no structural errors
+    1  a gate is unmet, unapproved, or the ledger has none to run
+    2  the ledger does not parse — a duplicate id or an orphaned CHECK means
+       it does not say what it appears to say, and grading the readable half
+       is how a missing gate reads as a met one
+
+    The exit code is the point. A caller that wants "do not report done yet"
+    needs a signal it cannot talk itself out of, and this repository drives four
+    provider CLIs, so a hook belonging to one of them is the wrong layer.
+    """
+    from . import gates as gate_mod
+
+    path = os.path.abspath(args.file)
+    if not os.path.exists(path):
+        _die(f"{args.file} does not exist; write the gates before the work")
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    doc = gate_mod.parse(text)
+
+    selected = [g for g in doc.gates
+                if not args.gate or g.id in set(args.gate.split(","))]
+    root = os.path.abspath(args.cwd)
+
+    if args.action == "status":
+        # Parses and NEVER executes. The mode exists so the commands can be read
+        # before they are approved; collapsing it into verify would mean the
+        # first time anyone sees a command is after it has run.
+        rows = []
+        for gate in selected:
+            oracle_doc = gate_mod.oracle(gate, cwd=root, timeout_s=args.timeout)
+            rows.append({
+                "id": gate.id, "title": gate.title, "checked": gate.checked,
+                "kind": ("abandoned" if gate.abandoned else
+                         "manual" if gate.manual else "runnable"),
+                "check": gate.check,
+                "expect": gate.expect.describe() if gate.expect else "",
+                "cwd": oracle_doc["cwd"],
+                "abandoned": gate.abandoned,
+                "approved": gate_mod.is_approved(path, gate, oracle_doc)})
+        _out({"file": path, "gates": rows, "errors": doc.errors,
+              "approval_dir": gate_mod.approval_dir()})
+        raise SystemExit(2 if doc.errors else 0)
+
+    if doc.errors:
+        _out({"file": path, "errors": doc.errors,
+              "note": "fix the ledger before running or approving anything"})
+        raise SystemExit(2)
+
+    if args.action == "approve":
+        approved = []
+        for gate in selected:
+            if not gate.runnable:
+                continue
+            oracle_doc = gate_mod.oracle(gate, cwd=root, timeout_s=args.timeout)
+            approved.append({"id": gate.id, "check": gate.check,
+                             "record": gate_mod.approve(path, gate, oracle_doc)})
+        _out({"file": path, "approved": approved,
+              "note": "an approval covers this exact command, expectation, cwd, "
+                      "shell, platform and PATH; change any of them and it is void"})
+        raise SystemExit(0 if approved else 1)
+
+    verdicts = []
+    for gate in selected:
+        if args.action == "verify" and gate_mod.recorded_met(gate):
+            # Already recorded MET by this tool. `reverify` re-runs those too.
+            # Two things this is deliberately not: "has an EVIDENCE line" (a
+            # placeholder is one, and skipping on it reported two unmet gates as
+            # an ok ledger), and "was run before" (a recorded FAILURE would then
+            # exempt itself from the next run — measured, and the failing gate
+            # disappeared from the report it existed to block).
+            continue
+        verdicts.append(gate_mod.run_gate(
+            gate, ledger=path, cwd=root, timeout_s=args.timeout,
+            require_approval=not args.no_approval))
+
+    summary = gate_mod.summarise(verdicts, doc.errors)
+    if args.write_evidence:
+        updated = gate_mod.apply_evidence(text, verdicts)
+        if updated != text:
+            with open(path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(updated)
+            summary["evidence_written"] = True
+
+    _out({"file": path, "summary": summary,
+          "verdicts": [{k: v for k, v in verdict.items() if k != "oracle"}
+                       for verdict in verdicts]})
+    raise SystemExit(0 if summary["ok"] else 1)
+
+
 def cmd_pipeline(args):
     """Suggest and validate an inference-time layer stack for a call budget."""
     from .search import suggest_pipeline, validate_pipeline
@@ -2089,6 +2192,26 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--file", required=True,
                    help="JSON describing the experiment setup and results")
     p.set_defaults(fn=cmd_ml)
+
+    p = sub.add_parser("gates", parents=[common],
+                       help="runnable acceptance ledger: exit 0 only when every "
+                            "gate exits 0 AND matches its EXPECT")
+    p.add_argument("action", choices=["status", "approve", "verify", "reverify"])
+    p.add_argument("--file", default="GATES.md",
+                   help="the ledger; markdown checkbox rows with CHECK/EXPECT")
+    p.add_argument("--gate", default="",
+                   help="comma-separated gate ids; default is all of them")
+    p.add_argument("--cwd", default=".",
+                   help="default working directory; a gate's own CWD wins")
+    p.add_argument("--timeout", type=int, default=gates_default_timeout(),
+                   help="seconds per CHECK before it is killed")
+    p.add_argument("--write-evidence", action="store_true",
+                   help="rewrite each gate's EVIDENCE line with the result")
+    p.add_argument("--no-approval", action="store_true",
+                   help="run without an approval record. For CI where the "
+                        "ledger is already reviewed in the diff; never a way "
+                        "to skip reading a command you are about to run")
+    p.set_defaults(fn=cmd_gates)
 
     p = sub.add_parser("pipeline", parents=[common],
                        help="compose an inference-time layer stack for a budget")
