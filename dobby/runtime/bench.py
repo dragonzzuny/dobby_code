@@ -120,7 +120,11 @@ def build_graph(task: Task, condition: str) -> TaskGraph:
         return TaskGraph([TaskNode(
             node_id="execute", kind="execute",
             worker="command" if task.execute_command else "static",
-            instruction=task.task, contract=ArtifactContract(),
+            # `ungraded=True` and not an empty contract: the runtime refuses a
+            # contract that declares nothing, because that is almost always an
+            # oversight. Here it is the experiment, so it is stated.
+            instruction=task.task,
+            contract=ArtifactContract(ungraded=True),
             config=({"command": task.execute_command}
                     if task.execute_command else {"payload": {"done": True}}))])
     if condition == GATED:

@@ -269,6 +269,44 @@ class ArtifactContract:
     #: node sees the label in its inputs and can decide; nothing lets an
     #: advisory verdict silently become the evidence that a gate passed.
     advisory: bool = False
+    #: This node is DELIBERATELY ungraded, and says so.
+    #:
+    #: Declaring nothing by accident and declaring that you grade nothing are
+    #: different facts, and only the second is a decision. `runtime/bench.py`
+    #: needs the second: its BASELINE arm exists to show what the gate is worth,
+    #: and it can only do that by running without one. Refusing that arm would
+    #: have deleted the experiment rather than fixed a bug.
+    #:
+    #: It is not an override of the gate. An ungraded artifact promotes and then
+    #: travels LABELLED, the same way `advisory` does — a consumer is told that
+    #: nothing checked this, instead of having to know. Setting it is a sentence
+    #: someone has to write in a contract, which is the difference between a
+    #: control condition and an oversight.
+    ungraded: bool = False
+
+    @property
+    def declares_nothing(self) -> bool:
+        """Whether this contract could refuse ANY output.
+
+        No shape, no acceptance check, no side effect to observe, nothing to
+        ground: there is no proposition here that a result could fail. A gate
+        over such a contract passes vacuously, which reads in a report exactly
+        like a gate that was satisfied.
+
+        This is the same defect as `VerifierResult.not_run`, one step earlier.
+        `not_run` catches a declared check that could not be executed;
+        `declares_nothing` catches a check that was never declared. Both end as
+        `all([])`, which is True, and both make an ungraded artifact
+        indistinguishable from a graded one.
+
+        A side effect COUNTS as a declaration. `runtime/effects.py` observes
+        whether a LOCAL_WRITE node actually changed the tree, and a node that
+        can be caught having done nothing is not a node making no claim. It is a
+        weak claim, and weak is not vacuous.
+        """
+        return not (self.output_schema or self.acceptance_checks
+                    or self.grounding
+                    or self.side_effect_class != NONE)
 
     def __post_init__(self):
         if self.side_effect_class not in SIDE_EFFECT_CLASSES:
@@ -412,7 +450,19 @@ REPORT_SCHEMA = {
     },
 }
 
+#: What `AdvisoryJudgeWorker` returns. A judge's output is an OPINION and the
+#: contract says so with `advisory=True`, but an opinion still has a shape: it
+#: names a verdict. Declared because a node that declares nothing is refused at
+#: the gate, and because the alternative — `ungraded=True` — would be untrue
+#: here. The verdict is not graded; that it is a verdict at all is checkable.
+JUDGE_SCHEMA = {
+    "type": "object",
+    "required": ["verdict_token"],
+    "properties": {"verdict_token": {"type": "string"}},
+}
+
 SCHEMAS = {
+    "judge": JUDGE_SCHEMA,
     "plan": PLAN_SCHEMA,
     "patchset": PATCHSET_SCHEMA,
     "research_claims": RESEARCH_CLAIMS_SCHEMA,

@@ -77,12 +77,18 @@ def fails(failure_class, detail="injected fault"):
 CRASH = {"crash": True}
 
 
+#: A fixture declares SOMETHING: a contract with no schema, no check, no
+#: effect and nothing to ground is refused at the gate, because `all([])` is
+#: True and such a node used to promote whatever it was handed.
+FIXTURE_SCHEMA = {"type": "object"}
+
+
 def fault_node(node_id, script, *, depends_on=(), side_effect="NONE",
                schema=None, checks=()):
     return TaskNode(
         node_id=node_id, kind=node_id, depends_on=list(depends_on),
         worker="fault",
-        contract=ArtifactContract(output_schema=schema or {},
+        contract=ArtifactContract(output_schema=schema or FIXTURE_SCHEMA,
                                   acceptance_checks=list(checks),
                                   side_effect_class=side_effect),
         config={"script": script})

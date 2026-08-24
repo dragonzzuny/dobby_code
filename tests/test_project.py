@@ -162,7 +162,9 @@ class PK2TheRunDecides(unittest.TestCase):
         """A real run that ends SUCCEEDED with a promoted artifact."""
         runner = self._runner()
         node = TaskNode(node_id="a", kind="a", depends_on=[], worker="static",
-                        contract=ArtifactContract(side_effect_class=side_effect),
+                        contract=ArtifactContract(
+                            output_schema=dict(type="object"),
+                            side_effect_class=side_effect),
                         config={"payload": {"ok": True}})
         run_id = runner.start("t", TaskGraph([node]))
         result = runner.run(run_id)
@@ -173,7 +175,7 @@ class PK2TheRunDecides(unittest.TestCase):
         store = RunStore(self.data)
         run_id = store.create_run("t", TaskGraph([
             TaskNode(node_id="a", kind="a", depends_on=[], worker="static",
-                     contract=ArtifactContract(), config={"payload": {}})]))
+                     contract=ArtifactContract(output_schema=dict(type="object")), config={"payload": {}})]))
         store.set_run_state(run_id, G.RUNNING)
         store.set_run_state(run_id, G.WAITING)      # out of budget, say
 
@@ -188,7 +190,7 @@ class PK2TheRunDecides(unittest.TestCase):
         store = RunStore(self.data)
         run_id = store.create_run("t", TaskGraph([
             TaskNode(node_id="a", kind="a", depends_on=[], worker="static",
-                     contract=ArtifactContract(), config={"payload": {}})]))
+                     contract=ArtifactContract(output_schema=dict(type="object")), config={"payload": {}})]))
         store.set_run_state(run_id, G.RUNNING)
         store.set_run_state(run_id, G.SUCCEEDED)
 
@@ -292,7 +294,7 @@ class PK3AcrossTwoSessions(unittest.TestCase):
         runner = Runner(self.root, data_dir=self.data, sleep=lambda _s: None)
         run_id = runner.start("first", TaskGraph([
             TaskNode(node_id="a", kind="a", depends_on=[], worker="static",
-                     contract=ArtifactContract(),
+                     contract=ArtifactContract(output_schema=dict(type="object")),
                      config={"payload": {"ok": True}})]))
         self.assertEqual(runner.run(run_id).state, G.SUCCEEDED)
         attach_run(self.data, "W001", run_id, project_id=self.project_id)

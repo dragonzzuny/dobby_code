@@ -69,6 +69,18 @@ NODE_STATES = (PENDING, READY, LEASED, NODE_RUNNING, VERIFYING, NODE_SUCCEEDED,
                NODE_FAILED, SKIPPED, BLOCKED_ON_APPROVAL)
 NODE_TERMINAL = {NODE_SUCCEEDED, NODE_FAILED, SKIPPED}
 
+#: Where a RECOVERY write may put a node, when the forward table has no edge for
+#: it. Recovery is not optional: a crash leaves an attempt open with its holder
+#: dead, and no transition anybody planned describes that. What recovery may not
+#: do is manufacture success.
+#:
+#: `NODE_SUCCEEDED` is deliberately absent, and this is the whole content of the
+#: rule: a node reaches SUCCEEDED by passing its gate and by nothing else.
+#: Checked against every override in this runtime at the time of writing — five
+#: sites, reaching FAILED, READY and SKIPPED — so this bounds what exists rather
+#: than guessing at what might.
+RECOVERY_DESTINATIONS = frozenset({NODE_FAILED, READY, SKIPPED})
+
 _NODE_TRANSITIONS = {
     PENDING: {READY, SKIPPED, NODE_FAILED},
     READY: {LEASED, SKIPPED, NODE_FAILED, BLOCKED_ON_APPROVAL},

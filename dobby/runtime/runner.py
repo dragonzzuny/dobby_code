@@ -35,7 +35,8 @@ import time
 from dataclasses import dataclass, field
 
 from . import graph as G
-from .contracts import (Artifact, ArtifactContract, PayloadTampered,
+from .contracts import (Artifact, ArtifactContract, ContractError,
+                        PayloadTampered,
                         PROMOTED, REJECTED,
                         SCHEMAS, VERIFIED, artifact_path,
                         idempotency_key, verify_payload)
@@ -664,6 +665,19 @@ class Runner:
             rows = self.store.artifacts(run_id, node_id=dep, state=PROMOTED)
             if not rows:
                 continue
+            if len(rows) > 1:
+                # A node reaches SUCCEEDED once and SUCCEEDED is terminal, so a
+                # second promoted artifact for one node means an invariant
+                # broke somewhere else. Named rather than resolved: the old code
+                # took `rows[-1]`, and that ordering is `created` to the second
+                # then artifact_id as a STRING, where `produce-10` sorts before
+                # `produce-2`. Silently picking under a broken invariant is how
+                # the wrong evidence reaches the next step.
+                raise ContractError(
+                    f"node {dep!r} has {len(rows)} promoted artifacts "
+                    f"({[r['artifact_id'] for r in rows]}); a node succeeds "
+                    f"once, so this is a contradiction and not a choice to make "
+                    f"here")
             latest = rows[-1]
             payload = self._read_payload(latest["path"])
             if payload is None:
@@ -676,7 +690,19 @@ class Runner:
             verify_payload(payload, latest["digest"],
                            artifact_id=latest["artifact_id"])
             dep_node = task_graph.nodes[dep]
-            if dep_node.contract.advisory:
+            if dep_node.contract.ungraded:
+                # Deliberately ungraded, and the consumer is told. Same
+                # treatment as `advisory`: a control condition's output is a
+                # real product of a real step and it is not evidence of
+                # anything, and the difference has to travel with it.
+                inputs[dep] = {"ungraded": True,
+                               "not_verification": (
+                                   "this node declared that it grades nothing, "
+                                   "so nothing it produced was checked. It may "
+                                   "inform this step and may not be cited as "
+                                   "proof that anything passed"),
+                               "payload": payload}
+            elif dep_node.contract.advisory:
                 # Labelled where it travels. A model's opinion is a real product
                 # of a real step and it is not evidence; the consumer sees which
                 # one it was handed instead of having to know.

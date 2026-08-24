@@ -461,6 +461,16 @@ class RunStore:
                 raise StoreError(f"no node {node_id!r} in run {run_id!r}")
             if enforce:
                 G.check_node_transition(row["state"], to_state)
+            elif to_state not in G.RECOVERY_DESTINATIONS:
+                # `enforce=False` is for recovery, which the forward table
+                # cannot describe. It was a blanket override, and a gate with an
+                # unbounded override is the override. The destinations are now
+                # an allow-list, and SUCCEEDED is not on it: a node passes its
+                # gate to get there or it does not get there.
+                raise StoreError(
+                    f"recovery may not move {node_id!r} to {to_state!r}; "
+                    f"allowed: {sorted(G.RECOVERY_DESTINATIONS)}. Reaching "
+                    f"{G.NODE_SUCCEEDED} requires the verifier")
             # A node outside the working states is not being worked on, so it
             # must not still name an owner. Left behind, a stale owner is worse
             # than no owner at all: it makes `lease_is_held` answer for a lease

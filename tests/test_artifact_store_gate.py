@@ -90,7 +90,7 @@ class TheStoreDoor(unittest.TestCase):
         self.store = RunStore(self.tmp.name)
         graph = G.TaskGraph([G.TaskNode(
             node_id="n", kind="k", worker="static", instruction="i",
-            contract=ArtifactContract())])
+            contract=ArtifactContract(output_schema=dict(type="object")))])
         self.run_id = self.store.create_run("t", graph)
 
     def states(self):
@@ -176,7 +176,8 @@ class TheRunnerStillWalksIt(unittest.TestCase):
         return G.TaskGraph([G.TaskNode(
             node_id="produce", kind="k", worker="static",
             instruction="i", config={"payload": payload},
-            contract=ArtifactContract(output_schema=schema or {}))])
+            contract=ArtifactContract(
+                output_schema=schema or dict(type="object")))])
 
     def test_a_real_run_records_every_state_it_passed_through(self):
         """PROPOSED and VERIFIED used to never reach the store at all.
@@ -241,11 +242,11 @@ class ThePayloadUnderTheState(unittest.TestCase):
         return G.TaskGraph([
             G.TaskNode(node_id="produce", kind="k", worker="static",
                        instruction="i", config={"payload": {"value": 41}},
-                       contract=ArtifactContract()),
+                       contract=ArtifactContract(output_schema=dict(type="object"))),
             G.TaskNode(node_id="consume", kind="k", worker="static",
                        instruction="i", depends_on=["produce"],
                        config={"payload": {"ok": True}},
-                       contract=ArtifactContract())])
+                       contract=ArtifactContract(output_schema=dict(type="object")))])
 
     def tamper(self, path, payload):
         with open(path, encoding="utf-8") as handle:

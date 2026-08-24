@@ -33,12 +33,20 @@ from dobby.runtime.failures import (CAPACITY, CONTRACT_VIOLATION,
 from dobby.runtime.store import AttemptAlreadyRecorded
 
 
+#: A fixture declares SOMETHING, because a contract that declares nothing is
+#: now refused at the gate — `all([])` is True, so a node with no schema, no
+#: check, no effect and nothing to ground used to promote whatever it was
+#: handed. `{"type": "object"}` is the weakest real claim: the output is an
+#: object. Tests that care about a stronger shape still pass their own.
+FIXTURE_SCHEMA = {"type": "object"}
+
+
 def static_node(node_id, payload, *, depends_on=(), schema=None, checks=(),
                 side_effect="NONE", **config):
     return TaskNode(
         node_id=node_id, kind=node_id, depends_on=list(depends_on),
         worker="static",
-        contract=ArtifactContract(output_schema=schema or {},
+        contract=ArtifactContract(output_schema=schema or FIXTURE_SCHEMA,
                                   acceptance_checks=list(checks),
                                   side_effect_class=side_effect),
         config={"payload": payload, **config})
@@ -452,7 +460,7 @@ from dobby.runtime import Runner, TaskGraph, TaskNode, ArtifactContract
 def node(node_id, depends_on=()):
     return TaskNode(node_id=node_id, kind=node_id, depends_on=list(depends_on),
                     worker="command",
-                    contract=ArtifactContract(),
+                    contract=ArtifactContract(output_schema=dict(type="object")),
                     config={{"command": {command!r}}})
 
 graph = TaskGraph([node("first"), node("second", ["first"]),

@@ -28,7 +28,7 @@ from dobby.runtime.placement import (CLOSED, COOLDOWN_S, FAILURE_THRESHOLD,
 
 def provider_node(node_id="work", kind="execute", **config):
     return TaskNode(node_id=node_id, kind=kind, worker="provider",
-                    contract=ArtifactContract(), config=config)
+                    contract=ArtifactContract(output_schema=dict(type="object")), config=config)
 
 
 class TheCircuitBreaker(unittest.TestCase):
@@ -274,7 +274,7 @@ class ParallelNodes(unittest.TestCase):
         def node(node_id, depends_on=()):
             return TaskNode(node_id=node_id, kind=node_id,
                             depends_on=list(depends_on), worker="static",
-                            contract=ArtifactContract(),
+                            contract=ArtifactContract(output_schema=dict(type="object")),
                             config={"payload": {"id": node_id}})
         return TaskGraph([node("top"), node("left", ["top"]),
                           node("right", ["top"]), node("join",

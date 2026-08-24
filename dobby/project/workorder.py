@@ -297,15 +297,44 @@ def compile_graph(plan, *, item, manifest, provider: str | None = None,
                 depends_on=list(order.depends_on),
                 worker="judge" if provider else "static",
                 instruction=order.objective,
-                contract=ArtifactContract(side_effect_class=NONE),
+                # `advisory` because this node's output is a MODEL'S
+                # OPINION, which is what the flag is for, and the worker
+                # already reports it in `meta` — the CONTRACT is what travels
+                # to a consumer through `_promoted_inputs`, so saying it in one
+                # place and not the other left the label behind.
+                #
+                # The schema because a contract declaring nothing is refused at
+                # the gate. `ungraded=True` would be the wrong word here: the
+                # verdict is not graded, and that it is a verdict at all is
+                # checkable.
+                contract=ArtifactContract(
+                    output_schema=SCHEMAS["judge"],
+                    side_effect_class=NONE, advisory=True),
                 config=({"criterion": {"id": order.work_id,
                                        "description": order.objective},
                          "judge_of": order.input_artifact_ids[0],
                          "provider_role": "critic",
                          "exclude": [provider] if provider else []}
                         if provider else
-                        {"payload": {"verdict": "not judged: no provider"}})))
+                        {"payload": {"verdict_token": "NOT_JUDGED",
+                                     "evidence": "no provider was "
+                                                 "available to judge"}})))
             continue
+
+        # Refused HERE and not at the gate. A non-writing order with no schema
+        # compiles to a contract that declares nothing, and the runtime refuses
+        # that — but only after a provider call has been paid for. This module's
+        # rule is that every check is a refusal that names what it refused, and
+        # the cheapest place to refuse a node that could never be graded is
+        # before it runs.
+        if (order.role != IMPLEMENT and not order.output_schema
+                and order.side_effect_class == NONE):
+            raise PlanNotCompilable(
+                f"step {order.work_id!r} ({order.role}) declares no output "
+                f"schema and no side effect, so nothing it produced could be "
+                f"graded. Give it an output_schema from "
+                f"{sorted(SCHEMAS)}, or a side_effect_class whose effect can "
+                f"be observed")
 
         is_writer = order.role == IMPLEMENT
         node_worker = ("command" if (is_writer and execute_command) else worker)

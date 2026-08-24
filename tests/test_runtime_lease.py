@@ -33,12 +33,21 @@ from dobby.runtime.store import (EFFECT_CLAIMED, EFFECT_CONFIRMED, StoreError,
                                  lease_is_held, worker_identity)
 
 
+#: A fixture declares SOMETHING, because a contract that declares nothing is
+#: now refused at the gate — `all([])` is True, so a node with no schema, no
+#: check, no effect and nothing to ground used to promote whatever it was
+#: handed. `{"type": "object"}` is the weakest real claim: the output is an
+#: object. Tests that care about a stronger shape still pass their own.
+FIXTURE_SCHEMA = {"type": "object"}
+
+
 def static_node(node_id, payload, *, depends_on=(), side_effect="NONE",
                 **config):
     return TaskNode(
         node_id=node_id, kind=node_id, depends_on=list(depends_on),
         worker="static",
-        contract=ArtifactContract(side_effect_class=side_effect),
+        contract=ArtifactContract(output_schema=FIXTURE_SCHEMA,
+                                  side_effect_class=side_effect),
         config={"payload": payload, **config})
 
 
@@ -235,7 +244,7 @@ sys.path.insert(0, {repo!r})
 from dobby.runtime import ArtifactContract, Runner, TaskGraph, TaskNode
 
 graph = TaskGraph([TaskNode(node_id="a", kind="a", depends_on=[],
-                            worker="command", contract=ArtifactContract(),
+                            worker="command", contract=ArtifactContract(output_schema=dict(type="object")),
                             config={{"command": {command!r}}})])
 runner = Runner({repo_dir!r}, data_dir={data!r})
 run_id = runner.start("two workers", graph)

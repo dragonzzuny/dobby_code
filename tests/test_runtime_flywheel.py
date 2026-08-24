@@ -23,7 +23,7 @@ from dobby.runtime import flywheel as F
 
 def failing_node(node_id, failure_class="QUALITY_FAILURE", detail="boom"):
     return TaskNode(node_id=node_id, kind="execute", worker="static",
-                    contract=ArtifactContract(),
+                    contract=ArtifactContract(output_schema=dict(type="object")),
                     config={"fail_with": failure_class, "fail_detail": detail})
 
 
@@ -77,7 +77,7 @@ class Harvesting(unittest.TestCase):
     def test_an_interrupted_attempt_is_not_a_task_failure(self):
         graph = TaskGraph([TaskNode(node_id="a", kind="execute",
                                     worker="static",
-                                    contract=ArtifactContract(),
+                                    contract=ArtifactContract(output_schema=dict(type="object")),
                                     config={"payload": {"ok": True}})])
         for _ in range(3):
             run_id = self.runner.start("a task", graph)

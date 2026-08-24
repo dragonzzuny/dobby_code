@@ -23,9 +23,18 @@ from dobby.runtime.trace import (AGENT_GENERATION, ERROR, NODE, OK, RUN,
                                  Span, TraceError, now_ms)
 
 
+#: A fixture declares SOMETHING, because a contract that declares nothing is
+#: now refused at the gate — `all([])` is True, so a node with no schema, no
+#: check, no effect and nothing to ground used to promote whatever it was
+#: handed. `{"type": "object"}` is the weakest real claim: the output is an
+#: object. Tests that care about a stronger shape still pass their own.
+FIXTURE_SCHEMA = {"type": "object"}
+
+
 def static_node(node_id, payload, *, depends_on=(), **config):
     return TaskNode(node_id=node_id, kind=node_id, depends_on=list(depends_on),
-                    worker="static", contract=ArtifactContract(),
+                    worker="static",
+                    contract=ArtifactContract(output_schema=FIXTURE_SCHEMA),
                     config={"payload": payload, **config})
 
 
@@ -209,7 +218,7 @@ class MetricsOnRealRuns(unittest.TestCase):
             "write the summary", default_graph("write the summary",
                                                static=True)))
         bad = TaskGraph([TaskNode(node_id="a", kind="a", worker="static",
-                                  contract=ArtifactContract(),
+                                  contract=ArtifactContract(output_schema=dict(type="object")),
                                   config={"fail_with": "NON_RETRYABLE"})])
         self.runner.run(self.runner.start("run the failing graph", bad))
         report = metrics_report(self.runner.store)
@@ -218,7 +227,7 @@ class MetricsOnRealRuns(unittest.TestCase):
     def test_retry_amplification_counts_the_retries(self):
         graph = TaskGraph([TaskNode(
             node_id="flaky", kind="flaky", worker="static",
-            contract=ArtifactContract(),
+            contract=ArtifactContract(output_schema=dict(type="object")),
             config={"payload": {}, "fail_with": "TRANSIENT_PROVIDER",
                     "fail_times": 1})])
         self.runner.run(self.runner.start("run the graph", graph))

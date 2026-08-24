@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 
 from ..core.platform import child_env, resolve_command
 from .contracts import ArtifactContract
-from .failures import Failure, classify_verifier_failure
+from .failures import Failure, classify_verifier_failure, NON_RETRYABLE
 
 #: A check gets its own wall clock. A hung test suite must fail the gate, not
 #: hang the run — and an unbounded verifier is how a "safety" layer becomes the
@@ -75,6 +75,12 @@ class VerifierResult:
     #: does not have. NOT counted as passes. A gate that reports "all checks
     #: passed" when three of them never ran is worse than no gate.
     not_run: list[str] = field(default_factory=list)
+    #: The contract declared no shape, no check, no effect and nothing to
+    #: ground, so nothing this node produced could have failed. Recorded rather
+    #: than inferred from an empty `records`, because "everything passed" and
+    #: "there was nothing to pass" are the two answers this field exists to
+    #: keep apart.
+    nothing_declared: bool = False
 
     def to_dict(self) -> dict:
         return {"passed": self.passed,
@@ -83,7 +89,8 @@ class VerifierResult:
                 "repair_hint": self.repair_hint,
                 "failure": self.failure.to_dict() if self.failure else None,
                 "records": [r.to_dict() for r in self.records],
-                "not_run": list(self.not_run)}
+                "not_run": list(self.not_run),
+                "nothing_declared": self.nothing_declared}
 
 
 class Verifier:
@@ -106,6 +113,25 @@ class Verifier:
         code. Reporting that as a test failure sends the repair to the wrong
         place.
         """
+        if contract.declares_nothing and not contract.ungraded:
+            # Reported before the shape check, because there is no shape to
+            # check. NON_RETRYABLE on purpose: this is a task DEFINITION that
+            # cannot grade its own output, and running it again produces another
+            # ungradeable result at the same price.
+            return VerifierResult(
+                passed=False, nothing_declared=True,
+                failed_requirements=["the contract declares no schema, no "
+                                     "acceptance check, no side effect and "
+                                     "nothing to ground"],
+                repair_hint=("give this node something its output could fail: "
+                             "an output_schema, an acceptance_checks entry, or "
+                             "a side_effect_class whose effect can be observed"),
+                failure=Failure(
+                    NON_RETRYABLE,
+                    "nothing was declared for this node, so nothing it produced "
+                    "could have failed; an ungraded artifact must not become an "
+                    "input",
+                    {"node_id": node_id}))
         problems = contract.check_shape(payload)
         if problems:
             failure = classify_verifier_failure(
@@ -145,7 +171,12 @@ class Verifier:
         if not failed:
             return VerifierResult(
                 passed=True, records=records,
-                evidence_refs=[r.check for r in records], not_run=not_run)
+                evidence_refs=[r.check for r in records], not_run=not_run,
+                # A deliberate control condition still reports the fact.
+                # `promotable` lets it through on the strength of `ungraded`;
+                # this is what makes the artifact travel labelled rather than
+                # silently resembling one that was checked.
+                nothing_declared=contract.declares_nothing)
 
         detail = next((r.detail for r in records if not r.passed), "")
         return VerifierResult(
@@ -350,5 +381,23 @@ def promotable(contract: ArtifactContract, verdict: VerifierResult) -> bool:
     to be for a lint, and it is correct for the case that matters: a machine
     missing the test runner would otherwise promote an unverified patch and
     report it as verified.
+
+    So does a contract that declared nothing to check. `all([])` is True, so a
+    contract with no shape, no acceptance check, no effect and nothing to ground
+    used to promote whatever a model returned — measured, on a real contract:
+
+        verify(ArtifactContract(), {"anything": "at all"})  ->  promotable: True
+
+    That is the same shape as `not_run` one step earlier: a check that was never
+    declared cannot be one that passed.
+
+    Unless the contract SAYS it grades nothing. `ungraded=True` is a sentence
+    someone wrote, and `runtime/bench.py` needs it: its baseline arm exists to
+    show what the gate is worth and can only do that by running without one.
+    Such an artifact promotes and then travels labelled, the same way `advisory`
+    does. Declaring nothing by accident and declaring that you grade nothing are
+    different facts, and this is where they stop being the same one.
     """
+    if verdict.nothing_declared and not contract.ungraded:
+        return False
     return bool(verdict.passed and not verdict.not_run)
