@@ -46,7 +46,7 @@ import uuid
 
 from ..core.platform import process_alive
 from . import graph as G
-from .contracts import Artifact
+from .contracts import Artifact, check_artifact_write
 
 #: 2 added the `spans` table. Every table is `CREATE TABLE IF NOT EXISTS`, so an
 #: existing store gains it on the next open without a migration step; runs
@@ -666,7 +666,28 @@ class RunStore:
 
     # -- artifacts ---------------------------------------------------------
     def put_artifact(self, artifact: Artifact, *, path: str = "") -> None:
+        """Record an artifact, refusing a state it could not have reached.
+
+        The transition table used to be enforced on the in-memory object only,
+        and this is the other door into the same state. `_promoted_inputs`
+        reads THIS table to decide what a later node may consume, so the rule
+        that decides what becomes an input was being checked in the one place
+        that does not decide it. Demonstrated in an audit: two `put_artifact`
+        calls moved one artifact PROMOTED -> REJECTED while the table declares
+        PROMOTED terminal.
+
+        No `force` parameter, deliberately. A gate with an override is the
+        override.
+        """
         with self._tx() as conn:
+            row = conn.execute(
+                "SELECT state, digest FROM artifacts WHERE artifact_id=?"
+                " AND run_id=?",
+                (artifact.artifact_id, artifact.run_id)).fetchone()
+            check_artifact_write(
+                row["state"] if row else None, artifact.state,
+                previous_digest=row["digest"] if row else "",
+                digest_=artifact.digest_)
             conn.execute(
                 "INSERT OR REPLACE INTO artifacts(artifact_id, run_id, node_id,"
                 " kind, state, digest, path, created) VALUES(?,?,?,?,?,?,?,?)",

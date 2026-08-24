@@ -35,8 +35,10 @@ import time
 from dataclasses import dataclass, field
 
 from . import graph as G
-from .contracts import (Artifact, ArtifactContract, PROMOTED, REJECTED,
-                        SCHEMAS, VERIFIED, artifact_path, idempotency_key)
+from .contracts import (Artifact, ArtifactContract, PayloadTampered,
+                        PROMOTED, REJECTED,
+                        SCHEMAS, VERIFIED, artifact_path,
+                        idempotency_key, verify_payload)
 from .failures import (DEFAULT_POLICY, Failure, POLICY_BLOCKED, REPAIR,
                        RETRY_ELSEWHERE, RETRY_SAME, TRANSIENT_PROVIDER, WAIT,
                        backoff_delay)
@@ -420,12 +422,25 @@ class Runner:
                 round(time.monotonic() - started, 2))
             return
 
+        try:
+            inputs = self._promoted_inputs(run_id, task_graph, node)
+        except PayloadTampered as exc:
+            # NON_RETRYABLE and not a repair: the digest says the file is not
+            # what the gate graded, and nothing here can know which of the two
+            # versions was meant. Running the node on either one would be
+            # choosing, silently. A person resolves this.
+            self._fail_attempt(
+                run_id, task_graph, node, attempt,
+                Failure("NON_RETRYABLE", str(exc),
+                        {"artifact": getattr(exc, "artifact_id", "")}),
+                round(time.monotonic() - started, 2))
+            return
         context = {"repo": self.repo, "attempt": attempt,
                    # The scheduler's view of the workspace, which is what
                    # licenses a headless tool grant. A node cannot know this
                    # about itself.
                    "isolated": self.placement_context.isolated,
-                   "inputs": self._promoted_inputs(run_id, task_graph, node),
+                   "inputs": inputs,
                    "run_id": run_id}
         provider = node.config.get("provider") if node.worker == "provider" \
             else None
@@ -512,7 +527,12 @@ class Runner:
                                verdict=verdict.to_dict())
             return
 
-        artifact.transition(VERIFIED).transition(PROMOTED)
+        # Each step recorded. The two transitions used to happen on one line
+        # and only the destination reached the store, so a promotion had no
+        # verified state behind it that anything could read.
+        artifact.transition(VERIFIED)
+        self.store.put_artifact(artifact)
+        artifact.transition(PROMOTED)
         # Rewritten AFTER the transition. The file is what a later node reads,
         # and a file that says PROPOSED while the store says PROMOTED is two
         # answers to the one question this whole gate exists to answer.
@@ -648,6 +668,13 @@ class Runner:
             payload = self._read_payload(latest["path"])
             if payload is None:
                 continue
+            # The digest was recorded when the gate passed and was never read
+            # again, so an edited artifact file reached the next node wearing a
+            # PROMOTED label. Checked here, at the one place a payload becomes
+            # an INPUT: a mismatch is refused rather than repaired, because
+            # nothing here can know which of the two versions was meant.
+            verify_payload(payload, latest["digest"],
+                           artifact_id=latest["artifact_id"])
             dep_node = task_graph.nodes[dep]
             if dep_node.contract.advisory:
                 # Labelled where it travels. A model's opinion is a real product
@@ -687,6 +714,12 @@ class Runner:
                       "advisory": node.contract.advisory,
                       "meta": result.meta})
         self._write_artifact_file(run_id, artifact)
+        # Recorded as PROPOSED before anything grades it. The store now refuses
+        # a state that was not walked to, so the lifecycle has to be persisted
+        # rather than only its outcome — and the event log gains the two rows
+        # that were previously invisible, which is what makes "PROPOSED ->
+        # VERIFIED -> PROMOTED" a thing the log can be asked about.
+        self.store.put_artifact(artifact)
         return artifact
 
     def _write_artifact_file(self, run_id: str, artifact: Artifact) -> str:

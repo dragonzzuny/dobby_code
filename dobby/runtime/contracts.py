@@ -77,6 +77,62 @@ _ARTIFACT_TRANSITIONS = {
 }
 
 
+def check_artifact_write(previous: str | None, to_state: str,
+                        *, previous_digest: str = "",
+                        digest_: str = "") -> None:
+    """Whether a STORE may record `to_state`. Raises `ContractError` if not.
+
+    `Artifact.transition` already refuses an illegal move, and it refuses it on
+    an in-memory object. The store is a second door into the same state, and it
+    was unlocked: `RunStore.put_artifact` took whatever `artifact.state` it was
+    handed and wrote it. Demonstrated during an audit of this repository —
+
+        put_artifact(state=PROMOTED)   ->  ['PROMOTED']
+        put_artifact(state=REJECTED)   ->  ['REJECTED']
+
+    on the same artifact id, while `_ARTIFACT_TRANSITIONS[PROMOTED]` is the
+    empty set. The runner never does that, so nothing was broken; but
+    `_promoted_inputs` reads the STORE, not the object, so the rule that decides
+    what may become an input was being enforced in the one place that does not
+    decide it.
+
+    Two rules, and the second is the one that is easy to miss:
+
+    1. A row appears as PROPOSED and moves only along the table. There is no
+       other entry point, so PROMOTED cannot be conjured; it has to be walked
+       to, and every step is checked here.
+    2. A rewrite that keeps the state must keep the DIGEST. Otherwise the state
+       machine holds and the payload underneath it is swapped — a gate that
+       checks the label and not the contents is the same hole one level down.
+    """
+    if to_state not in ARTIFACT_STATES:
+        raise ContractError(
+            f"unknown artifact state {to_state!r}; expected one of "
+            f"{ARTIFACT_STATES}")
+    if previous is None:
+        if to_state != PROPOSED:
+            raise ContractError(
+                f"an artifact enters the store as {PROPOSED}, not {to_state!r}. "
+                f"A state is reached by transitioning to it, and this is the "
+                f"door that check exists behind — see runtime/runner.py, which "
+                f"records each step")
+        return
+    if previous == to_state:
+        if digest_ and previous_digest and digest_ != previous_digest:
+            raise ContractError(
+                f"artifact rewritten in state {to_state} with a different "
+                f"payload (digest {previous_digest[:12]} -> {digest_[:12]}); "
+                f"the state machine would hold while the contents changed "
+                f"underneath it")
+        return
+    if to_state in _ARTIFACT_TRANSITIONS.get(previous, set()):
+        return
+    allowed = sorted(_ARTIFACT_TRANSITIONS.get(previous, set()))
+    raise ContractError(
+        f"illegal artifact transition {previous} -> {to_state} at the "
+        f"store; allowed: {allowed or 'none (terminal)'}")
+
+
 class ContractError(ValueError):
     """A contract that cannot be satisfied by any output, or was violated."""
 
@@ -363,6 +419,40 @@ SCHEMAS = {
     "test_report": TEST_REPORT_SCHEMA,
     "report": REPORT_SCHEMA,
 }
+
+
+class PayloadTampered(ContractError):
+    """A promoted artifact's file no longer hashes to what the gate saw."""
+
+
+def verify_payload(payload, expected_digest: str, *, artifact_id: str = "") -> None:
+    """The content the state vouches for is the content being handed over.
+
+    `check_artifact_write` closed the door on forging the STATE. This is the
+    same door one layer down, and it was still open: `Runner._read_payload`
+    loaded the artifact FILE by path and never compared it to the digest the
+    store had recorded. Demonstrated on a real run —
+
+        DB state  PROMOTED
+        DB digest e1d55fe5…              (hash of {"value": 41})
+        file on disk edited by hand
+        what the next node received  {"value": 999999, "injected": ...}
+
+    The gate passed on one payload and the consumer got another. The digest was
+    computed, stored, and never read, which is the most expensive way to not
+    have a checksum.
+
+    Refusing here rather than in the reader keeps this testable without a store,
+    and makes the failure a named class the scheduler can classify instead of a
+    silent substitution.
+    """
+    actual = digest(payload)
+    if actual != expected_digest:
+        raise PayloadTampered(
+            f"artifact {artifact_id or '?'} does not match the digest recorded "
+            f"when it was promoted ({expected_digest[:12]} on the record, "
+            f"{actual[:12]} on disk). The gate graded different content from "
+            f"the content being handed to the next step")
 
 
 def artifact_path(data_dir: str, run_id: str, artifact_id: str) -> str:
