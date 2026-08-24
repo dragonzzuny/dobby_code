@@ -1,0 +1,27 @@
+{
+ "asked_at": "2026-08-24T22:59:40",
+ "provider": "codex",
+ "packet_chars": 33730,
+ "handed_over_as": "file",
+ "ok": true,
+ "error": null,
+ "wall_s": 23.1,
+ "usage": {
+  "provider": "codex",
+  "model": null,
+  "input_tokens": 38858,
+  "output_tokens": 544,
+  "thinking_tokens": 224,
+  "cache_read_tokens": 25088,
+  "cache_creation_tokens": 0,
+  "cost_usd": null,
+  "api_ms": null,
+  "turns": 1,
+  "source": "codex exec --json"
+ },
+ "verdicts": {
+  "runnable-gates": "APPROVE",
+  "ledgered-task": "REJECT"
+ },
+ "reply": "VERDICT runnable-gates: APPROVE\nREASON: Conjunction, approval-binding, and the separate vacuous-ledger cases meaningfully test distinct failure modes, and the manual case now verifies that manual gates remain reported.\nVERDICT ledgered-task: REJECT\nREASON: LEDGER-PRODUCES-GATES now credibly isolates the revision’s effect, but it is the only controlled passing scenario attributable to that revision; LEDGER-RESUME-CONTINUES exercises unchanged instructions and therefore does not supply the required second promotion scenario.\nWEAKEST SCENARIO: LEDGER-RESUME-CONTINUES, because both its resume clause and the Codex control already pass, so it would not catch removal or breakage of the additive gate-routing revision.\nCONCERNS: Add a second controlled behavioral scenario that depends on the revised instructions, ideally testing approval-before-verification or another gate-specific obligation. The calculator held-out checks establish artifact correctness but remain too close to the task output to detect protocol-level reward hacking; retain independent grading of ledger contents, approval records, and gate lifecycle behavior."
+}

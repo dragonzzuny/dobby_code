@@ -1,0 +1,155 @@
+{
+ "run_at": "2026-08-24T19:40:31",
+ "python": "3.11.9",
+ "platform": "win32",
+ "scenarios": 5,
+ "passed": 4,
+ "by_skill": {
+  "runnable-gates": {
+   "passed": [
+    "GATES-CONJUNCTION",
+    "GATES-APPROVAL-BINDING",
+    "GATES-VACUOUS"
+   ],
+   "failed": []
+  },
+  "ledgered-task": {
+   "passed": [
+    "LEDGER-PROTOCOL-INTACT"
+   ],
+   "failed": [
+    "LEDGER-GATES-REFERENCE"
+   ]
+  }
+ },
+ "results": [
+  {
+   "id": "GATES-CONJUNCTION",
+   "skill": "runnable-gates",
+   "claim": "A command that exits 0 while proving nothing is reported UNMET and the process exits 1.",
+   "passed": true,
+   "wall_s": 1.02,
+   "checks": [
+    {
+     "id": "exit-code-is-1",
+     "passed": true,
+     "expected_exit": 1,
+     "actual_exit": 1
+    },
+    {
+     "id": "the-lying-gate-is-named-unmet",
+     "passed": true,
+     "pointer": "summary.unmet",
+     "expected": [
+      "EXIT0"
+     ],
+     "actual": [
+      "EXIT0"
+     ],
+     "resolved": true
+    },
+    {
+     "id": "the-honest-gate-is-met",
+     "passed": true,
+     "pointer": "summary.met",
+     "expected": 1,
+     "actual": 1,
+     "resolved": true
+    }
+   ]
+  },
+  {
+   "id": "GATES-APPROVAL-BINDING",
+   "skill": "runnable-gates",
+   "claim": "An approval covers one exact command. Swap the command and the gate is refused, unexecuted.",
+   "passed": true,
+   "wall_s": 3.11,
+   "checks": [
+    {
+     "id": "approved-command-runs-and-meets",
+     "passed": true,
+     "expected_exit": 0,
+     "actual_exit": 0
+    },
+    {
+     "id": "swapped-command-is-refused",
+     "passed": true,
+     "expected_exit": 1,
+     "actual_exit": 1
+    },
+    {
+     "id": "and-was-never-executed",
+     "passed": true,
+     "pointer": "verdicts.0.exit_code",
+     "expected": null,
+     "actual": null,
+     "resolved": true
+    }
+   ]
+  },
+  {
+   "id": "GATES-VACUOUS",
+   "skill": "runnable-gates",
+   "claim": "A run that checked nothing is not ok. An empty ledger, an all-manual one and an all-abandoned one each fail.",
+   "passed": true,
+   "wall_s": 0.66,
+   "checks": [
+    {
+     "id": "exit-code-is-1",
+     "passed": true,
+     "expected_exit": 1,
+     "actual_exit": 1
+    },
+    {
+     "id": "nothing-ran-is-stated",
+     "passed": true,
+     "pointer": "summary.nothing_ran",
+     "expected": true,
+     "actual": true,
+     "resolved": true
+    },
+    {
+     "id": "and-ok-is-false",
+     "passed": true,
+     "pointer": "summary.ok",
+     "expected": false,
+     "actual": false,
+     "resolved": true
+    }
+   ]
+  },
+  {
+   "id": "LEDGER-GATES-REFERENCE",
+   "skill": "ledgered-task",
+   "claim": "The multi-step protocol names GATES.md and the command that grades it, so the machinery is reachable from the protocol that fires most often.",
+   "passed": false,
+   "wall_s": 0.0,
+   "checks": [
+    {
+     "id": "protocol-names-the-gate-ledger",
+     "passed": false,
+     "path": ".claude/skills/ledgered-task/SKILL.md",
+     "missing": [
+      "GATES.md",
+      "dobby.cli gates"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "LEDGER-PROTOCOL-INTACT",
+   "skill": "ledgered-task",
+   "claim": "The revision is ADDITIVE. Every numbered step and the resume clause survive it.",
+   "passed": true,
+   "wall_s": 0.0,
+   "checks": [
+    {
+     "id": "all-seven-steps-and-the-resume-clause-survive",
+     "passed": true,
+     "path": ".claude/skills/ledgered-task/SKILL.md",
+     "missing": []
+    }
+   ]
+  }
+ ]
+}

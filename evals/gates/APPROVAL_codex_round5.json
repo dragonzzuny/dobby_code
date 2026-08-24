@@ -1,0 +1,27 @@
+{
+ "asked_at": "2026-08-24T23:19:52",
+ "provider": "codex",
+ "packet_chars": 37120,
+ "handed_over_as": "file",
+ "ok": true,
+ "error": null,
+ "wall_s": 28.9,
+ "usage": {
+  "provider": "codex",
+  "model": null,
+  "input_tokens": 39735,
+  "output_tokens": 640,
+  "thinking_tokens": 367,
+  "cache_read_tokens": 25088,
+  "cache_creation_tokens": 0,
+  "cost_usd": null,
+  "api_ms": null,
+  "turns": 1,
+  "source": "codex exec --json"
+ },
+ "verdicts": {
+  "runnable-gates": "APPROVE",
+  "ledgered-task": "REJECT"
+ },
+ "reply": "VERDICT runnable-gates: APPROVE\nREASON: Five passing scenarios test distinct failure modes, including approval binding, conjunction semantics, and separate vacuous-ledger cases with explicit manual-gate reporting.\nVERDICT ledgered-task: REJECT\nREASON: LEDGER-APPROVES-BEFORE-VERIFYING is a strong second controlled design, but it was verified only on Codex and therefore violates the stated rule that a behavioral scenario counts only when both executors produce the artifacts. The superseded additivity checks also leave no passing evidence that prior protocol instructions remain intact.\nWEAKEST SCENARIO: LEDGER-APPROVES-BEFORE-VERIFYING, because without a Claude execution it would fail to catch provider-specific noncompliance or portability problems in the newly added approval lifecycle.\nCONCERNS: Run the approval scenario on a Claude harness that permits command execution, and restore an executable comparison proving the revision preserves every prior obligation while adding gate routing and approval-before-verification."
+}

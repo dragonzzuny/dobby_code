@@ -1,0 +1,13 @@
+{
+ "asked_at": "2026-08-24T22:57:15",
+ "provider": "codex",
+ "ok": false,
+ "error": "'codex' resolved to 'C:\\\\Users\\\\dynap\\\\AppData\\\\Roaming\\\\npm\\\\codex.CMD' but could not be launched — the file exists and the OS refused it, so this is a shim or extension the process loader cannot start directly, not a missing install",
+ "wall_s": 0.0,
+ "usage": {},
+ "verdicts": {
+  "runnable-gates": null,
+  "ledgered-task": null
+ },
+ "reply": ""
+}

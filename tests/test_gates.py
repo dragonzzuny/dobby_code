@@ -13,6 +13,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
@@ -26,6 +27,8 @@ PY = f'"{sys.executable}"'
 OK = f"{PY} -c \"print('gate-ok')\""
 FAILING = f"{PY} -c \"print('gate-ok'); raise SystemExit(3)\""
 QUIET = f"{PY} -c \"print('something-else')\""
+
+NL = chr(10)
 
 
 class Sandbox(unittest.TestCase):
@@ -76,12 +79,24 @@ class ParseTest(Sandbox):
             self.assertTrue(gate.checked)
 
     def test_id_must_be_explicit_and_valid(self):
-        no_colon = gates.parse("- [ ] just a sentence with no id\n")
-        self.assertIn("gate needs an explicit ID followed by a colon",
-                      " ".join(no_colon.errors))
-        bad = gates.parse("- [ ] -bad*id: title\n")
+        no_colon = gates.parse("- [ ] just a sentence with no id" + NL)
+        joined = " ".join(no_colon.errors)
+        self.assertIn("explicit ID", joined)
+        # The message must SHOW what it rejected. An error naming only a
+        # line number cannot be self-corrected by the agent that caused it,
+        # and one malformed title takes the whole ledger down with it -
+        # measured, when an agent wrote `G5 (manual, unscored):` and its
+        # four correct gates went ungraded alongside it.
+        self.assertIn("just a sentence with no id", joined)
+
+        spaced = gates.parse("- [ ] G5 (manual, unscored): the report" + NL)
+        self.assertIn("cannot contain a space", " ".join(spaced.errors))
+
+        bad = gates.parse("- [ ] -bad*id: title" + NL)
         self.assertIn("invalid gate id", " ".join(bad.errors))
-        blank = gates.parse("- [ ] \n")
+        self.assertIn("-bad*id", " ".join(bad.errors))
+
+        blank = gates.parse("- [ ] " + NL)
         self.assertIn("gate outcome is blank", " ".join(blank.errors))
 
     def test_duplicate_id_is_an_error_naming_the_first_line(self):
@@ -341,6 +356,43 @@ class RobustnessTest(Sandbox):
                                  max_output_bytes=64)
         self.assertTrue(verdict["truncated"])
         self.assertLessEqual(len(verdict["output"].encode("utf-8")), 64)
+
+    def test_the_recorded_shell_is_the_one_that_runs(self):
+        """`shell=True` execs /bin/sh on POSIX whatever $SHELL says.
+
+        An approval fingerprint that names /bin/bash while the command runs
+        under /bin/sh is bound to something that never executed. Not caught
+        locally because this machine is nt, where the two coincide.
+        """
+        with mock.patch.object(gates.os, "name", "posix"):
+            with mock.patch.dict(gates.os.environ,
+                                 {"SHELL": "/bin/zsh"}, clear=False):
+                self.assertEqual(gates._shell(), "/bin/sh")
+
+    def test_truncation_is_not_reported_as_a_content_mismatch(self):
+        # The deciding token IS produced and then cut off by the byte cap.
+        # Blaming the content sends an operator to read the command when the
+        # fix is the cap.
+        command = PY + " -c \"print('x' * 300); print('DECIDES')\""
+        text = ("- [x] G1: late token" + NL + "  CHECK: " + command + NL
+                + "  EXPECT: DECIDES" + NL)
+        path = self.write(text)
+        gate = gates.parse(text).by_id("G1")
+        verdict = gates.run_gate(gate, ledger=path, cwd=self.tmp,
+                                 max_output_bytes=50,
+                                 require_approval=False)
+        self.assertFalse(verdict["met"])
+        self.assertTrue(verdict["truncated"])
+        self.assertIn("TRUNCATED", verdict["reason"])
+
+        # An untruncated mismatch must NOT carry the warning.
+        clean = ("- [x] G1: ok" + NL + "  CHECK: " + QUIET + NL
+                 + "  EXPECT: gate-ok" + NL)
+        gate = gates.parse(clean).by_id("G1")
+        verdict = gates.run_gate(gate, ledger=self.write(clean),
+                                 cwd=self.tmp, require_approval=False)
+        self.assertFalse(verdict["truncated"])
+        self.assertNotIn("TRUNCATED", verdict["reason"])
 
     def test_a_missing_cwd_fails_without_raising(self):
         missing = os.path.join(self.tmp, "nope")

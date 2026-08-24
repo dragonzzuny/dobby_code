@@ -1,0 +1,33 @@
+{
+ "scenario": "LEDGER-APPROVES-BEFORE-VERIFYING",
+ "provider": "claude",
+ "arm": "controlnoenv",
+ "passed": false,
+ "run": {
+  "ok": true,
+  "error": null,
+  "wall_s": 216.5,
+  "usage": {
+   "provider": "claude",
+   "model": "claude-opus-5[1m]",
+   "input_tokens": 28,
+   "output_tokens": 11992,
+   "thinking_tokens": 1477,
+   "cache_read_tokens": 828345,
+   "cache_creation_tokens": 51304,
+   "cost_usd": 1.2271524999999999,
+   "api_ms": 167929,
+   "turns": 14,
+   "source": "claude --output-format json"
+  },
+  "reply_tail": "tion.md` and `escalation-and-reporting.md`, which steps 5 and 7 are defined by. My step-5 validation and this report follow the protocol's inline description of those steps, not the actual policy files; if those files impose checks I didn't perform, that gap is unmeasured.\n\n**Step 6's checkpoint fails.** `dobby.cli handoff-latest` returns the same `ModuleNotFoundError` (EXIT=1, quoted in the ledger). I hand-wrote `reports/HANDOFF_calc-add-fix.md` so the handoff content exists, but it is not the product of the trajectory `handoff` capability and won't be discoverable by `handoff-latest` on resume. Likewise `record_evidence` (MCP) was unavailable — evidence is in the ledger as trajectory notes instead.\n\nI did not stub or fake these; a ledger row saying \"done\" for step 3 would have been the easy lie.\n\n### Assumptions\n\n- **L1:** \"should print 7\" means `add` must return the sum, so the operator was the defect — not the call site. I tested the alternative (call args wrong) and rejected it: `add(3, 4)` already matches 3+4=7.\n- **L1:** nothing else depends on `add` subtracting (the directory holds only `calc.py` and `.omc/state`).\n- **L1:** `reports/` is acceptable for artifacts; requirement 4 pins the *fix* to `calc.py` here, which is where it went.\n\nArtifacts: `reports/LEDGER_calc-add-fix.md`, `reports/HANDOFF_calc-add-fix.md`, `reports/evidence/{baseline,validation}.txt`, `reports/evidence/calc.py.before`. Nothing was committed — the repo has no commits and you didn't ask for one."
+ },
+ "checks": [
+  {
+   "id": "a-gates-file-was-written",
+   "passed": false
+  }
+ ],
+ "artefacts": "C:\\Users\\dynap\\Downloads\\도비코드\\evals\\gates\\artefacts\\LEDGER-APPROVES-BEFORE-VERIFYING__claude__controlnoenv",
+ "at": "2026-08-24T23:49:31"
+}

@@ -84,7 +84,7 @@
     "ledger exists before first change",
     "every ledger row done-with-evidence or reported not-done"
    ],
-   "version": "1.0",
+   "version": "1.1",
    "path": ".claude/skills/ledgered-task/SKILL.md",
    "provenance": {
     "source": "kit v2.1 factory default",
@@ -94,14 +94,61 @@
    },
    "state": "active",
    "proposed_by": "kit-author",
-   "approved_by": "kit-release",
-   "eval_passes": [],
+   "approved_by": "codex",
+   "eval_passes": [
+    {
+     "scenario": "LEDGER-PRODUCES-GATES",
+     "evidence": "evals/gates/RESULTS_behavioral.json",
+     "date": "2026-08-24"
+    },
+    {
+     "scenario": "LEDGER-APPROVES-BEFORE-VERIFYING",
+     "evidence": "evals/gates/RESULTS_behavioral.json",
+     "date": "2026-08-24"
+    },
+    {
+     "scenario": "LEDGER-RESUME-CONTINUES",
+     "evidence": "evals/gates/RESULTS_behavioral.json",
+     "date": "2026-08-24"
+    }
+   ],
    "created": "2026-07-12",
    "history": [
     {
      "to": "active",
      "by": "kit-release",
      "date": "2026-07-12"
+    },
+    {
+     "to": "revised",
+     "by": "claude-opus-5",
+     "date": "2026-08-24"
+    },
+    {
+     "to": "candidate",
+     "by": "claude-opus-5",
+     "note": "gates written at step 1 and verified at step 5; manual-gate rule unified with runnable-gates",
+     "date": "2026-08-24"
+    },
+    {
+     "to": "sandboxed",
+     "by": "codex",
+     "date": "2026-08-24"
+    },
+    {
+     "to": "evaluated",
+     "by": "codex",
+     "date": "2026-08-24"
+    },
+    {
+     "to": "approved",
+     "by": "codex",
+     "date": "2026-08-24"
+    },
+    {
+     "to": "active",
+     "by": "codex",
+     "date": "2026-08-24"
     }
    ],
    "requires": {
@@ -112,9 +159,9 @@
     ]
    },
    "origin": {
-    "pinned_sha256": "87fedc2d15b1b4c1e169c702b9ac0029a46105468a99615f346d3b61f7150ef4",
+    "pinned_sha256": "54d269145130f662866b41c3c6abbbc9c326903976e3b06937938d0afe626528",
     "path": ".claude/skills/ledgered-task/SKILL.md",
-    "date": "2026-07-25"
+    "date": "2026-08-24"
    }
   },
   {
@@ -496,7 +543,7 @@
     "{python} -m dobby.cli gates verify --file GATES.md --write-evidence",
     "{python} -m unittest tests.test_gates"
    ],
-   "version": "1.0",
+   "version": "1.1",
    "path": ".claude/skills/runnable-gates/SKILL.md",
    "provenance": {
     "source": "ported from Leonxlnx/unlazy (MIT)",
@@ -511,20 +558,97 @@
      "py"
     ]
    },
-   "state": "candidate",
+   "state": "active",
    "proposed_by": "claude-opus-5",
-   "eval_passes": [],
-   "approved_by": null,
+   "eval_passes": [
+    {
+     "scenario": "GATES-CONJUNCTION",
+     "evidence": "evals/gates/RESULTS.json",
+     "date": "2026-08-24"
+    },
+    {
+     "scenario": "GATES-APPROVAL-BINDING",
+     "evidence": "evals/gates/RESULTS.json",
+     "date": "2026-08-24"
+    },
+    {
+     "scenario": "GATES-VACUOUS-EMPTY",
+     "evidence": "evals/gates/RESULTS.json",
+     "date": "2026-08-24"
+    },
+    {
+     "scenario": "GATES-VACUOUS-MANUAL",
+     "evidence": "evals/gates/RESULTS.json",
+     "date": "2026-08-24"
+    },
+    {
+     "scenario": "GATES-VACUOUS-ABANDONED",
+     "evidence": "evals/gates/RESULTS.json",
+     "date": "2026-08-24"
+    }
+   ],
+   "approved_by": "codex",
    "created": "2026-08-24",
    "history": [
     {
      "to": "candidate",
      "by": "claude-opus-5",
      "date": "2026-08-24"
+    },
+    {
+     "to": "sandboxed",
+     "by": "codex",
+     "date": "2026-08-24"
+    },
+    {
+     "to": "evaluated",
+     "by": "codex",
+     "date": "2026-08-24"
+    },
+    {
+     "to": "approved",
+     "by": "codex",
+     "date": "2026-08-24"
+    },
+    {
+     "to": "active",
+     "by": "codex",
+     "date": "2026-08-24"
+    },
+    {
+     "to": "revised",
+     "by": "claude-opus-5",
+     "date": "2026-08-24"
+    },
+    {
+     "to": "candidate",
+     "by": "claude-opus-5",
+     "note": "id syntax and the self-referential-gate trap documented after a behavioral run measured both",
+     "date": "2026-08-24"
+    },
+    {
+     "to": "sandboxed",
+     "by": "codex",
+     "date": "2026-08-24"
+    },
+    {
+     "to": "evaluated",
+     "by": "codex",
+     "date": "2026-08-24"
+    },
+    {
+     "to": "approved",
+     "by": "codex",
+     "date": "2026-08-24"
+    },
+    {
+     "to": "active",
+     "by": "codex",
+     "date": "2026-08-24"
     }
    ],
    "origin": {
-    "pinned_sha256": "12ac87098884e6896878d8e2bd6d02845aef8a11bd00b358e3937c9516dad60c",
+    "pinned_sha256": "c65753cd72e32c8ff039a14271fca5667d89a3bebeb22ac1ab944c75afc49686",
     "path": ".claude/skills/runnable-gates/SKILL.md",
     "date": "2026-08-24"
    }

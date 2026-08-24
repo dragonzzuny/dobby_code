@@ -13,19 +13,6 @@ resume ("continue where we left off").
    numbered; assumptions (each L0/L1 per the ladder); status table
    `| # | requirement | state | evidence path |` all `todo`.
    ✓ file exists BEFORE the first change. Never pre-fill `done`.
-   **Then write the gates.** Every requirement that PRODUCES something gets a
-   row in `GATES.md` — `CHECK:` the command, `EXPECT:` the token that decides
-   it. A requirement no command can decide gets a row with no `CHECK:`, which
-   is reported as manual and never scored; do not invent a command to make one
-   look automated, and do not drop the row. The ledger tracks requirements;
-   `GATES.md` is what something other than you grades them with. Contract in
-   the `runnable-gates` skill.
-   ✓ `{python} -m dobby.cli gates status --file GATES.md` exits 0.
-   ✓ read every CHECK it prints, then
-   `{python} -m dobby.cli gates approve --file GATES.md`. Without this
-   step 5 cannot pass: an unapproved gate is refused unrun, and a
-   protocol that ends in a command that cannot succeed is not a
-   protocol.
 2. **Brief.** `{python} -m dobby.cli context "<task>"` — read the fired
    policies and applicable skills; fetch bodies only for what you'll execute.
 3. **Observe.** Run the read-only evidence steps the policies require. For
@@ -39,9 +26,6 @@ resume ("continue where we left off").
    trajectory notes.
 5. **Validate outputs** per verification-and-completion.md.
    ✓ output-side check result quoted.
-   ✓ `{python} -m dobby.cli gates verify --file GATES.md --write-evidence`
-   exits 0. A gate that turned out impossible is `ABANDON:`ed with a reason,
-   never deleted.
 6. **Handoff** whenever the session may end or a budget is hit: done /
    remaining / decisions / evidence / next-steps (the trajectory `handoff`
    capability writes the file).

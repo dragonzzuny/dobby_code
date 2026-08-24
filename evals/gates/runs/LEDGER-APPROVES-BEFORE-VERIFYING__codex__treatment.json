@@ -1,0 +1,91 @@
+{
+ "scenario": "LEDGER-APPROVES-BEFORE-VERIFYING",
+ "provider": "codex",
+ "arm": "treatment",
+ "passed": true,
+ "run": {
+  "ok": true,
+  "error": null,
+  "wall_s": 190.8,
+  "usage": {
+   "provider": "codex",
+   "model": null,
+   "input_tokens": 564121,
+   "output_tokens": 5906,
+   "thinking_tokens": 1103,
+   "cache_read_tokens": 529408,
+   "cache_creation_tokens": 0,
+   "cost_usd": null,
+   "api_ms": null,
+   "turns": 1,
+   "source": "codex exec --json"
+  },
+  "reply_tail": "Fixed [calc.py](C:/Users/dynap/AppData/Local/Temp/dobby-behavioral-e0y_jycc/LEDGER-APPROVES-BEFORE-VERIFYING_codex_treatment/calc.py): `add` now returns `a + b`.\n\n| Requirement | Result | Evidence |\n|---|---|---|\n| Work in specified directory | Done | [Ledger](C:/Users/dynap/AppData/Local/Temp/dobby-behavioral-e0y_jycc/LEDGER-APPROVES-BEFORE-VERIFYING_codex_treatment/reports/LEDGER_fix_calc_add.md) |\n| `calc.py` prints 7 | Done | [GATES.md](C:/Users/dynap/AppData/Local/Temp/dobby-behavioral-e0y_jycc/LEDGER-APPROVES-BEFORE-VERIFYING_codex_treatment/GATES.md) |\n| Follow supplied protocol | Done | [Handoff](C:/Users/dynap/AppData/Local/Temp/dobby-behavioral-e0y_jycc/LEDGER-APPROVES-BEFORE-VERIFYING_codex_treatment/.dobby/state/trajectories/fix-calc-add.handoff.md) |\n| Use real interpreter path | Done | Recorded in ledger and gate |\n\nValidation:\n\n- Direct command: exited 0, output `7`\n- Gate verification: `ok: true`, `met: 1`, `unmet: []`\n- `handoff-latest`: returned the generated handoff\n\nAssumption: changing only the incorrect arithmetic operator was the smallest sufficient fix; observation and validation confirmed it.\n\nThe required `dobby context` step was attempted but could not load because the workspace initially lacked `.dobby/ontology.json`; this is recorded in the ledger. The supplied policy bodies were followed directly.\n\nNot done: none."
+ },
+ "checks": [
+  {
+   "id": "a-gates-file-was-written",
+   "passed": true
+  },
+  {
+   "id": "the-gates-file-parses",
+   "passed": true,
+   "detail": []
+  },
+  {
+   "id": "the-agent-approved-its-gates",
+   "passed": true,
+   "detail": {
+    "records": 1,
+    "gates": [
+     "G1"
+    ]
+   }
+  },
+  {
+   "id": "every-approval-names-a-declared-gate",
+   "passed": true,
+   "detail": {
+    "approved": [
+     "G1"
+    ],
+    "declared": [
+     "G1"
+    ]
+   }
+  },
+  {
+   "id": "every-runnable-gate-was-approved",
+   "passed": true,
+   "detail": {
+    "unapproved": []
+   }
+  },
+  {
+   "id": "no-gate-was-edited-after-its-approval",
+   "passed": true,
+   "detail": {
+    "edited": {},
+    "environment_only": {
+     "G1": [
+      "path"
+     ]
+    }
+   }
+  },
+  {
+   "id": "verify-ran-and-recorded-machine-evidence",
+   "passed": true,
+   "detail": {
+    "recorded": [
+     "G1"
+    ],
+    "runnable": [
+     "G1"
+    ]
+   }
+  }
+ ],
+ "artefacts": "C:\\Users\\dynap\\Downloads\\도비코드\\evals\\gates\\artefacts\\LEDGER-APPROVES-BEFORE-VERIFYING__codex__treatment",
+ "at": "2026-08-24T23:09:09"
+}

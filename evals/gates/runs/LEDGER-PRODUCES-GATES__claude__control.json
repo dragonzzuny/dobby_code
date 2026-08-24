@@ -1,0 +1,40 @@
+{
+ "scenario": "LEDGER-PRODUCES-GATES",
+ "provider": "claude",
+ "arm": "control",
+ "passed": false,
+ "run": {
+  "ok": true,
+  "error": null,
+  "wall_s": 269.9,
+  "usage": {
+   "provider": "claude",
+   "model": "claude-opus-5[1m]",
+   "input_tokens": 52,
+   "output_tokens": 12080,
+   "thinking_tokens": 2758,
+   "cache_read_tokens": 1494555,
+   "cache_creation_tokens": 47013,
+   "cost_usd": 1.5196675,
+   "api_ms": 206854,
+   "turns": 31,
+   "source": "claude --output-format json"
+  },
+  "reply_tail": "d the `# BUG: returns the difference` comment, which would otherwise have left the file asserting something false about itself.\n\n## Assumptions\n\n- **L0** `{python}` is the Python 3.11 path above — verified by command.\n- **L0** `add` is meant to be arithmetic addition — requirement 1 gives both the input (`add(3, 4)`, `calc.py:7`) and the expected output.\n- **L0** no other caller depends on subtraction semantics — verified by grep.\n- **L1** `reports/LEDGER_calc-add-fix.md` doesn't violate \"not a subdirectory\" — protocol step 1 mandates that exact path, and I read requirement 3 as constraining where the *task work* happens. Flagging it since the two instructions do pull against each other.\n\n## Not done\n\n1. **Step 2 (Brief).** The fired policies and applicable skills were never read. Everything here rests on the protocol text in your prompt, not on a dobby brief — if a policy would have changed the approach, I didn't see it.\n2. **Step 5 (output-side check).** No observed stdout. Reading the code says it prints `7`; that is not a measurement. A stray `sitecustomize`, a shadowing `calc` module, or a different interpreter on your PATH would defeat my static reading.\n3. **Step 6 (`handoff-latest`).** Written into §8 of the ledger instead of via the trajectory capability, so `dobby.cli handoff-latest` will not return it.\n\nOne command closes item 2: `C:\\Users\\dynap\\AppData\\Local\\Programs\\Python\\Python311\\python.exe calc.py` — expect `7`. Full trail in `reports/LEDGER_calc-add-fix.md`."
+ },
+ "checks": [
+  {
+   "id": "a-ledger-was-written",
+   "passed": true,
+   "detail": [
+    "LEDGER_calc-add-fix.md"
+   ]
+  },
+  {
+   "id": "a-gates-file-was-written",
+   "passed": false
+  }
+ ],
+ "artefacts": "C:\\Users\\dynap\\Downloads\\도비코드\\evals\\gates\\artefacts\\LEDGER-PRODUCES-GATES__claude__control",
+ "at": "2026-08-24T22:42:05"
+}

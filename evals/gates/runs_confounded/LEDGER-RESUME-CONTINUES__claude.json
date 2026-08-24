@@ -1,0 +1,54 @@
+{
+ "scenario": "LEDGER-RESUME-CONTINUES",
+ "provider": "claude",
+ "passed": true,
+ "run": {
+  "ok": true,
+  "error": null,
+  "wall_s": 192.8,
+  "usage": {
+   "provider": "claude",
+   "model": "claude-opus-5[1m]",
+   "input_tokens": 34,
+   "output_tokens": 10029,
+   "thinking_tokens": 4449,
+   "cache_read_tokens": 977088,
+   "cache_creation_tokens": 45931,
+   "cost_usd": 1.198749,
+   "api_ms": 146035,
+   "turns": 21,
+   "source": "claude --output-format json"
+  },
+  "reply_tail": "real gate, not a description of what happened.\n\n**On the ticked box:** I ticked `PRODUCT` because the box is my claim that the work is done, and it is. It is not a claim that the gate passed. Under the contract, met = ticked **and** exit 0 **and** EXPECT matched; only the first is true, so `PRODUCT` is ticked-but-unmet. I did not tick it to turn a run green — no run occurred.\n\n**Not done, explicitly:**\n- `PRODUCT`, `SUM`, `IMPORTS` — all three unmet/unconfirmed by id. No `--write-evidence` records exist, so the ledger's evidence column points at gate definitions rather than run records.\n- No gate was approved, so even a permitted `verify` would exit 1 as unapproved until `gates approve` runs first.\n- The trajectory `handoff` capability could not write a file; the handoff is a section in `LEDGER_calculator.md` instead.\n\nI deliberately did **not** `ABANDON:` the unmet gate. The gate is sound and its command is correct — what failed is the ability to run any command at all, which is a property of this session, not of the gate. Abandoning it would file a session-level blocker as a gate-level impossibility.\n\nThe only check actually available to me was reading the source: `calc.py` defines `mul` as `return a * b` and `add` as `return a + b`, with no imports or top-level statements. That is source inspection, not an output-side check, and I am not counting it as one. One command in a Python-permitted session — `gates verify --file GATES.md --write-evidence` — decides all three rows."
+ },
+ "checks": [
+  {
+   "id": "no-second-ledger-was-started",
+   "passed": true,
+   "detail": [
+    "LEDGER_calculator.md"
+   ]
+  },
+  {
+   "id": "rows-already-done-were-not-reset",
+   "passed": true,
+   "detail": {
+    "kept": [
+     "add() returns the sum",
+     "the module imports cleanly"
+    ],
+    "lost_or_reworded": []
+   }
+  },
+  {
+   "id": "the-open-gate-was-closed",
+   "passed": true,
+   "detail": {
+    "exit": 0,
+    "unmet": []
+   }
+  }
+ ],
+ "artefacts": "C:\\Users\\dynap\\Downloads\\도비코드\\evals\\gates\\artefacts\\LEDGER-RESUME-CONTINUES__claude",
+ "at": "2026-08-24T22:06:52"
+}

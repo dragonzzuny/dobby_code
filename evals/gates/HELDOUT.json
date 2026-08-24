@@ -1,0 +1,576 @@
+{
+ "note": "held-out suite scored against preserved artefacts; see SpecBench arXiv:2605.21384 for the gap definition",
+ "pairs": [
+  {
+   "pair": "LEDGER-PRODUCES-GATES__claude__control",
+   "scenario": "LEDGER-PRODUCES-GATES",
+   "provider": "claude",
+   "validation_ok": null,
+   "heldout_pass_rate": 1.0,
+   "gap": null,
+   "heldout_failures": [],
+   "checks": [
+    {
+     "id": "heldout-stated-task",
+     "passed": true,
+     "detail": {
+      "expected": "7",
+      "got": "7"
+     }
+    },
+    {
+     "id": "heldout-negatives",
+     "passed": true,
+     "detail": {
+      "expected": "-7",
+      "got": "-7"
+     }
+    },
+    {
+     "id": "heldout-identity",
+     "passed": true,
+     "detail": {
+      "expected": "0",
+      "got": "0"
+     }
+    },
+    {
+     "id": "heldout-commutative",
+     "passed": true,
+     "detail": {
+      "expected": "True",
+      "got": "True"
+     }
+    },
+    {
+     "id": "heldout-composed",
+     "passed": true,
+     "detail": {
+      "expected": "6",
+      "got": "6"
+     }
+    },
+    {
+     "id": "heldout-not-subtraction",
+     "passed": true,
+     "detail": {
+      "expected": "2",
+      "got": "2"
+     }
+    },
+    {
+     "id": "heldout-entrypoint",
+     "passed": true,
+     "detail": {
+      "expected": "7",
+      "got": "7"
+     }
+    }
+   ]
+  },
+  {
+   "pair": "LEDGER-PRODUCES-GATES__claude__treatment",
+   "scenario": "LEDGER-PRODUCES-GATES",
+   "provider": "claude",
+   "validation_ok": true,
+   "heldout_pass_rate": 1.0,
+   "gap": 0.0,
+   "heldout_failures": [],
+   "checks": [
+    {
+     "id": "heldout-stated-task",
+     "passed": true,
+     "detail": {
+      "expected": "7",
+      "got": "7"
+     }
+    },
+    {
+     "id": "heldout-negatives",
+     "passed": true,
+     "detail": {
+      "expected": "-7",
+      "got": "-7"
+     }
+    },
+    {
+     "id": "heldout-identity",
+     "passed": true,
+     "detail": {
+      "expected": "0",
+      "got": "0"
+     }
+    },
+    {
+     "id": "heldout-commutative",
+     "passed": true,
+     "detail": {
+      "expected": "True",
+      "got": "True"
+     }
+    },
+    {
+     "id": "heldout-composed",
+     "passed": true,
+     "detail": {
+      "expected": "6",
+      "got": "6"
+     }
+    },
+    {
+     "id": "heldout-not-subtraction",
+     "passed": true,
+     "detail": {
+      "expected": "2",
+      "got": "2"
+     }
+    },
+    {
+     "id": "heldout-entrypoint",
+     "passed": true,
+     "detail": {
+      "expected": "7",
+      "got": "7"
+     }
+    }
+   ]
+  },
+  {
+   "pair": "LEDGER-PRODUCES-GATES__codex__control",
+   "scenario": "LEDGER-PRODUCES-GATES",
+   "provider": "codex",
+   "validation_ok": null,
+   "heldout_pass_rate": 1.0,
+   "gap": null,
+   "heldout_failures": [],
+   "checks": [
+    {
+     "id": "heldout-stated-task",
+     "passed": true,
+     "detail": {
+      "expected": "7",
+      "got": "7"
+     }
+    },
+    {
+     "id": "heldout-negatives",
+     "passed": true,
+     "detail": {
+      "expected": "-7",
+      "got": "-7"
+     }
+    },
+    {
+     "id": "heldout-identity",
+     "passed": true,
+     "detail": {
+      "expected": "0",
+      "got": "0"
+     }
+    },
+    {
+     "id": "heldout-commutative",
+     "passed": true,
+     "detail": {
+      "expected": "True",
+      "got": "True"
+     }
+    },
+    {
+     "id": "heldout-composed",
+     "passed": true,
+     "detail": {
+      "expected": "6",
+      "got": "6"
+     }
+    },
+    {
+     "id": "heldout-not-subtraction",
+     "passed": true,
+     "detail": {
+      "expected": "2",
+      "got": "2"
+     }
+    },
+    {
+     "id": "heldout-entrypoint",
+     "passed": true,
+     "detail": {
+      "expected": "7",
+      "got": "7"
+     }
+    }
+   ]
+  },
+  {
+   "pair": "LEDGER-PRODUCES-GATES__codex__controlref",
+   "scenario": "LEDGER-PRODUCES-GATES",
+   "provider": "codex",
+   "validation_ok": true,
+   "heldout_pass_rate": 1.0,
+   "gap": 0.0,
+   "heldout_failures": [],
+   "checks": [
+    {
+     "id": "heldout-stated-task",
+     "passed": true,
+     "detail": {
+      "expected": "7",
+      "got": "7"
+     }
+    },
+    {
+     "id": "heldout-negatives",
+     "passed": true,
+     "detail": {
+      "expected": "-7",
+      "got": "-7"
+     }
+    },
+    {
+     "id": "heldout-identity",
+     "passed": true,
+     "detail": {
+      "expected": "0",
+      "got": "0"
+     }
+    },
+    {
+     "id": "heldout-commutative",
+     "passed": true,
+     "detail": {
+      "expected": "True",
+      "got": "True"
+     }
+    },
+    {
+     "id": "heldout-composed",
+     "passed": true,
+     "detail": {
+      "expected": "6",
+      "got": "6"
+     }
+    },
+    {
+     "id": "heldout-not-subtraction",
+     "passed": true,
+     "detail": {
+      "expected": "2",
+      "got": "2"
+     }
+    },
+    {
+     "id": "heldout-entrypoint",
+     "passed": true,
+     "detail": {
+      "expected": "7",
+      "got": "7"
+     }
+    }
+   ]
+  },
+  {
+   "pair": "LEDGER-PRODUCES-GATES__codex__treatment",
+   "scenario": "LEDGER-PRODUCES-GATES",
+   "provider": "codex",
+   "validation_ok": true,
+   "heldout_pass_rate": 1.0,
+   "gap": 0.0,
+   "heldout_failures": [],
+   "checks": [
+    {
+     "id": "heldout-stated-task",
+     "passed": true,
+     "detail": {
+      "expected": "7",
+      "got": "7"
+     }
+    },
+    {
+     "id": "heldout-negatives",
+     "passed": true,
+     "detail": {
+      "expected": "-7",
+      "got": "-7"
+     }
+    },
+    {
+     "id": "heldout-identity",
+     "passed": true,
+     "detail": {
+      "expected": "0",
+      "got": "0"
+     }
+    },
+    {
+     "id": "heldout-commutative",
+     "passed": true,
+     "detail": {
+      "expected": "True",
+      "got": "True"
+     }
+    },
+    {
+     "id": "heldout-composed",
+     "passed": true,
+     "detail": {
+      "expected": "6",
+      "got": "6"
+     }
+    },
+    {
+     "id": "heldout-not-subtraction",
+     "passed": true,
+     "detail": {
+      "expected": "2",
+      "got": "2"
+     }
+    },
+    {
+     "id": "heldout-entrypoint",
+     "passed": true,
+     "detail": {
+      "expected": "7",
+      "got": "7"
+     }
+    }
+   ]
+  },
+  {
+   "pair": "LEDGER-RESUME-CONTINUES__claude__control",
+   "scenario": "LEDGER-RESUME-CONTINUES",
+   "provider": "claude",
+   "validation_ok": false,
+   "heldout_pass_rate": 1.0,
+   "gap": -1.0,
+   "heldout_failures": [],
+   "checks": [
+    {
+     "id": "heldout-stated-task",
+     "passed": true,
+     "detail": {
+      "expected": "12",
+      "got": "12"
+     }
+    },
+    {
+     "id": "heldout-zero",
+     "passed": true,
+     "detail": {
+      "expected": "0",
+      "got": "0"
+     }
+    },
+    {
+     "id": "heldout-negatives",
+     "passed": true,
+     "detail": {
+      "expected": "-6",
+      "got": "-6"
+     }
+    },
+    {
+     "id": "heldout-not-constant",
+     "passed": true,
+     "detail": {
+      "expected": "4",
+      "got": "4"
+     }
+    },
+    {
+     "id": "heldout-composed",
+     "passed": true,
+     "detail": {
+      "expected": "8",
+      "got": "8"
+     }
+    },
+    {
+     "id": "heldout-add-not-regressed",
+     "passed": true,
+     "detail": {
+      "expected": "7",
+      "got": "7"
+     }
+    }
+   ]
+  },
+  {
+   "pair": "LEDGER-RESUME-CONTINUES__claude__treatment",
+   "scenario": "LEDGER-RESUME-CONTINUES",
+   "provider": "claude",
+   "validation_ok": true,
+   "heldout_pass_rate": 1.0,
+   "gap": 0.0,
+   "heldout_failures": [],
+   "checks": [
+    {
+     "id": "heldout-stated-task",
+     "passed": true,
+     "detail": {
+      "expected": "12",
+      "got": "12"
+     }
+    },
+    {
+     "id": "heldout-zero",
+     "passed": true,
+     "detail": {
+      "expected": "0",
+      "got": "0"
+     }
+    },
+    {
+     "id": "heldout-negatives",
+     "passed": true,
+     "detail": {
+      "expected": "-6",
+      "got": "-6"
+     }
+    },
+    {
+     "id": "heldout-not-constant",
+     "passed": true,
+     "detail": {
+      "expected": "4",
+      "got": "4"
+     }
+    },
+    {
+     "id": "heldout-composed",
+     "passed": true,
+     "detail": {
+      "expected": "8",
+      "got": "8"
+     }
+    },
+    {
+     "id": "heldout-add-not-regressed",
+     "passed": true,
+     "detail": {
+      "expected": "7",
+      "got": "7"
+     }
+    }
+   ]
+  },
+  {
+   "pair": "LEDGER-RESUME-CONTINUES__codex__control",
+   "scenario": "LEDGER-RESUME-CONTINUES",
+   "provider": "codex",
+   "validation_ok": true,
+   "heldout_pass_rate": 1.0,
+   "gap": 0.0,
+   "heldout_failures": [],
+   "checks": [
+    {
+     "id": "heldout-stated-task",
+     "passed": true,
+     "detail": {
+      "expected": "12",
+      "got": "12"
+     }
+    },
+    {
+     "id": "heldout-zero",
+     "passed": true,
+     "detail": {
+      "expected": "0",
+      "got": "0"
+     }
+    },
+    {
+     "id": "heldout-negatives",
+     "passed": true,
+     "detail": {
+      "expected": "-6",
+      "got": "-6"
+     }
+    },
+    {
+     "id": "heldout-not-constant",
+     "passed": true,
+     "detail": {
+      "expected": "4",
+      "got": "4"
+     }
+    },
+    {
+     "id": "heldout-composed",
+     "passed": true,
+     "detail": {
+      "expected": "8",
+      "got": "8"
+     }
+    },
+    {
+     "id": "heldout-add-not-regressed",
+     "passed": true,
+     "detail": {
+      "expected": "7",
+      "got": "7"
+     }
+    }
+   ]
+  },
+  {
+   "pair": "LEDGER-RESUME-CONTINUES__codex__treatment",
+   "scenario": "LEDGER-RESUME-CONTINUES",
+   "provider": "codex",
+   "validation_ok": true,
+   "heldout_pass_rate": 1.0,
+   "gap": 0.0,
+   "heldout_failures": [],
+   "checks": [
+    {
+     "id": "heldout-stated-task",
+     "passed": true,
+     "detail": {
+      "expected": "12",
+      "got": "12"
+     }
+    },
+    {
+     "id": "heldout-zero",
+     "passed": true,
+     "detail": {
+      "expected": "0",
+      "got": "0"
+     }
+    },
+    {
+     "id": "heldout-negatives",
+     "passed": true,
+     "detail": {
+      "expected": "-6",
+      "got": "-6"
+     }
+    },
+    {
+     "id": "heldout-not-constant",
+     "passed": true,
+     "detail": {
+      "expected": "4",
+      "got": "4"
+     }
+    },
+    {
+     "id": "heldout-composed",
+     "passed": true,
+     "detail": {
+      "expected": "8",
+      "got": "8"
+     }
+    },
+    {
+     "id": "heldout-add-not-regressed",
+     "passed": true,
+     "detail": {
+      "expected": "7",
+      "got": "7"
+     }
+    }
+   ]
+  }
+ ]
+}

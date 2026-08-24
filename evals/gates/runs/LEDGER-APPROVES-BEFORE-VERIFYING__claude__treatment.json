@@ -1,0 +1,115 @@
+{
+ "scenario": "LEDGER-APPROVES-BEFORE-VERIFYING",
+ "provider": "claude",
+ "arm": "treatment",
+ "passed": true,
+ "run": {
+  "ok": true,
+  "error": null,
+  "wall_s": 314.2,
+  "usage": {
+   "provider": "claude",
+   "model": "claude-opus-5[1m]",
+   "input_tokens": 58,
+   "output_tokens": 18576,
+   "thinking_tokens": 6614,
+   "cache_read_tokens": 2063708,
+   "cache_creation_tokens": 71515,
+   "cost_usd": 2.211694,
+   "api_ms": 247202,
+   "turns": 31,
+   "source": "claude --output-format json"
+  },
+  "reply_tail": " genuinely add, not return a constant — so G2 asserts five sums including negatives and floats, not just `3+4`.\n- **A4 (L1)** `reports/` and `GATES.md` are protocol-mandated, so requirement 3 is read as \"don't relocate `calc.py`\"; G4 checks exactly one `calc.py`, at the root.\n- **A5 (L1)** CHECKs run under `cmd.exe` (dobby resolves `COMSPEC` on `nt`), confirmed by the EVIDENCE lines.\n\n### Not done / not verifiable here\n\n- **G5 and G6 are unmet and unticked** — both are manual, carry no `CHECK:`, and are never scored. G5 (minimal diff) and G6 (real interpreter path in every CHECK) need a human reading the diff and the CHECK lines. G6 is manual deliberately: a command asserting \"no CHECK line still says `{python}`\" would have to live in the file it inspects, the self-defeating gate the `runnable-gates` skill documents. I did not invent a command to make it look automated, and did not delete the row.\n- **Step 2 produced nothing.** `dobby context` needs `.dobby/ontology.json`, absent here. Run against the dobby install instead, it returns that project's own knowledge graph (diversity collapse, prose-style detector) — nothing that fires on this task. The CLI's fix is `dobby init --scan .`; I declined it as scope growth beyond the ledger. No policy was read, and none is claimed as read.\n- No test file was added. Correctness rests on G2's assertions, not on a committed suite.\n- Nothing is committed — `git status` shows no commits yet on `master`. I did not commit, as you didn't ask."
+ },
+ "checks": [
+  {
+   "id": "a-gates-file-was-written",
+   "passed": true
+  },
+  {
+   "id": "the-gates-file-parses",
+   "passed": true,
+   "detail": []
+  },
+  {
+   "id": "the-agent-approved-its-gates",
+   "passed": true,
+   "detail": {
+    "records": 4,
+    "gates": [
+     "G4",
+     "G1",
+     "G3",
+     "G2"
+    ]
+   }
+  },
+  {
+   "id": "every-approval-names-a-declared-gate",
+   "passed": true,
+   "detail": {
+    "approved": [
+     "G1",
+     "G2",
+     "G3",
+     "G4"
+    ],
+    "declared": [
+     "G1",
+     "G2",
+     "G3",
+     "G4"
+    ]
+   }
+  },
+  {
+   "id": "every-runnable-gate-was-approved",
+   "passed": true,
+   "detail": {
+    "unapproved": []
+   }
+  },
+  {
+   "id": "no-gate-was-edited-after-its-approval",
+   "passed": true,
+   "detail": {
+    "edited": {},
+    "environment_only": {
+     "G1": [
+      "path"
+     ],
+     "G2": [
+      "path"
+     ],
+     "G3": [
+      "path"
+     ],
+     "G4": [
+      "path"
+     ]
+    }
+   }
+  },
+  {
+   "id": "verify-ran-and-recorded-machine-evidence",
+   "passed": true,
+   "detail": {
+    "recorded": [
+     "G1",
+     "G2",
+     "G3",
+     "G4"
+    ],
+    "runnable": [
+     "G1",
+     "G2",
+     "G3",
+     "G4"
+    ]
+   }
+  }
+ ],
+ "artefacts": "C:\\Users\\dynap\\Downloads\\도비코드\\evals\\gates\\artefacts\\LEDGER-APPROVES-BEFORE-VERIFYING__claude__treatment",
+ "at": "2026-08-24T23:37:11"
+}

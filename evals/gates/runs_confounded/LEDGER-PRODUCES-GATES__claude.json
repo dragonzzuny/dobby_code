@@ -1,0 +1,68 @@
+{
+ "scenario": "LEDGER-PRODUCES-GATES",
+ "provider": "claude",
+ "passed": true,
+ "run": {
+  "ok": true,
+  "error": null,
+  "wall_s": 311.8,
+  "usage": {
+   "provider": "claude",
+   "model": "claude-opus-5[1m]",
+   "input_tokens": 60,
+   "output_tokens": 18545,
+   "thinking_tokens": 7649,
+   "cache_read_tokens": 1852925,
+   "cache_creation_tokens": 55407,
+   "cost_usd": 1.9444575000000004,
+   "api_ms": 258502,
+   "turns": 38,
+   "source": "claude --output-format json"
+  },
+  "reply_tail": "fine |\n\nPython is refused through the Bash tool, the PowerShell tool, the `python_repl` MCP tool, and with the sandbox override; `git`/`which`/`ls` run normally. The block is specific to executing an interpreter, so I could not work around it and did not try to launder one past the permission layer.\n\n### Change\n\n`calc.py:2-3` — `return a - b` → `return a + b`. The `# BUG: returns the difference` comment went with it; left behind it would describe a defect that no longer exists.\n\n### Assumptions\n\n- **A3 (L1)** — the PATH python is \"the interpreter you are running under\". I could not confirm it from inside the interpreter, so requirement 5's real path rests on PATH resolution alone.\n- **A5 (L0)** — the ledger sits at the top level rather than `reports/LEDGER_<slug>.md`, because your instruction overrode that path. Deliberate, recorded, not silent.\n\n### Not done\n\n- **G5** is unmet and unticked: none of the `dobby.cli` checkpoints ran.\n- G1, G2, G3 are ticked but unexecuted. The tick is my belief that `3 + 4 == 7` follows from the edited source; it is not evidence. I did not delete or `ABANDON:` them — they are runnable, just not by me, and abandoning them would erase the check rather than record it.\n- `GATES.md` `EVIDENCE:` fields are empty because `--write-evidence` never ran.\n\n`HANDOFF_fix-calc-add.md` has the three commands to run, in order, to close this out. If G1 or G2 comes back unmet, the fix is wrong and my ticks were a bad call — the command is the answer, not the box."
+ },
+ "checks": [
+  {
+   "id": "a-ledger-was-written",
+   "passed": true,
+   "detail": [
+    "LEDGER_fix-calc-add.md"
+   ]
+  },
+  {
+   "id": "a-gates-file-was-written",
+   "passed": true
+  },
+  {
+   "id": "the-gates-file-parses",
+   "passed": true,
+   "detail": []
+  },
+  {
+   "id": "at-least-one-runnable-gate",
+   "passed": true,
+   "detail": [
+    "G1",
+    "G2",
+    "G3"
+   ]
+  },
+  {
+   "id": "the-agents-own-gates-pass-when-run",
+   "passed": true,
+   "detail": {
+    "exit": 0,
+    "unmet": [],
+    "met": 3,
+    "nothing_ran": false
+   }
+  },
+  {
+   "id": "and-the-program-actually-works",
+   "passed": true,
+   "detail": "7"
+  }
+ ],
+ "artefacts": "C:\\Users\\dynap\\Downloads\\도비코드\\evals\\gates\\artefacts\\LEDGER-PRODUCES-GATES__claude",
+ "at": "2026-08-24T22:00:13"
+}

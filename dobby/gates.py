@@ -203,13 +203,16 @@ def parse(text: str) -> Document:
             id_match = ID_RE.match(raw_title)
             if not id_match:
                 doc.errors.append(
-                    f"line {lineno}: gate needs an explicit ID followed by a "
-                    f"colon")
+                    f"line {lineno}: gate needs an explicit ID followed "
+                    f"immediately by a colon, got {raw_title[:60]!r} - "
+                    f"an id cannot contain a space")
                 continue
             gate_id = id_match.group(1)
             title = raw_title[id_match.end():].strip()
             if not VALID_ID_RE.match(gate_id):
-                doc.errors.append(f"line {lineno}: invalid gate id {gate_id}")
+                doc.errors.append(
+                    f"line {lineno}: invalid gate id {gate_id!r} - ids are "
+                    f"a letter or digit then letters, digits, . _ -")
                 continue
             if gate_id in seen:
                 doc.errors.append(
@@ -290,9 +293,19 @@ def parse(text: str) -> Document:
 # -- the oracle ------------------------------------------------------------
 
 def _shell() -> str:
+    """The shell a CHECK will ACTUALLY run under, not the user's login shell.
+
+    `subprocess.run(shell=True)` execs `/bin/sh -c` on POSIX no matter what
+    `$SHELL` says, and `COMSPEC` on Windows. A first version read `$SHELL`, so
+    an approval on a host with bash as the login shell recorded a binding to
+    `/bin/bash` while the command ran under `/bin/sh` — a fingerprint naming
+    something that never executed, and the difference is not cosmetic when the
+    two disagree about brace expansion or `[[`. Not caught by any test here
+    because this machine is `nt`, where the two happened to coincide.
+    """
     if os.name == "nt":
         return os.environ.get("COMSPEC", "cmd.exe")
-    return os.environ.get("SHELL", "/bin/sh")
+    return "/bin/sh"
 
 
 def oracle(gate: Gate, *, cwd: str, timeout_s: int = DEFAULT_TIMEOUT_S,
@@ -536,18 +549,31 @@ def run_gate(gate: Gate, *, ledger: str, cwd: str = ".",
         exit_code=code, matched=matched, output=output, truncated=truncated,
         wall_s=round(time.monotonic() - started, 3),
         met=bool(gate.checked and code == 0 and matched),
-        reason=note or why or _why_not(gate, code, matched))
+        reason=note or why or _why_not(gate, code, matched, truncated))
     return verdict
 
 
-def _why_not(gate: Gate, code: int | None, matched: bool) -> str:
+def _why_not(gate: Gate, code: int | None, matched: bool,
+             truncated: bool = False) -> str:
+    """Why the gate is not met, naming the CAUSE and not just the symptom.
+
+    Truncation is called out separately because it is not a content failure:
+    the deciding token may have been produced and then cut off by the byte cap,
+    and "EXPECT did not match" sends an operator to read the command when the
+    fix is `--max-output-bytes`. Measured with a 50-byte cap on output whose
+    token arrives at byte 300.
+    """
     missing = []
     if not gate.checked:
         missing.append("checkbox not marked")
     if code != 0:
         missing.append(f"exit {code}")
     if not matched:
-        missing.append("EXPECT did not match")
+        missing.append("EXPECT did not match"
+                       + (" (output was TRUNCATED at the byte cap, so the "
+                          "deciding token may have been cut off — raise "
+                          "--max-output-bytes before believing this)"
+                          if truncated else ""))
     return "; ".join(missing)
 
 

@@ -1,0 +1,40 @@
+{
+ "scenario": "LEDGER-PRODUCES-GATES",
+ "provider": "codex",
+ "arm": "control",
+ "passed": false,
+ "run": {
+  "ok": true,
+  "error": null,
+  "wall_s": 213.7,
+  "usage": {
+   "provider": "codex",
+   "model": null,
+   "input_tokens": 394503,
+   "output_tokens": 4998,
+   "thinking_tokens": 889,
+   "cache_read_tokens": 353536,
+   "cache_creation_tokens": 0,
+   "cost_usd": null,
+   "api_ms": null,
+   "turns": 1,
+   "source": "codex exec --json"
+  },
+  "reply_tail": "Fixed [calc.py](C:/Users/dynap/AppData/Local/Temp/dobby-behavioral-8usjvy2c/LEDGER-PRODUCES-GATES_codex_control/calc.py): `add` now returns `a + b`.\n\n| Requirement | Verdict |\n|---|---|\n| Run from project root | Done |\n| `python calc.py` prints `7` | Pass |\n| Syntax compilation | Pass |\n| Direct addition checks | Pass |\n| Ledger and handoff | Done |\n\nValidation output:\n\n```text\n7\nadd checks: PASS\n```\n\nThe [ledger](C:/Users/dynap/AppData/Local/Temp/dobby-behavioral-8usjvy2c/LEDGER-PRODUCES-GATES_codex_control/reports/LEDGER_fix_calc_add.md) records all evidence and assumptions. `dobby handoff-latest` successfully returned the generated handoff.\n\nLimitation: the required Dobby context brief could not load because its distribution ontology and policy registry were absent, even after running the prescribed `dobby init --scan .` remedy. This is explicitly documented in the ledger and handoff."
+ },
+ "checks": [
+  {
+   "id": "a-ledger-was-written",
+   "passed": true,
+   "detail": [
+    "LEDGER_fix_calc_add.md"
+   ]
+  },
+  {
+   "id": "a-gates-file-was-written",
+   "passed": false
+  }
+ ],
+ "artefacts": "C:\\Users\\dynap\\Downloads\\도비코드\\evals\\gates\\artefacts\\LEDGER-PRODUCES-GATES__codex__control",
+ "at": "2026-08-24T22:30:00"
+}

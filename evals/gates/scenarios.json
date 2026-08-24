@@ -1,0 +1,252 @@
+{
+ "note": "Promotion evidence for the runnable-gates and ledgered-task skills. Every scenario is decided by a command's exit code; none needs a judge. Written BEFORE the change they measure, which is the discipline the gates feature itself asks for — LEDGER-GATES-REFERENCE failed on the first run and that failure is the baseline recorded in RESULTS.json. Revised after codex REJECTED the ledgered-task promotion: GATES-VACUOUS was split into three fixtures and LEDGER-PROTOCOL-INTACT now checks instructions rather than headings. See APPROVAL_codex.json. LEDGER-* are status=blocked: codex rejected the ledgered-task promotion twice, the second time observing that substring checks are not behavioral evaluations and that the first objection had been worked around rather than addressed. The revision was reverted. Promoting ledgered-task needs a behavioral scenario, not a third re-submission of the same kind of evidence.",
+ "scenarios": [
+  {
+   "id": "GATES-CONJUNCTION",
+   "skill": "runnable-gates",
+   "claim": "A command that exits 0 while proving nothing is reported UNMET and the process exits 1.",
+   "trap": "Treating exit 0 as validation. `.claude/rules/verification-and-completion.md` (1) forbids it and nothing enforced it before this skill.",
+   "fixture": "fixtures/conjunction.md",
+   "verification": [
+    {
+     "id": "exit-code-is-1",
+     "kind": "command",
+     "argv": [
+      "gates",
+      "verify",
+      "--no-approval"
+     ],
+     "expect_exit": 1
+    },
+    {
+     "id": "the-lying-gate-is-named-unmet",
+     "kind": "json",
+     "pointer": "summary.unmet",
+     "equals": [
+      "EXIT0"
+     ]
+    },
+    {
+     "id": "the-honest-gate-is-met",
+     "kind": "json",
+     "pointer": "summary.met",
+     "equals": 1
+    }
+   ]
+  },
+  {
+   "id": "GATES-APPROVAL-BINDING",
+   "skill": "runnable-gates",
+   "claim": "An approval covers one exact command. Swap the command and the gate is refused, unexecuted.",
+   "trap": "An approval that outlives what it approved. A reviewer reads `echo ok`, approves, and the ledger then runs something else under that approval.",
+   "fixture": "fixtures/approval.md",
+   "verification": [
+    {
+     "id": "approved-command-runs-and-meets",
+     "kind": "command",
+     "argv": [
+      "gates",
+      "verify"
+     ],
+     "expect_exit": 0,
+     "after": "approve"
+    },
+    {
+     "id": "swapped-command-is-refused",
+     "kind": "command",
+     "argv": [
+      "gates",
+      "verify"
+     ],
+     "expect_exit": 1,
+     "after": "swap"
+    },
+    {
+     "id": "and-was-never-executed",
+     "kind": "json",
+     "pointer": "verdicts.0.exit_code",
+     "equals": null,
+     "after": "swap"
+    }
+   ]
+  },
+  {
+   "id": "LEDGER-GATES-REFERENCE",
+   "skill": "ledgered-task",
+   "claim": "The multi-step protocol names GATES.md and the command that grades it, so the machinery is reachable from the protocol that fires most often.",
+   "trap": "Shipping a verifier nothing routes to. Measured: `runnable-gates` was registered and `ledgered-task` step 1 still asked only for a prose ledger.",
+   "verification": [
+    {
+     "id": "protocol-names-the-gate-ledger",
+     "kind": "file_contains",
+     "path": ".claude/skills/ledgered-task/SKILL.md",
+     "needles": [
+      "GATES.md",
+      "dobby.cli gates"
+     ]
+    }
+   ],
+   "status": "superseded",
+   "blocked_reason": "SUPERSEDED by the behavioral suite in run_behavioral.py, which is what the approver asked for: a task and a resume flow with the artefacts graded, not a substring inspected. Kept, not deleted, because the rejection that produced it is the reason the behavioral suite exists.",
+   "superseded_by": "evals/gates/run_behavioral.py"
+  },
+  {
+   "id": "LEDGER-PROTOCOL-INTACT",
+   "skill": "ledgered-task",
+   "claim": "The revision is ADDITIVE. Every step's INSTRUCTION survives it, not merely its heading.",
+   "trap": "Checking headings only. The approver's finding, verbatim: 'retaining headings while deleting or weakening every step's instructions would still pass'.",
+   "verification": [
+    {
+     "id": "every-step-keeps-its-instruction-not-just-its-heading",
+     "kind": "file_contains",
+     "path": ".claude/skills/ledgered-task/SKILL.md",
+     "needles": [
+      "requirements VERBATIM",
+      "| # | requirement | state | evidence path |",
+      "Never pre-fill `done`",
+      "dobby.cli context",
+      "fetch bodies only for what you'll execute",
+      "hypothesis | discriminating check | result | verdict",
+      "3 dead checks in a row",
+      "smallest increments that leave the project runnable",
+      "Outputs → new locations",
+      "per verification-and-completion.md",
+      "output-side check result quoted",
+      "remaining / decisions / evidence / next-steps",
+      "dobby.cli handoff-latest",
+      "per escalation-and-reporting.md",
+      "outcome first, requirement\n   table, commands+verdicts, assumptions, not-done list",
+      "continue from the first\nnon-done row",
+      "do NOT trust pre-loss numbers"
+     ]
+    }
+   ],
+   "status": "superseded",
+   "blocked_reason": "SUPERSEDED by the behavioral suite in run_behavioral.py, which is what the approver asked for: a task and a resume flow with the artefacts graded, not a substring inspected. Kept, not deleted, because the rejection that produced it is the reason the behavioral suite exists.",
+   "superseded_by": "evals/gates/run_behavioral.py"
+  },
+  {
+   "id": "GATES-VACUOUS-EMPTY",
+   "skill": "runnable-gates",
+   "claim": "A ledger with no gates at all is not ok; nothing_ran is stated.",
+   "trap": "`all()` over an empty list is True. Split from a single mixed fixture after the approver observed that one fixture cannot evidence three claimed cases.",
+   "fixture": "fixtures/vacuous_empty.md",
+   "verification": [
+    {
+     "id": "exit-code-is-1",
+     "kind": "command",
+     "argv": [
+      "gates",
+      "verify",
+      "--no-approval"
+     ],
+     "expect_exit": 1
+    },
+    {
+     "id": "nothing-ran-is-stated",
+     "kind": "json",
+     "pointer": "summary.nothing_ran",
+     "equals": true
+    },
+    {
+     "id": "and-ok-is-false",
+     "kind": "json",
+     "pointer": "summary.ok",
+     "equals": false
+    }
+   ]
+  },
+  {
+   "id": "GATES-VACUOUS-MANUAL",
+   "skill": "runnable-gates",
+   "claim": "A ledger of nothing but MANUAL gates is not ok, and each manual gate is REPORTED as manual rather than silently dropped.",
+   "trap": "Checking only that the run is not ok. The approver's finding: it 'does not verify that manual gates are reported as manual' - a build that dropped them entirely would score identically.",
+   "fixture": "fixtures/vacuous_manual.md",
+   "verification": [
+    {
+     "id": "exit-code-is-1",
+     "kind": "command",
+     "argv": [
+      "gates",
+      "verify",
+      "--no-approval"
+     ],
+     "expect_exit": 1
+    },
+    {
+     "id": "nothing-ran-is-stated",
+     "kind": "json",
+     "pointer": "summary.nothing_ran",
+     "equals": true
+    },
+    {
+     "id": "and-ok-is-false",
+     "kind": "json",
+     "pointer": "summary.ok",
+     "equals": false
+    },
+    {
+     "id": "both-manual-gates-are-named-as-manual",
+     "kind": "json",
+     "pointer": "summary.manual",
+     "equals": [
+      "EYES1",
+      "EYES2"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "GATES-VACUOUS-ABANDONED",
+   "skill": "runnable-gates",
+   "claim": "A ledger whose every gate is ABANDONED is not ok, and each abandoned gate is REPORTED by id with its reason rather than silently dropped.",
+   "trap": "Checking only that the run is not ok. The approver's finding: it 'would not catch an implementation that silently dropped abandoned gates instead of reporting them' - which is the Evaluation Gaming shape the ABANDON transition exists to prevent.",
+   "fixture": "fixtures/vacuous_abandoned.md",
+   "verification": [
+    {
+     "id": "exit-code-is-1",
+     "kind": "command",
+     "argv": [
+      "gates",
+      "verify",
+      "--no-approval"
+     ],
+     "expect_exit": 1
+    },
+    {
+     "id": "nothing-ran-is-stated",
+     "kind": "json",
+     "pointer": "summary.nothing_ran",
+     "equals": true
+    },
+    {
+     "id": "and-ok-is-false",
+     "kind": "json",
+     "pointer": "summary.ok",
+     "equals": false
+    },
+    {
+     "id": "both-abandoned-gates-are-named",
+     "kind": "json",
+     "pointer": "summary.abandoned",
+     "equals": [
+      "GPU",
+      "NET"
+     ]
+    },
+    {
+     "id": "and-each-carries-the-reason-it-was-abandoned-for",
+     "kind": "json",
+     "pointer": "verdicts.0.reason",
+     "equals": "no GPU on this host"
+    },
+    {
+     "id": "the-second-reason-too",
+     "kind": "json",
+     "pointer": "verdicts.1.reason",
+     "equals": "providers.allow_network is false"
+    }
+   ]
+  }
+ ]
+}

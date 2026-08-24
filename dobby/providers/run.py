@@ -38,7 +38,7 @@ import subprocess
 import time
 from typing import Sequence
 
-from ..core.platform import child_env, shim_safe_argv
+from ..core.platform import child_env, is_windows, shim_safe_argv
 from ..core.security import cap_output, redact_secrets
 from .base import ProviderResult, ProviderSpec
 from .catalog import registry
@@ -140,6 +140,11 @@ def recording(sink: list | None = None, *, collect_usage: bool = True):
 _COLLECT_DEFAULT = False
 
 
+#: Windows CreateProcess limit for the entire command line. Not a dobby choice
+#: and not tunable; the guard in `run_provider` exists to name it accurately.
+WINDOWS_COMMAND_LINE_MAX = 32_767
+
+
 def run_provider(spec: ProviderSpec, prompt: str, *,
                  model: str | None = None,
                  extra: Sequence[str] = (),
@@ -205,6 +210,33 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
         return _recorded(ProviderResult(
             provider=spec.id, ok=False,
             error=f"cannot deliver this prompt intact: {launch_note}"))
+    # Windows caps the WHOLE command line at 32,767 characters - executable,
+    # every argument, and the quoting the loader adds around them. Past it
+    # CreateProcess fails as WinError 206, which CPython surfaces as
+    # FileNotFoundError, so the handler below blamed "a shim the process loader
+    # cannot start" for a prompt that was merely too long. Measured: a 33,730
+    # character review prompt to codex failed at wall_s 0.0 while a short probe
+    # on the same binary succeeded seconds earlier.
+    #
+    # Diagnosed here rather than left to the exception, because the wrong
+    # diagnosis sends an operator to reinstall a working CLI.
+    if is_windows():
+        spelled = sum(len(part) + 3 for part in argv)
+        if spelled >= WINDOWS_COMMAND_LINE_MAX:
+            return _recorded(ProviderResult(
+                provider=spec.id, ok=False,
+                error=(f"prompt too long for this platform: the command line "
+                       f"would be about {spelled:,} characters and Windows "
+                       f"caps it at {WINDOWS_COMMAND_LINE_MAX:,}. The prompt "
+                       f"itself is {len(prompt):,}. This is not a missing "
+                       f"install - shorten the prompt, or hand the material "
+                       f"over as a FILE in the provider's working directory "
+                       f"and pass a short prompt that points at it"),
+                meta={"argv_len": len(argv),
+                      "command_line_chars": spelled,
+                      "prompt_chars": len(prompt),
+                      "platform_limit": WINDOWS_COMMAND_LINE_MAX}))
+
     limit = timeout_s or spec.timeout_s
     started = time.monotonic()
     meta = {

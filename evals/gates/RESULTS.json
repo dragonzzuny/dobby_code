@@ -1,0 +1,250 @@
+{
+ "run_at": "2026-08-24T23:51:25",
+ "python": "3.11.9",
+ "platform": "win32",
+ "scenarios": 5,
+ "blocked": 2,
+ "passed": 5,
+ "by_skill": {
+  "runnable-gates": {
+   "passed": [
+    "GATES-CONJUNCTION",
+    "GATES-APPROVAL-BINDING",
+    "GATES-VACUOUS-EMPTY",
+    "GATES-VACUOUS-MANUAL",
+    "GATES-VACUOUS-ABANDONED"
+   ],
+   "failed": [],
+   "blocked": []
+  },
+  "ledgered-task": {
+   "passed": [],
+   "failed": [],
+   "blocked": [
+    "LEDGER-GATES-REFERENCE",
+    "LEDGER-PROTOCOL-INTACT"
+   ]
+  }
+ },
+ "results": [
+  {
+   "id": "GATES-CONJUNCTION",
+   "skill": "runnable-gates",
+   "claim": "A command that exits 0 while proving nothing is reported UNMET and the process exits 1.",
+   "passed": true,
+   "wall_s": 0.62,
+   "checks": [
+    {
+     "id": "exit-code-is-1",
+     "passed": true,
+     "expected_exit": 1,
+     "actual_exit": 1
+    },
+    {
+     "id": "the-lying-gate-is-named-unmet",
+     "passed": true,
+     "pointer": "summary.unmet",
+     "expected": [
+      "EXIT0"
+     ],
+     "actual": [
+      "EXIT0"
+     ],
+     "resolved": true
+    },
+    {
+     "id": "the-honest-gate-is-met",
+     "passed": true,
+     "pointer": "summary.met",
+     "expected": 1,
+     "actual": 1,
+     "resolved": true
+    }
+   ]
+  },
+  {
+   "id": "GATES-APPROVAL-BINDING",
+   "skill": "runnable-gates",
+   "claim": "An approval covers one exact command. Swap the command and the gate is refused, unexecuted.",
+   "passed": true,
+   "wall_s": 1.16,
+   "checks": [
+    {
+     "id": "approved-command-runs-and-meets",
+     "passed": true,
+     "expected_exit": 0,
+     "actual_exit": 0
+    },
+    {
+     "id": "swapped-command-is-refused",
+     "passed": true,
+     "expected_exit": 1,
+     "actual_exit": 1
+    },
+    {
+     "id": "and-was-never-executed",
+     "passed": true,
+     "pointer": "verdicts.0.exit_code",
+     "expected": null,
+     "actual": null,
+     "resolved": true
+    }
+   ]
+  },
+  {
+   "id": "LEDGER-GATES-REFERENCE",
+   "skill": "ledgered-task",
+   "claim": "The multi-step protocol names GATES.md and the command that grades it, so the machinery is reachable from the protocol that fires most often.",
+   "blocked": true,
+   "reason": "SUPERSEDED by the behavioral suite in run_behavioral.py, which is what the approver asked for: a task and a resume flow with the artefacts graded, not a substring inspected. Kept, not deleted, because the rejection that produced it is the reason the behavioral suite exists.",
+   "passed": false,
+   "checks": []
+  },
+  {
+   "id": "LEDGER-PROTOCOL-INTACT",
+   "skill": "ledgered-task",
+   "claim": "The revision is ADDITIVE. Every step's INSTRUCTION survives it, not merely its heading.",
+   "blocked": true,
+   "reason": "SUPERSEDED by the behavioral suite in run_behavioral.py, which is what the approver asked for: a task and a resume flow with the artefacts graded, not a substring inspected. Kept, not deleted, because the rejection that produced it is the reason the behavioral suite exists.",
+   "passed": false,
+   "checks": []
+  },
+  {
+   "id": "GATES-VACUOUS-EMPTY",
+   "skill": "runnable-gates",
+   "claim": "A ledger with no gates at all is not ok; nothing_ran is stated.",
+   "passed": true,
+   "wall_s": 0.34,
+   "checks": [
+    {
+     "id": "exit-code-is-1",
+     "passed": true,
+     "expected_exit": 1,
+     "actual_exit": 1
+    },
+    {
+     "id": "nothing-ran-is-stated",
+     "passed": true,
+     "pointer": "summary.nothing_ran",
+     "expected": true,
+     "actual": true,
+     "resolved": true
+    },
+    {
+     "id": "and-ok-is-false",
+     "passed": true,
+     "pointer": "summary.ok",
+     "expected": false,
+     "actual": false,
+     "resolved": true
+    }
+   ]
+  },
+  {
+   "id": "GATES-VACUOUS-MANUAL",
+   "skill": "runnable-gates",
+   "claim": "A ledger of nothing but MANUAL gates is not ok, and each manual gate is REPORTED as manual rather than silently dropped.",
+   "passed": true,
+   "wall_s": 0.36,
+   "checks": [
+    {
+     "id": "exit-code-is-1",
+     "passed": true,
+     "expected_exit": 1,
+     "actual_exit": 1
+    },
+    {
+     "id": "nothing-ran-is-stated",
+     "passed": true,
+     "pointer": "summary.nothing_ran",
+     "expected": true,
+     "actual": true,
+     "resolved": true
+    },
+    {
+     "id": "and-ok-is-false",
+     "passed": true,
+     "pointer": "summary.ok",
+     "expected": false,
+     "actual": false,
+     "resolved": true
+    },
+    {
+     "id": "both-manual-gates-are-named-as-manual",
+     "passed": true,
+     "pointer": "summary.manual",
+     "expected": [
+      "EYES1",
+      "EYES2"
+     ],
+     "actual": [
+      "EYES1",
+      "EYES2"
+     ],
+     "resolved": true
+    }
+   ]
+  },
+  {
+   "id": "GATES-VACUOUS-ABANDONED",
+   "skill": "runnable-gates",
+   "claim": "A ledger whose every gate is ABANDONED is not ok, and each abandoned gate is REPORTED by id with its reason rather than silently dropped.",
+   "passed": true,
+   "wall_s": 0.44,
+   "checks": [
+    {
+     "id": "exit-code-is-1",
+     "passed": true,
+     "expected_exit": 1,
+     "actual_exit": 1
+    },
+    {
+     "id": "nothing-ran-is-stated",
+     "passed": true,
+     "pointer": "summary.nothing_ran",
+     "expected": true,
+     "actual": true,
+     "resolved": true
+    },
+    {
+     "id": "and-ok-is-false",
+     "passed": true,
+     "pointer": "summary.ok",
+     "expected": false,
+     "actual": false,
+     "resolved": true
+    },
+    {
+     "id": "both-abandoned-gates-are-named",
+     "passed": true,
+     "pointer": "summary.abandoned",
+     "expected": [
+      "GPU",
+      "NET"
+     ],
+     "actual": [
+      "GPU",
+      "NET"
+     ],
+     "resolved": true
+    },
+    {
+     "id": "and-each-carries-the-reason-it-was-abandoned-for",
+     "passed": true,
+     "pointer": "verdicts.0.reason",
+     "expected": "no GPU on this host",
+     "actual": "no GPU on this host",
+     "resolved": true
+    },
+    {
+     "id": "the-second-reason-too",
+     "passed": true,
+     "pointer": "verdicts.1.reason",
+     "expected": "providers.allow_network is false",
+     "actual": "providers.allow_network is false",
+     "resolved": true
+    }
+   ]
+  }
+ ]
+}

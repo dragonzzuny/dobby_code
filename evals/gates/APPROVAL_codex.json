@@ -1,0 +1,27 @@
+{
+ "asked_at": "2026-08-24T23:51:05",
+ "provider": "codex",
+ "packet_chars": 42121,
+ "handed_over_as": "file",
+ "ok": true,
+ "error": null,
+ "wall_s": 47.4,
+ "usage": {
+  "provider": "codex",
+  "model": null,
+  "input_tokens": 105859,
+  "output_tokens": 866,
+  "thinking_tokens": 414,
+  "cache_read_tokens": 81920,
+  "cache_creation_tokens": 0,
+  "cost_usd": null,
+  "api_ms": null,
+  "turns": 1,
+  "source": "codex exec --json"
+ },
+ "verdicts": {
+  "runnable-gates": "APPROVE",
+  "ledgered-task": "APPROVE"
+ },
+ "reply": "VERDICT runnable-gates: APPROVE\nREASON: Five passing scenarios exercise distinct failure modes, including conjunction semantics, approval binding, and vacuous ledgers; the evidence remains sufficient despite one weaker abandoned-gate check.\nVERDICT ledgered-task: APPROVE\nREASON: Two controlled behavioral scenarios now pass on both executors, and the approval scenario validates fingerprints and machine-written evidence. The revision retains the prior protocol instructions while adding gate creation, approval, verification, and abandonment handling.\nWEAKEST SCENARIO: GATES-VACUOUS-ABANDONED, because it would not catch an implementation that silently dropped abandoned gates instead of reporting them.\nCONCERNS: Add an assertion that abandoned gate IDs and reasons are reported; the additivity comparison remains bounded to measured obligations and cannot establish preservation of unmeasured behavior."
+}

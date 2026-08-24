@@ -1,0 +1,54 @@
+{
+ "scenario": "LEDGER-RESUME-CONTINUES",
+ "provider": "codex",
+ "passed": true,
+ "run": {
+  "ok": true,
+  "error": null,
+  "wall_s": 180.5,
+  "usage": {
+   "provider": "codex",
+   "model": null,
+   "input_tokens": 371052,
+   "output_tokens": 4561,
+   "thinking_tokens": 860,
+   "cache_read_tokens": 324352,
+   "cache_creation_tokens": 0,
+   "cost_usd": null,
+   "api_ms": null,
+   "turns": 1,
+   "source": "codex exec --json"
+  },
+  "reply_tail": "Partially complete: `mul()` is implemented and all direct output checks pass, but the official gate verifier remains blocked by sandbox permissions.\n\n| Requirement | Status | Evidence |\n|---|---|---|\n| `add()` returns the sum | Done | `SUM-OK` |\n| Module imports cleanly | Done | `IMPORT-OK` |\n| `mul()` returns the product | Done | `MUL-OK` |\n| Official gate verification | Blocked | Approval directory is outside writable sandbox |\n\nChanged:\n\n- [calc.py](C:/Users/dynap/AppData/Local/Temp/dobby-behavioral-kwa03n8f/LEDGER-RESUME-CONTINUES_codex/calc.py)\n- [GATES.md](C:/Users/dynap/AppData/Local/Temp/dobby-behavioral-kwa03n8f/LEDGER-RESUME-CONTINUES_codex/GATES.md)\n- [LEDGER_calculator.md](C:/Users/dynap/AppData/Local/Temp/dobby-behavioral-kwa03n8f/LEDGER-RESUME-CONTINUES_codex/LEDGER_calculator.md)\n- [Handoff](C:/Users/dynap/AppData/Local/Temp/dobby-behavioral-kwa03n8f/LEDGER-RESUME-CONTINUES_codex/.dobby/state/trajectories/20260824-220312-05dc26.handoff.md)\n\nValidation:\n\n- Combined output check: `OUTPUT-CHECKS-OK`\n- Gate status parses with all three gates checked.\n- Gate verify summary: `ok: false`; `SUM`, `IMPORTS`, and `PRODUCT` are unapproved.\n- Approval failed because `C:\\Users\\dynap\\.dobby\\approved` is outside the writable sandbox.\n- `handoff-latest` successfully returns the new handoff.\n\nRemaining step: approve `GATES.md` in an environment that can write the approval directory, then rerun `gates verify --file GATES.md --write-evidence`."
+ },
+ "checks": [
+  {
+   "id": "no-second-ledger-was-started",
+   "passed": true,
+   "detail": [
+    "LEDGER_calculator.md"
+   ]
+  },
+  {
+   "id": "rows-already-done-were-not-reset",
+   "passed": true,
+   "detail": {
+    "kept": [
+     "add() returns the sum",
+     "the module imports cleanly"
+    ],
+    "lost_or_reworded": []
+   }
+  },
+  {
+   "id": "the-open-gate-was-closed",
+   "passed": true,
+   "detail": {
+    "exit": 0,
+    "unmet": []
+   }
+  }
+ ],
+ "artefacts": "C:\\Users\\dynap\\Downloads\\도비코드\\evals\\gates\\artefacts\\LEDGER-RESUME-CONTINUES__codex",
+ "at": "2026-08-24T22:03:32"
+}

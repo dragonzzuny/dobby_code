@@ -1,0 +1,68 @@
+{
+ "scenario": "LEDGER-PRODUCES-GATES",
+ "provider": "codex",
+ "passed": true,
+ "run": {
+  "ok": true,
+  "error": null,
+  "wall_s": 284.2,
+  "usage": {
+   "provider": "codex",
+   "model": null,
+   "input_tokens": 710482,
+   "output_tokens": 7384,
+   "thinking_tokens": 1886,
+   "cache_read_tokens": 660224,
+   "cache_creation_tokens": 0,
+   "cost_usd": null,
+   "api_ms": null,
+   "turns": 1,
+   "source": "codex exec --json"
+  },
+  "reply_tail": "Fixed `calc.py`: `add(3, 4)` now returns and prints `7`.\n\n| Requirement | Result |\n|---|---|\n| Fix `add` | Done |\n| Root-level ledger | [LEDGER_fix_calc.md](C:/Users/dynap/AppData/Local/Temp/dobby-behavioral-hjn0adtx/LEDGER-PRODUCES-GATES_codex/LEDGER_fix_calc.md) |\n| Runnable gates | [GATES.md](C:/Users/dynap/AppData/Local/Temp/dobby-behavioral-hjn0adtx/LEDGER-PRODUCES-GATES_codex/GATES.md) |\n| Handoff | Written and confirmed |\n| Protocol-compliance gate | G4 retained for manual review |\n\nValidation:\n\n- `python calc.py` → `7`, exit 0.\n- Gate verification → `ok: true`; 3 runnable gates met, none unmet.\n- `handoff-latest` → exit 0.\n\nThe required context command was attempted but could not load because the fixture lacks `.dobby/ontology.json`; this is recorded in the ledger. The supplied protocol bodies were followed directly."
+ },
+ "checks": [
+  {
+   "id": "a-ledger-was-written",
+   "passed": true,
+   "detail": [
+    "LEDGER_fix_calc.md"
+   ]
+  },
+  {
+   "id": "a-gates-file-was-written",
+   "passed": true
+  },
+  {
+   "id": "the-gates-file-parses",
+   "passed": true,
+   "detail": []
+  },
+  {
+   "id": "at-least-one-runnable-gate",
+   "passed": true,
+   "detail": [
+    "G1",
+    "G2",
+    "G3"
+   ]
+  },
+  {
+   "id": "the-agents-own-gates-pass-when-run",
+   "passed": true,
+   "detail": {
+    "exit": 0,
+    "unmet": [],
+    "met": 3,
+    "nothing_ran": false
+   }
+  },
+  {
+   "id": "and-the-program-actually-works",
+   "passed": true,
+   "detail": "7"
+  }
+ ],
+ "artefacts": "C:\\Users\\dynap\\Downloads\\도비코드\\evals\\gates\\artefacts\\LEDGER-PRODUCES-GATES__codex",
+ "at": "2026-08-24T21:39:17"
+}
