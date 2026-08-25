@@ -330,12 +330,28 @@ class ProviderWorker(WorkerAdapter):
 
         before = (effects.snapshot(root, node.contract.expected_paths)
                   if writes and root else None)
+        # Usage is collected only when somebody is going to READ it. The flag
+        # adds the provider's own usage argv (`usage_extra`), which changes how
+        # the CLI is invoked, and doing that unconditionally would alter every
+        # call to serve a ledger that is off by default.
+        #
+        # This is why `runtime/claude_quota.py` sat unwired: `settle` needs a
+        # usage envelope and no envelope ever reached the runner, so a ledger
+        # switched on would have recorded every call as `unmeasured` and — with
+        # `fail_closed_on_unmeasured_usage` — closed the lane on the first one.
+        collect = bool(context.get("collect_usage"))
         result = run_provider(
             spec, prompt, model=node.config.get("model"),
-            cwd=root, extra=grant,
+            cwd=root, extra=grant, collect_usage=collect,
             timeout_s=node.config.get("timeout_s"))
         meta = {"provider": provider_id, "model": node.config.get("model"),
                 "duration_s": result.duration_s, "prompt_chars": len(prompt)}
+        if collect:
+            # None when the envelope did not parse. Carried as None rather than
+            # as {} — the ledger treats "did not parse" as unmeasured and not
+            # as zero, and flattening the two here would take that decision
+            # away from it.
+            meta["usage"] = result.usage
         if substituted:
             # Recorded, never silent. A run whose answer came from a different
             # model than the one it was asked for has to say so.

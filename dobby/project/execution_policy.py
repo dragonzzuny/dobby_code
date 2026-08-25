@@ -227,6 +227,29 @@ def explain(profile: TaskProfile, chosen: ExecutionClass) -> str:
 #: Which provider role each execution class asks for. Separate from the class
 #: itself because the class says how much structure and the role says who — and
 #: a capability changing the shape must not silently change the safety rules.
+#:
+#: NOT AN ENFORCEMENT POINT, and this is worth saying because it reads like one.
+#: Nothing calls `provider_role_for`. Every rule it would carry is already
+#: enforced closer to the thing it protects:
+#:
+#:     isolation for AGY_ISOLATED_DELEGATE   `choose_execution` refuses the
+#:                                           class outright without a worktree
+#:                                           and hands the item to a person, so
+#:                                           the requirement is a PRECONDITION
+#:                                           of the class rather than a property
+#:                                           of the role it names
+#:     the three fast-path classes           `placement` falls back to
+#:                                           `node_role_for(node.kind)`, which
+#:                                           answers "implement" — the same
+#:                                           value this table gives them
+#:     ARCHITECT_REPLAN, HUMAN_BOUNDARY      neither reaches a graph builder;
+#:                                           `choose_graph` says explicitly that
+#:                                           it is not that function's decision
+#:
+#: Kept rather than deleted because the mapping states an intent the code makes
+#: true by other means, and a reader comparing the two should find the claim
+#: written down. Audited 2026-08-25: wiring it changed no behaviour anywhere,
+#: which is why it is documented as redundant instead of connected.
 CLASS_ROLE = {
     ExecutionClass.DIRECT_GATED: "implement",
     ExecutionClass.CODEX_FOCUSED_IMPLEMENT: "implement",

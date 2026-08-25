@@ -110,6 +110,7 @@ class Runner:
                  allow_network: bool = False,
                  placement_context=None,
                  override_provider: str | None = None,
+                 quota=None,
                  sleep=time.sleep):
         import threading
         self.repo = os.path.abspath(repo)
@@ -123,6 +124,24 @@ class Runner:
         self.max_parallel = max(1, max_parallel)
         self.placement = ProviderPlacement(self.store,
                                            allow_network=allow_network)
+        #: Claude admission control, or None. OFF by default, deliberately: a
+        #: ledger that appeared without being asked for would change what every
+        #: existing run costs and how it fails, which is not a thing a bug fix
+        #: gets to do.
+        #:
+        #: Lives on the RUNNER, so it bounds this process. `RunBudget` bounds a
+        #: run; this bounds a provider across the runs one process drives. The
+        #: module's docstring wants "across runs" in the wider sense and that
+        #: needs durable state and a cross-PROCESS lock — `_lock` is a thread
+        #: lock — which is the store's problem and a separate decision. Scoped
+        #: to what is enforceable here rather than claimed wider.
+        self.quota = None
+        if quota is not None:
+            from .claude_quota import ClaudeQuotaConfig, ClaudeQuotaLedger
+
+            self.quota = ClaudeQuotaLedger(
+                config=quota if isinstance(quota, ClaudeQuotaConfig)
+                else ClaudeQuotaConfig(**quota))
         #: What the SCHEDULER knows that a node does not: whether this run is in
         #: an isolated workspace, the operator's provider preferences, and how
         #: many calls each provider has already spent. Without it the role
@@ -442,6 +461,10 @@ class Runner:
                    # about itself.
                    "isolated": self.placement_context.isolated,
                    "inputs": inputs,
+                   # Only when a ledger will read it: the flag changes the CLI's
+                   # argv, and collecting what nobody settles is a cost with no
+                   # reader.
+                   "collect_usage": self.quota is not None,
                    "run_id": run_id}
         provider = node.config.get("provider") if node.worker == "provider" \
             else None
@@ -462,6 +485,37 @@ class Runner:
                         f"waited past the queue timeout for a {provider} slot"),
                 round(time.monotonic() - started, 2))
             return
+
+        # Reserved immediately before launching, and released on every path out.
+        # Earlier would hold the allowance across a lease wait; later would let
+        # two nodes both see it free — which is the whole reason the ledger
+        # reserves rather than counting afterwards.
+        #
+        # A refusal is CAPACITY, so the existing policy table sends the work to
+        # a different provider and does not ask claude harder. No new failure
+        # class was needed: "this provider has no allowance left" is the same
+        # shape as "this provider is rate limited".
+        reservation = None
+        if self.quota is not None and provider == "claude":
+            from .claude_quota import ClaudeQuotaExceeded, estimate_for
+
+            try:
+                reservation = self.quota.reserve(
+                    node_id=node.node_id,
+                    role=node.config.get("provider_role") or node.kind,
+                    estimate=estimate_for(
+                        node.config.get("provider_role") or node.kind,
+                        config=self.quota.config))
+            except ClaudeQuotaExceeded as exc:
+                if acquired:
+                    self.limiter.release(provider)
+                self._fail_attempt(
+                    run_id, task_graph, node, attempt,
+                    Failure("CAPACITY", str(exc),
+                            {"provider": provider,
+                             "remaining": self.quota.remaining()}),
+                    round(time.monotonic() - started, 2))
+                return
         try:
             with tracer.span(span_kind, f"{node.worker}:{node.node_id}",
                              node_id=node.node_id, attempt=attempt,
@@ -481,6 +535,14 @@ class Runner:
                                   failure_class=failure.failure_class
                                   if failure else "UNKNOWN")
         finally:
+            if reservation is not None:
+                # Settled from what the call actually reported. `usage` is None
+                # when the envelope did not parse, and the ledger records that
+                # as `unmeasured` rather than as zero — a call nobody could
+                # count still spent real tokens.
+                self.quota.settle(
+                    reservation,
+                    usage=(result.meta or {}).get("usage") if result else None)
             if acquired and provider is not None:
                 self.limiter.release(provider)
 

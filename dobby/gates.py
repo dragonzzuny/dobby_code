@@ -88,10 +88,6 @@ APPROVAL_SCHEMA = 1
 TEXT, REGEX = "text", "regex"
 
 
-class GateError(Exception):
-    """A ledger that cannot be read. Never raised for a gate that merely fails."""
-
-
 @dataclass(frozen=True)
 class Expectation:
     kind: str
