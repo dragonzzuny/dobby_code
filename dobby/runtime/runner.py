@@ -947,7 +947,14 @@ def default_graph(task: str, *, provider: str | None = None,
         worker=worker,
         instruction=("Report what was done, with the evidence, and state "
                      "plainly what remains unestablished."),
-        contract=ArtifactContract(output_schema=SCHEMAS["report"]),
+        # The one node in this graph whose product is PROSE A PERSON READS, so
+        # it is the one that carries the style gate. A failure here is
+        # QUALITY_FAILURE, which the policy table answers with REPAIR and two
+        # attempts, and the repair instruction names the signals found — so the
+        # ordinary path is that the report gets rewritten, not that the run
+        # dies over a comma.
+        contract=ArtifactContract(output_schema=SCHEMAS["report"],
+                                  prose_at="summary"),
         config=_worker_config(worker, provider, schema="report",
                               payload={"summary": f"completed: {task}",
                                        "not_established": []}))

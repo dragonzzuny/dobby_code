@@ -1434,7 +1434,8 @@ def cmd_spend(args):
 
 def cmd_style(args):
     """Detect the generated-prose signature in a file or a string."""
-    from .style import analyze, rewrite_budget, rewrite_instruction
+    from .style import (analyze, gate, rewrite_budget,
+                        rewrite_instruction)
     if args.file:
         with open(os.path.abspath(args.file), encoding="utf-8",
                   errors="replace") as f:
@@ -1449,7 +1450,15 @@ def cmd_style(args):
                   errors="replace") as f:
             report["rewrite_budget"] = rewrite_budget(text, f.read())
     report["rewrite_instruction"] = rewrite_instruction(report)
+    ok, why = gate(report)
+    report["gate"] = {"ok": ok, "reason": why}
     _out(report)
+    if args.check and not ok:
+        # The exit code is what lets this be an ACCEPTANCE CHECK. Without it the
+        # module could describe generated prose and never stop any, which is
+        # what it was: `dobby style` printed a report and exited zero either
+        # way, and nothing in the harness called it.
+        raise SystemExit(1)
 
 
 def cmd_prompt(args):
@@ -2256,10 +2265,35 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_spend)
 
-    p = sub.add_parser("style", parents=[common],
-                       help="detect the generated-prose signature (EN + KO)")
+    p = sub.add_parser(
+        "style", parents=[common],
+        help="detect the generated-prose signature (EN + KO); --check "
+             "makes it an acceptance gate",
+        description=(
+            "What it looks for is REGULARITY, not vocabulary: sentence "
+            "lengths that cluster, a comma after every Korean connective "
+            "ending, hedges stacked until nothing is asserted, lists that "
+            "arrive in threes, connectors opening every sentence. A "
+            "banned-word list flags a careful human and misses a fluent "
+            "model. // Sentence variation is a COEFFICIENT (stdev/mean) "
+            "and not a raw stdev: prose averaging six words per sentence "
+            "cannot reach an absolute stdev of five at any variance, and "
+            "the absolute measure gave two Korean samples - one "
+            "generated, one not - the identical figure of 4.07. // "
+            "--check exits 1 when the signature is present, which is what "
+            "lets this be a gate rather than a description. Inside a run "
+            "the same check is declared as ArtifactContract.prose_at, "
+            "naming the payload field that carries the prose; the default "
+            "graph puts it on the report node, the one whose product a "
+            "person reads. A failure there is QUALITY_FAILURE, so the "
+            "report is rewritten with the named signals in hand rather "
+            "than the run dying over a comma. // Taxonomy adopted from "
+            "the im-not-ai / Humanize-KR project (MIT); code not "
+            "vendored."))
     p.add_argument("--file", default=None)
     p.add_argument("--text", default=None)
+    p.add_argument("--check", action="store_true",
+                   help="exit 1 when the generated-prose signature is present, so this can be an acceptance check")
     p.add_argument("--rewritten", default=None,
                    help="a candidate rewrite, to score against the change budget")
     p.set_defaults(fn=cmd_style)

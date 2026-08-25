@@ -122,6 +122,29 @@ _KO_HEDGES = ("수 있다", "것으로 보인다", "듯하다", "편이다", "�
 #: Sentence-length standard deviation below this reads as machine-regular. Human
 #: prose typically lands well above it; the threshold is set low so a genuinely
 #: terse, deliberate writer is not flagged.
+#: Sentence-length variation is measured as a COEFFICIENT of variation
+#: (stdev / mean), not as raw stdev. The raw figure was an absolute word count
+#: applied to a relative property, and prose written in short sentences could
+#: not clear it at any variance: a text averaging 5.7 words cannot reach a
+#: stdev of 5.0 without negative lengths.
+#:
+#: Measured on four samples, and the pair that matters had the SAME stdev:
+#:
+#:     AI Korean      lengths [16, 4, 4, 6, 8, 8]    stdev 4.07   CV 0.53
+#:     human Korean   lengths [6, 2, 2, 2, 12, 10]   stdev 4.07   CV 0.72
+#:     AI English     lengths [6, 4, 5, 5, 6, 6]     stdev 0.75   CV 0.14
+#:     human English  lengths [13, 5, 3, 24]         stdev 8.26   CV 0.73
+#:
+#: The absolute measure cannot tell the first two apart even in principle. The
+#: human Korean sample was being flagged S1 — "one occurrence is sufficient
+#: evidence" — on a 6x spread between its shortest and longest sentence.
+#:
+#: 0.35 sits well below both human samples and well above the AI English one.
+#: n=4 is a calibration, not a study, and the number is stated here so it can be
+#: argued with rather than discovered in a traceback.
+UNIFORMITY_CV_FLOOR = 0.35
+
+#: Kept for callers reading the old field. No longer a threshold.
 UNIFORMITY_STDEV_FLOOR = 5.0
 
 #: Commas per sentence above this is the comma habit the user actually notices.
@@ -183,6 +206,13 @@ def measure(text: str) -> dict:
         # The headline number. Uniformity, not length, is what reads as machine.
         "sentence_stdev": (round(statistics.stdev(lengths), 2)
                            if len(lengths) > 1 else 0.0),
+        # The headline number, and the one the uniformity signal reads. Relative
+        # to the mean, because "do these sentences vary" is a question about
+        # shape and not about word count.
+        "sentence_cv": (round(statistics.pstdev(lengths)
+                              / statistics.mean(lengths), 2)
+                        if len(lengths) > 1 and statistics.mean(lengths)
+                        else 0.0),
         "shortest": min(lengths),
         "longest": max(lengths),
         "commas": commas,
@@ -270,6 +300,113 @@ def _rule_of_three(text: str) -> Signal | None:
         samples=[t[:70] for t in triples[:3]])
 
 
+#: Sentences that OPEN with a connector. `im-not-ai` category H. A density
+#: signal and not a word list: one "따라서" is a sentence doing its job, and a
+#: paragraph where every sentence opens with one is a template being filled.
+_KO_OPENERS = ("또한", "따라서", "그러나", "하지만", "게다가", "즉", "결국",
+               "이처럼", "이러한", "반면")
+_EN_OPENERS = ("however", "moreover", "furthermore", "additionally",
+               "therefore", "thus", "consequently", "in addition", "overall")
+OPENER_SHARE_CEILING = 0.30
+
+#: Category I. Korean nominalisation used to avoid committing to a verb.
+_KO_NOMINALS = ("것이다", "것으로", "것은", "점이다", "점을", "바가", "바를",
+                "수 있다는", "라는 점")
+NOMINAL_PER_SENTENCE_CEILING = 0.8
+
+#: Category F. Intensifiers carry no information and generated prose reaches for
+#: them to sound emphatic.
+_KO_INTENSIFIERS = ("매우", "정말", "굉장히", "상당히", "무척", "아주", "극히",
+                    "대단히")
+_EN_INTENSIFIERS = ("very", "extremely", "highly", "significantly",
+                    "substantially", "remarkably", "incredibly")
+INTENSIFIER_PER_SENTENCE_CEILING = 0.5
+
+#: Category B. A Korean term followed by its English gloss in brackets, over and
+#: over. One is a definition; six is a translation showing through.
+_ENGLISH_GLOSS = re.compile(r"[가-힣]\s*\(\s*[A-Za-z][A-Za-z \-]{2,}\s*\)")
+GLOSS_PER_SENTENCE_CEILING = 0.25
+
+
+def _opener_share(text: str) -> "Signal | None":
+    """How many sentences begin with a connector. Category H."""
+    sents = sentences(text)
+    if len(sents) < 4:
+        return None
+    openers = _KO_OPENERS + _EN_OPENERS
+    hits = [s for s in sents
+            if s.strip().lower().startswith(tuple(o.lower() for o in openers))]
+    share = len(hits) / len(sents)
+    if share <= OPENER_SHARE_CEILING:
+        return None
+    return Signal(
+        code="connector_openers", severity=S2,
+        detail=f"{len(hits)} of {len(sents)} sentences open with a connector "
+               f"({share:.0%} > {OPENER_SHARE_CEILING:.0%})",
+        count=len(hits),
+        fix="most of these connectors are describing a relation the sentences "
+            "already have. Delete the word and read it again",
+        samples=[s[:60] for s in hits[:3]])
+
+
+def _density(text: str, table, code: str, ceiling: float, severity: str,
+             fix: str) -> "Signal | None":
+    """A shared counter for the per-sentence density signals."""
+    sents = sentences(text)
+    if not sents:
+        return None
+    low = text.lower()
+    hits = sum(low.count(item.lower()) for item in table)
+    rate = hits / len(sents)
+    if rate <= ceiling:
+        return None
+    return Signal(
+        code=code, severity=severity,
+        detail=f"{hits} occurrence(s) across {len(sents)} sentences "
+               f"({rate:.2f} per sentence > {ceiling})",
+        count=hits, fix=fix)
+
+
+def _english_glosses(text: str) -> "Signal | None":
+    """Korean term followed by an English gloss, repeatedly. Category B."""
+    sents = sentences(text)
+    if not sents:
+        return None
+    hits = _ENGLISH_GLOSS.findall(text)
+    rate = len(hits) / len(sents)
+    if rate <= GLOSS_PER_SENTENCE_CEILING:
+        return None
+    return Signal(
+        code="english_gloss_rate", severity=S2,
+        detail=f"{len(hits)} bracketed English gloss(es) across {len(sents)} "
+               f"sentences ({rate:.2f} per sentence)",
+        count=len(hits),
+        fix="gloss a term once, where it is introduced, and then use the Korean",
+        samples=[h[:40] for h in hits[:3]])
+
+
+def _decoration(stats: dict) -> "Signal | None":
+    """Bold and bullets used as structure. Category J.
+
+    S3 on purpose: a bulleted list is legitimate and flagging it alone would
+    flag good technical writing. It counts when it overlaps other signals.
+    """
+    sents = stats.get("sentences") or 0
+    if sents < 4:
+        return None
+    marks = (stats.get("bold_runs") or 0) + (stats.get("bullets") or 0)
+    rate = marks / sents
+    if rate <= 0.5:
+        return None
+    return Signal(
+        code="visual_decoration", severity=S3,
+        detail=f"{marks} bold run(s) and bullet(s) across {sents} sentences "
+               f"({rate:.2f} per sentence)",
+        count=marks,
+        fix="prose that needs bolding to be readable is usually prose that "
+            "needs cutting")
+
+
 def analyze(text: str) -> dict:
     """Detect the generated-prose signature, with distributional signals first."""
     stats = measure(text)
@@ -278,12 +415,13 @@ def analyze(text: str) -> dict:
 
     signals: list[Signal] = []
 
-    if stats["sentences"] >= 4 and stats["sentence_stdev"] < UNIFORMITY_STDEV_FLOOR:
+    if stats["sentences"] >= 4 and stats["sentence_cv"] < UNIFORMITY_CV_FLOOR:
         signals.append(Signal(
             code="uniform_sentence_length", severity=S1,
-            detail=f"sentence-length stdev {stats['sentence_stdev']} < "
-                   f"{UNIFORMITY_STDEV_FLOOR} across {stats['sentences']} "
-                   f"sentences (mean {stats['mean_sentence_words']} words)",
+            detail=f"sentence-length variation {stats['sentence_cv']} < "
+                   f"{UNIFORMITY_CV_FLOOR} across {stats['sentences']} "
+                   f"sentences (mean {stats['mean_sentence_words']} words, "
+                   f"stdev {stats['sentence_stdev']})",
             count=1,
             fix="break the rhythm: put a short sentence next to a long one. "
                 "This is the strongest single tell, and no vocabulary change "
@@ -317,7 +455,17 @@ def analyze(text: str) -> dict:
                 fix="a comma, a colon, or a full stop carries most of these"))
 
     for signal in (_connective_commas(text), _hedge_stacks(text),
-                   _rule_of_three(text)):
+                   _rule_of_three(text), _opener_share(text),
+                   _english_glosses(text), _decoration(stats),
+                   _density(text, _KO_NOMINALS + _EN_HEDGES[:0],
+                            "nominal_forms", NOMINAL_PER_SENTENCE_CEILING, S2,
+                            "name the thing or assert the verb; the "
+                            "nominalisation is standing in for a claim"),
+                   _density(text, _KO_INTENSIFIERS + _EN_INTENSIFIERS,
+                            "intensifier_density",
+                            INTENSIFIER_PER_SENTENCE_CEILING, S2,
+                            "delete the intensifier. If the sentence weakens, "
+                            "the sentence was carrying the intensifier")):
         if signal:
             signals.append(signal)
 
@@ -353,6 +501,52 @@ def _verdict(acting: Sequence[Signal], stats: dict) -> str:
                 "sufficient evidence on its own")
     return (f"{len(acting)} acting signal(s), none deterministic — the pattern "
             "is present but each piece is individually defensible")
+
+
+#: How many acting signals, with no S1 among them, still count as the
+#: signature. Two is a pattern a careful writer produces by accident; four is a
+#: voice. Stated so the number can be argued with.
+GATE_ACTING_CEILING = 3
+
+
+def gate(report: dict) -> tuple:
+    """`(ok, reason)` — the machine verdict, so this can be an acceptance check.
+
+    `_verdict` returns prose for a person to read. Prose cannot fail a build, so
+    a module whose whole purpose is keeping generated writing out of a
+    deliverable had no way to stop one: `dobby style` printed a report and
+    exited zero either way, and the only caller was somebody typing it.
+
+    The rule follows the severity tiers rather than inventing a score:
+
+    - any S1 fails. One occurrence is what S1 MEANS.
+    - `GATE_ACTING_CEILING` or more acting signals fail, S1 or not. Each is
+      individually defensible and all of them together are the pattern.
+    - anything less passes, and the report still lists what was seen.
+
+    Deliberately not a percentage. A number between 0 and 1 invites a threshold
+    argument every time a run fails, and the tiers already encode the judgement
+    that argument would be re-deriving.
+    """
+    # `acting_signals` is the codes; the dicts carry `acts_alone`. Read the
+    # code list so this cannot drift from what `analyze` decided was acting.
+    acting_codes = set(report.get("acting_signals") or ())
+    acting = [s for s in report.get("signals", [])
+              if s.get("code") in acting_codes]
+    s1 = [s for s in acting if s.get("severity") == S1]
+    if s1:
+        codes = ", ".join(s["code"] for s in s1[:4])
+        return False, (f"{len(s1)} deterministic signal(s): {codes}. One S1 "
+                       f"occurrence is sufficient evidence on its own")
+    if len(acting) >= GATE_ACTING_CEILING:
+        codes = ", ".join(s["code"] for s in acting[:5])
+        return False, (f"{len(acting)} acting signals (>= "
+                       f"{GATE_ACTING_CEILING}): {codes}. Each is defensible "
+                       f"alone; together they are the pattern")
+    if acting:
+        return True, (f"{len(acting)} acting signal(s), below the "
+                      f"{GATE_ACTING_CEILING} that would count as the pattern")
+    return True, "no acting signal"
 
 
 def rewrite_budget(original: str, rewritten: str) -> dict:

@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 
 from ..core.platform import child_env, resolve_command
 from .contracts import ArtifactContract
-from .failures import Failure, classify_verifier_failure, NON_RETRYABLE
+from .failures import Failure, classify_verifier_failure, NON_RETRYABLE, QUALITY_FAILURE
 
 #: A check gets its own wall clock. A hung test suite must fail the gate, not
 #: hang the run — and an unbounded verifier is how a "safety" layer becomes the
@@ -167,6 +167,10 @@ class Verifier:
                 not_run.append(check)
             records.append(record)
 
+        prose = self._prose_verdict(contract, payload)
+        if prose is not None:
+            return prose
+
         failed = [r.check for r in records if not r.passed]
         if not failed:
             return VerifierResult(
@@ -187,6 +191,35 @@ class Verifier:
                 "read the failing output below and change the artifact, not the "
                 "check: " + detail[:400]),
             failure=classify_verifier_failure(failed))
+
+    def _prose_verdict(self, contract: ArtifactContract, payload):
+        """The style gate, or None when the contract declares no prose.
+
+        QUALITY_FAILURE and not CONTRACT_VIOLATION: the shape is fine and the
+        writing is the problem, so the policy table sends it to REPAIR with the
+        failure text in hand — and `style.rewrite_instruction` names the
+        specific signals rather than saying "make it sound human", which
+        produces a different generated voice rather than fewer signals.
+        """
+        if not contract.prose_at:
+            return None
+        from ..style import analyze, gate, rewrite_instruction
+
+        text = _dig(payload, contract.prose_at)
+        if not isinstance(text, str) or not text.strip():
+            return None
+        report = analyze(text)
+        ok, why = gate(report)
+        if ok:
+            return None
+        return VerifierResult(
+            passed=False,
+            failed_requirements=[f"prose at {contract.prose_at!r}: {why}"],
+            repair_hint=rewrite_instruction(report),
+            failure=Failure(QUALITY_FAILURE,
+                            f"the generated-prose signature is present in "
+                            f"{contract.prose_at!r}: {why}",
+                            {"signals": report.get("acting_signals", [])}))
 
     # -- the grounded layer ------------------------------------------------
     def ground(self, contract: ArtifactContract, payload) -> dict | None:

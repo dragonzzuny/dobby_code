@@ -269,6 +269,21 @@ class ArtifactContract:
     #: node sees the label in its inputs and can decide; nothing lets an
     #: advisory verdict silently become the evidence that a gate passed.
     advisory: bool = False
+    #: A dot path into the payload naming the field that carries PROSE a person
+    #: will read, e.g. "summary". When set, the verifier runs
+    #: `dobby/style.py`'s gate over it and refuses the artifact when the
+    #: generated-prose signature is present.
+    #:
+    #: Named the same way `grounding.claims_at` names its field, and for the
+    #: same reason: an acceptance check is a shell command and cannot see inside
+    #: a payload, so a check about the payload's CONTENT has to be declared
+    #: where the verifier can reach it.
+    #:
+    #: Why this exists at all: `style.py` had one caller in the whole
+    #: repository — somebody typing `dobby style` — so a module written to keep
+    #: generated writing out of a deliverable could describe it and never stop
+    #: any.
+    prose_at: str = ""
     #: This node is DELIBERATELY ungraded, and says so.
     #:
     #: Declaring nothing by accident and declaring that you grade nothing are
