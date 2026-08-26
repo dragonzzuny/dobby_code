@@ -145,6 +145,62 @@ class TheAddedCategories(unittest.TestCase):
         self.assertNotIn("visual_decoration", report["acting_signals"])
 
 
+class TheLocativeIsNotTranslationese(unittest.TestCase):
+    """`뒤에 있어서` is not `분야에 있어서`, and the gate said it was.
+
+    Found the way a gate is supposed to be found wrong: by running it on a real
+    document. `reports/RESULTS_three_arm_regression.md` contained the sentence
+    "codex는 `codex exec --json`이 이 플래그 뒤에 있어서 통째로 사라진다" --
+    ordinary Korean, `있다` after a position noun -- and the gate refused the
+    whole report over it, because `에 있어서` is S1 and S1 acts alone.
+
+    The runner puts this gate on the report node (`prose_at`), so the same false
+    positive inside a run is a QUALITY_FAILURE on correct prose.
+    """
+
+    def fires(self, text):
+        return any(s["code"] == "phrase:에 있어서"
+                   for s in analyze(text)["signals"])
+
+    def test_the_position_noun_reading_is_not_a_signal(self):
+        for text in ("그 파일은 캐비닛 뒤에 있어서 못 찾았다.",
+                     "열쇠가 문 앞에 있어서 열 수 있었다.",
+                     "로그는 저 폴더 안에 있어서 금방 찾았다.",
+                     "테스트가 저기에 있어서 놓쳤다."):
+            self.assertFalse(self.fires(text), text)
+
+    def test_the_stock_phrase_is_still_a_signal(self):
+        for text in ("본 연구는 산업 분야에 있어서 중요하다.",
+                     "이 문제에 있어서 우리는 신중해야 한다."):
+            self.assertTrue(self.fires(text), text)
+
+    def test_both_readings_in_one_text_still_reports_the_stock_one(self):
+        """Subtraction, not filtering: the legitimate use must not mask the other."""
+        self.assertTrue(self.fires(
+            "파일은 뒤에 있어서 못 찾았다. 이 분야에 있어서 중요한 문제다."))
+
+    def test_the_dead_tilde_entry_is_gone(self):
+        """`~에 있어서` could never match: nobody writes the tilde."""
+        from dobby.style import _KO_PHRASES
+        self.assertNotIn("~에 있어서", _KO_PHRASES)
+        self.assertIn("에 있어서", _KO_PHRASES)
+
+    def test_the_sentence_that_failed_the_report_now_passes(self):
+        """The sentence in a passage varied enough not to trip anything else.
+
+        A first draft of this sample failed on `uniform_sentence_length`, which
+        was the gate being right: four sentences of nearly equal length is the
+        thing that detector exists for. The sample was varied; the detector was
+        not touched.
+        """
+        ok, why = gate(analyze(
+            "codex는 이 플래그 뒤에 있어서 통째로 사라진다. 놓쳤다. "
+            "같은 provider를 쓰는데 솔로 경로에서는 다섯 번 다 계측되고 루프 "
+            "안에서는 한 번도 안 잡히는 걸 표를 뽑아보고서야 알았고, 원인은 "
+            "원장이 있을 때만 켜지는 플래그 하나였다. 고치지는 않았다."))
+        self.assertTrue(ok, why)
+
+
 class ThroughTheRunner(unittest.TestCase):
     """The wiring. Detection that stops nothing is a description."""
 

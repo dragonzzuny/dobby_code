@@ -76,7 +76,7 @@ dobby는 다섯 중 하나를 풀었다. claude는 넷, codex는 셋이다. 이 
 usage 수집은 CLI의 argv를 바꾸므로 읽을 원장이 있을 때만 켠다 — 그 자체는 맞는
 결정이고 주석이 이유를 적어놨다. 놓친 건 **평가 하네스도 읽는 쪽이라는 것**이다.
 원장을 끄고 돌리면 claude는 여전히 계측된다(`claude --output-format json`이
-기본 경로라서). codex는 `codex exec --json`이 이 플래그 뒤에 숨어 통째로
+기본 경로라서). codex는 `codex exec --json`이 이 플래그 뒤에 있어서 통째로
 사라진다. 결과적으로 계측 누락이 **provider마다 다르게** 생기고, 그러면 팔 간
 토큰 비교가 성립하지 않는다.
 

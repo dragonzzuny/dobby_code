@@ -88,7 +88,8 @@ _EN_PHRASES: dict[str, str] = {
 _KO_PHRASES: dict[str, str] = {
     "결론적으로": S2,
     "시사하는 바가 크다": S1,
-    "~에 있어서": S1,
+    # `~에 있어서` with the tilde in it was dead config: `count` is a literal
+    # substring search and nobody writes the tilde, so it never matched.
     "에 있어서": S1,
     "를 통해": S3,
     "을 통해": S3,
@@ -224,12 +225,39 @@ def measure(text: str) -> dict:
     }
 
 
+#: Substrings that are a stock phrase in one reading and ordinary words in
+#: another, keyed by the phrase and listing the left contexts that make an
+#: occurrence legitimate.
+#:
+#: `에 있어서` after an abstract noun is the translationese "with regard to" and
+#: native technical writing does not produce it. After a position noun it is
+#: `있다` doing its ordinary job: `문 뒤에 있어서` is "it was behind the door,
+#: so". Same seven characters, so the noun in front is the only discriminator
+#: available to a substring search.
+#:
+#: Found by running this gate on a report that contained `플래그 뒤에 있어서`.
+#: The signal is S1, S1 acts alone by definition, and one correct Korean
+#: sentence was therefore enough to fail an entire document. A detector that
+#: rejects correct writing does not get to keep the severity that means "one
+#: occurrence is sufficient evidence".
+_PHRASE_EXCEPTIONS: dict[str, tuple[str, ...]] = {
+    "에 있어서": ("뒤", "앞", "안", "밖", "위", "아래", "옆", "속", "밑",
+                  "사이", "곁", "근처", "여기", "거기", "저기", "어디"),
+}
+
+
 def _find_phrases(text: str, table: dict[str, str]) -> list[Signal]:
     low = text.lower()
     out = []
     for phrase, severity in table.items():
-        count = low.count(phrase.lower())
-        if count:
+        needle = phrase.lower()
+        count = low.count(needle)
+        # Every excluded occurrence was also counted above, so this subtracts
+        # rather than filters. It cannot go below zero: each prefix match is a
+        # match of `needle` too.
+        for prefix in _PHRASE_EXCEPTIONS.get(phrase, ()):
+            count -= low.count(prefix.lower() + needle)
+        if count > 0:
             out.append(Signal(
                 code=f"phrase:{phrase}", severity=severity,
                 detail=f"{count}x {phrase!r}", count=count,
