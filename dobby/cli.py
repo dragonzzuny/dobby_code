@@ -1475,6 +1475,109 @@ def cmd_prompt(args):
     _out(out)
 
 
+def _runtime_levels(args, repo, default_graph) -> int:
+    """What each step of a graph could prove, BEFORE any provider is paid.
+
+    The gap this closes was measured rather than imagined. On
+    `django__django-11138` the dobby arm localised all three gold files, wrote a
+    patch, broke four `timezones` tests and PROMOTED, and nothing was bypassed:
+    its one declared acceptance check was `check_syntax.py`, which asks whether
+    the changed files still parse. The gate enforced what was declared. What was
+    declared was rung 2 and the defect was on rung 4, and the report said
+    "every acceptance check passed" either way.
+
+    A run tells you that after you have paid for it. This tells you before.
+
+    `--require` makes it a gate rather than a printout, and the rung is only
+    demanded of nodes that CHANGE something. A planning node that returns JSON
+    has nothing to verify end-to-end, and requiring it there would train people
+    to pass a flag they do not believe.
+    """
+    from .runtime.contracts import (EXTERNAL_IRREVERSIBLE, EXTERNAL_REVERSIBLE,
+                                    LOCAL_WRITE, VERIFICATION_LEVELS,
+                                    level_name)
+
+    writes = {LOCAL_WRITE, EXTERNAL_REVERSIBLE, EXTERNAL_IRREVERSIBLE}
+    by_name = {name: value for value, name in VERIFICATION_LEVELS.items()}
+
+    floor = None
+    if args.require:
+        floor = by_name.get(str(args.require).strip().upper())
+        if floor is None:
+            _out({"error": f"unknown level {args.require!r}",
+                  "expected": sorted(by_name)})
+            raise SystemExit(2)
+
+    # `static=True` when nobody was named. `default_graph` refuses to build a
+    # graph with no worker, correctly -- but this command grades the SHAPE of
+    # the contracts, and the shape does not depend on who runs them. Refusing
+    # here would mean you can only ask what your gate proves once you have
+    # already decided who to pay.
+    try:
+        graph = default_graph(
+            args.task or "(shape only)",
+            provider=args.provider, execute_command=args.execute,
+            acceptance_checks=[c for c in (args.check or "").split("|")
+                               if c.strip()],
+            static=not (args.provider or args.execute))
+    except ValueError as exc:
+        _out({"error": str(exc)})
+        raise SystemExit(2)
+
+    rows, below = [], []
+    for node_id in graph.topological_order():
+        node = graph.nodes[node_id]
+        contract = node.contract
+        level = contract.declared_level
+        changes = contract.side_effect_class in writes
+        row = {"node": node_id, "kind": node.kind,
+               "changes_things": changes,
+               "side_effect_class": contract.side_effect_class,
+               "verifiable_at": level_name(level),
+               "from": _levels_because(contract)}
+        rows.append(row)
+        if floor is not None and changes and level < floor:
+            below.append(row)
+
+    _out({"graph": rows,
+          "required_of_writing_nodes": level_name(floor) if floor else None,
+          "below_the_floor": below,
+          "note": ("`verifiable_at` is the STRONGEST rung this contract could "
+                   "reach if every check passes -- not a result. A shell check "
+                   "counts as EXISTENCE unless its contract says otherwise with "
+                   "checks_at, because a command line is an opaque string and "
+                   "guessing at its strength is the failure this ladder is for.")})
+    # Raised, not returned. `main` calls `args.fn(args)` and drops the value, so
+    # a returned code would have made this print its finding and exit 0 -- a
+    # gate that describes instead of stopping, which is the exact defect the
+    # rest of this module exists to catch. Measured before it shipped: the
+    # `--require BEHAVIOR` run below correctly named `execute` and exited 0.
+    if below:
+        raise SystemExit(1)
+
+
+def _levels_because(contract) -> list[str]:
+    """Which declaration bought which rung. Without this the number is a verdict
+    nobody can argue with, and the point is to be arguable."""
+    from .runtime.contracts import NONE, level_name
+
+    because = []
+    if contract.output_schema:
+        because.append("output_schema -> STRUCTURE")
+    if contract.prose_at:
+        because.append(f"prose_at={contract.prose_at!r} -> STRUCTURE")
+    if contract.grounding:
+        because.append("grounding -> CONTRACT (it recomputes the number)")
+    if contract.side_effect_class != NONE:
+        because.append(f"side_effect_class={contract.side_effect_class} "
+                       f"-> EXISTENCE")
+    if contract.acceptance_checks:
+        because.append(f"{len(contract.acceptance_checks)} acceptance check(s) "
+                       f"-> {level_name(contract.checks_at)}"
+                       + ("" if contract.checks_at else " (declared)"))
+    return because or ["nothing declared"]
+
+
 def cmd_runtime(args):
     """Durable execution: a run that survives the process that started it.
 
@@ -1487,6 +1590,9 @@ def cmd_runtime(args):
 
     repo = _repo(args)
     data = _data(args)
+
+    if args.action == "levels":
+        return _runtime_levels(args, repo, default_graph)
 
     if args.action == "list":
         _out({"runs": RunStore(data).list_runs(limit=args.limit)})
@@ -2316,7 +2422,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("action",
                    choices=["run", "resume", "status", "list", "events",
                             "trace", "metrics", "scorecard", "harvest",
-                            "bench"])
+                            "bench", "levels"])
     p.add_argument("task", nargs="?", default="",
                    help="the task (for `run`), or the run id (resume/status/"
                         "events)")
@@ -2345,6 +2451,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--corpus", default=None,
                    help="bench: JSON file of tasks. Without it the example "
                         "SHAPE runs, whose numbers are not a result")
+    p.add_argument("--require", default=None, metavar="LEVEL",
+                   help="levels: the rung every WRITING node must be able to "
+                        "reach (EXISTENCE|STRUCTURE|CONTRACT|BEHAVIOR). Exits 1 "
+                        "when one cannot, so this can be an acceptance check")
     p.add_argument("--no-route", action="store_true",
                    help="skip the router (budgets come from defaults)")
     p.set_defaults(fn=_runtime_dispatch)

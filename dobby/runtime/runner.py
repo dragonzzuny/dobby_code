@@ -71,12 +71,21 @@ class StepReport:
     verdict: dict | None = None
     failure: dict | None = None
     duration_s: float = 0.0
+    #: Which rung of the verification ladder this step's PROMOTED artifact
+    #: actually reached, or None for a step with no promoted artifact.
+    #:
+    #: Here rather than only in the artifact's evidence because this dict is
+    #: what a person reads. A run of five SUCCEEDED steps is five different
+    #: claims when one of them was graded by a test suite and another by
+    #: "the file still parses", and the report showed both the same way.
+    verified_at: str | None = None
 
     def to_dict(self) -> dict:
         return {"node_id": self.node_id, "kind": self.kind, "state": self.state,
                 "attempts": self.attempts, "worker": self.worker,
                 "artifact_id": self.artifact_id, "verdict": self.verdict,
-                "failure": self.failure, "duration_s": self.duration_s}
+                "failure": self.failure, "duration_s": self.duration_s,
+                "verified_at": self.verified_at}
 
 
 @dataclass
@@ -603,9 +612,16 @@ class Runner:
         self.store.put_artifact(artifact, path=path)
         self.store.finish_attempt(run_id, node.node_id, attempt,
                                   outcome=G.FINISHED,
-                                  detail=f"verified in {duration}s")
+                                  detail=f"verified at {verdict.level_label} "
+                                         f"in {duration}s")
+        # The rung is in the reason, not only in the verdict blob. "every
+        # acceptance check passed" is true of a node whose only check was that
+        # the file still parses, and it reads in a report exactly like a node
+        # that ran a test suite. See the 2026-08-26 three-arm run, where a
+        # syntax-only gate promoted a patch that broke four tests.
         self._set_node(run_id, task_graph, node, G.NODE_SUCCEEDED,
-                       reason="every acceptance check passed")
+                       reason=f"every acceptance check passed; verified at "
+                              f"{verdict.level_label}")
 
     # -- failure handling ---------------------------------------------------
     def _fail_attempt(self, run_id: str, task_graph: "G.TaskGraph", node,
@@ -862,6 +878,31 @@ class Runner:
                    "continue")
         return G.WAITING
 
+    @staticmethod
+    def _level_of(row: dict) -> str | None:
+        """The rung recorded on a promoted artifact, read back from its file.
+
+        Read rather than kept in memory so a RESUMED run reports the same thing
+        a fresh one does. The verdict is already written into the artifact's
+        evidence; adding a column to the store would be a migration to duplicate
+        a fact that is durably on disk.
+
+        Returns None when the file is missing or unreadable, which is the honest
+        answer: not "no level", but "this process could not tell you".
+        """
+        path = row.get("path")
+        if not path or not os.path.exists(path):
+            return None
+        try:
+            with open(path, encoding="utf-8") as fh:
+                blob = json.load(fh)
+        except (OSError, ValueError):
+            return None
+        evidence = blob.get("evidence") or {}
+        verdict = evidence.get("verdict") or {}
+        label = verdict.get("level_label")
+        return label if isinstance(label, str) else None
+
     def _report(self, run_id: str, task_graph: "G.TaskGraph",
                 deferred: list[dict], budget: RunBudget, notes: list[str],
                 *, state: str | None = None) -> RunResult:
@@ -874,6 +915,8 @@ class Runner:
                 node_id=node_id, kind=node.kind, state=node.state,
                 attempts=node.attempts, worker=node.worker,
                 artifact_id=promoted[-1]["artifact_id"] if promoted else None,
+                verified_at=(self._level_of(promoted[-1]) if promoted
+                             else None),
                 failure=node.last_failure))
         return RunResult(
             run_id=run_id, state=state or self.store.load_run(run_id)["state"],

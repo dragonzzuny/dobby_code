@@ -34,7 +34,7 @@ import time
 from dataclasses import dataclass, field
 
 from ..core.platform import child_env, resolve_command
-from .contracts import ArtifactContract
+from .contracts import (ArtifactContract, V_NONE, level_name)
 from .failures import Failure, classify_verifier_failure, NON_RETRYABLE, QUALITY_FAILURE
 
 #: A check gets its own wall clock. A hung test suite must fail the gate, not
@@ -81,6 +81,18 @@ class VerifierResult:
     #: "there was nothing to pass" are the two answers this field exists to
     #: keep apart.
     nothing_declared: bool = False
+    #: The rung actually reached, from `contracts.VERIFICATION_LEVELS`.
+    #:
+    #: The contract's `declared_level` when everything declared ran and passed,
+    #: and V_NONE otherwise -- a check that failed or could not run reached
+    #: nothing, whatever it would have reached if it had. Carried so a PROMOTED
+    #: artifact says at WHICH rung it was promoted; `passed=True` on its own was
+    #: one word for four different claims.
+    level: int = V_NONE
+
+    @property
+    def level_label(self) -> str:
+        return level_name(self.level)
 
     def to_dict(self) -> dict:
         return {"passed": self.passed,
@@ -90,7 +102,9 @@ class VerifierResult:
                 "failure": self.failure.to_dict() if self.failure else None,
                 "records": [r.to_dict() for r in self.records],
                 "not_run": list(self.not_run),
-                "nothing_declared": self.nothing_declared}
+                "nothing_declared": self.nothing_declared,
+                "level": self.level,
+                "level_label": self.level_label}
 
 
 class Verifier:
@@ -180,7 +194,10 @@ class Verifier:
                 # `promotable` lets it through on the strength of `ungraded`;
                 # this is what makes the artifact travel labelled rather than
                 # silently resembling one that was checked.
-                nothing_declared=contract.declares_nothing)
+                nothing_declared=contract.declares_nothing,
+                # Only on the passing path, and only when nothing was skipped.
+                # A rung is what was CLIMBED, not what was pointed at.
+                level=(contract.declared_level if not not_run else V_NONE))
 
         detail = next((r.detail for r in records if not r.passed), "")
         return VerifierResult(
@@ -433,4 +450,10 @@ def promotable(contract: ArtifactContract, verdict: VerifierResult) -> bool:
     """
     if verdict.nothing_declared and not contract.ungraded:
         return False
-    return bool(verdict.passed and not verdict.not_run)
+    if not (verdict.passed and not verdict.not_run):
+        return False
+    # And the floor, when a consumer set one. `__post_init__` already refused a
+    # contract that asks for a rung it cannot reach, so reaching here with too
+    # low a level means a check that was declared did not deliver it -- a prose
+    # gate that found nothing to read, a grounding block with no claims.
+    return verdict.level >= contract.requires_level

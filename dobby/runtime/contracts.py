@@ -69,6 +69,47 @@ REJECTED = "REJECTED"
 
 ARTIFACT_STATES = (PROPOSED, VERIFIED, PROMOTED, REJECTED)
 
+
+#: How strong the verification was, as a ladder rather than a boolean. Taken
+#: verbatim from this repository's own rule file, which already told anyone
+#: reporting a result to say which rungs were unavailable:
+#:
+#:   existence -> structure/syntax -> contract -> end-to-end behaviour
+#:
+#: `declares_nothing` is the bottom rung turned into a refusal, and it was the
+#: only rung the gate could see. Everything above it read the same: PROMOTED.
+#:
+#: The case that forced this. In `reports/RESULTS_three_arm_regression.md` the
+#: dobby arm on `django__django-11138` localised all three gold files, wrote a
+#: patch, broke four `timezones` tests, and PROMOTED. Its declared acceptance
+#: check was `evals/swebench/check_syntax.py`, whose own docstring opens with
+#: "deliberately weak" -- every changed python file still parses. Nothing was
+#: bypassed and nothing lied: the gate enforced exactly what was declared, and
+#: what was declared was rung 2 while the defect was on rung 4.
+#:
+#: So this does NOT forbid a weak check. A weak check is often the strongest one
+#: available -- that same arm could not run django's suite because Docker is
+#: absent from the machine. It makes the rung travel with the artifact, the way
+#: `advisory` and `ungraded` already do, so "verified" stops being one word for
+#: four different claims.
+V_NONE = 0
+V_EXISTENCE = 1
+V_STRUCTURE = 2
+V_CONTRACT = 3
+V_BEHAVIOR = 4
+
+VERIFICATION_LEVELS: dict[int, str] = {
+    V_NONE: "NONE",
+    V_EXISTENCE: "EXISTENCE",
+    V_STRUCTURE: "STRUCTURE",
+    V_CONTRACT: "CONTRACT",
+    V_BEHAVIOR: "BEHAVIOR",
+}
+
+
+def level_name(level: int) -> str:
+    return VERIFICATION_LEVELS.get(level, f"UNKNOWN({level})")
+
 _ARTIFACT_TRANSITIONS = {
     PROPOSED: {VERIFIED, REJECTED},
     VERIFIED: {PROMOTED, REJECTED},
@@ -298,6 +339,59 @@ class ArtifactContract:
     #: someone has to write in a contract, which is the difference between a
     #: control condition and an oversight.
     ungraded: bool = False
+    #: The rung this contract's SHELL acceptance checks reach, stated by the
+    #: person who wrote them.
+    #:
+    #: Declared rather than inferred, and the default is the floor. A shell
+    #: command is an opaque string: `pytest -q` and `python -c "pass"` are the
+    #: same shape to this process, and the only way to know which one is in
+    #: front of you is to run it against a known-bad output -- which is a
+    #: different and much more expensive machine. Guessing from the text would
+    #: put a model's inference where a person's statement belongs, and an
+    #: inference that flatters is the failure this whole ladder exists to catch.
+    #:
+    #: So: an undeclared check counts as EXISTENCE. It ran and it exited zero.
+    #: That is the most anyone can say about it from here.
+    checks_at: int = V_EXISTENCE
+    #: The rung this node's consumer REQUIRES, or V_NONE for "no floor".
+    #:
+    #: Off by default, deliberately, and for the reason `ungraded` is a sentence
+    #: someone writes: turning a floor on everywhere would refuse
+    #: `runtime/bench.py`'s baseline arm and the SWE-bench arm that can only
+    #: reach syntax on a machine without Docker. Refusing those would delete
+    #: two experiments to fix a report.
+    requires_level: int = V_NONE
+
+    @property
+    def declared_level(self) -> int:
+        """The highest rung anything in this contract could reach.
+
+        Everything except the shell checks is in-band and therefore classifiable
+        by machine; the shell checks are the one part that is an opaque string,
+        so they contribute whatever `checks_at` says.
+
+        `grounding` is CONTRACT rather than STRUCTURE because it does what a
+        consumer-side test does: it recomputes the number from the evidence and
+        compares. A schema says the field is an int. Grounding says the int is
+        the one the command produces.
+
+        A side effect is EXISTENCE. `runtime/effects.py` can catch a node that
+        declared a write and left no trace, which is a real claim and a weak
+        one -- exactly the distinction `declares_nothing` already draws between
+        weak and vacuous.
+        """
+        rungs = [V_NONE]
+        if self.output_schema:
+            rungs.append(V_STRUCTURE)
+        if self.prose_at:
+            rungs.append(V_STRUCTURE)
+        if self.grounding:
+            rungs.append(V_CONTRACT)
+        if self.side_effect_class != NONE:
+            rungs.append(V_EXISTENCE)
+        if self.acceptance_checks:
+            rungs.append(self.checks_at)
+        return max(rungs)
 
     @property
     def declares_nothing(self) -> bool:
@@ -324,6 +418,24 @@ class ArtifactContract:
                     or self.side_effect_class != NONE)
 
     def __post_init__(self):
+        for name in ("checks_at", "requires_level"):
+            value = getattr(self, name)
+            if value not in VERIFICATION_LEVELS:
+                raise ContractError(
+                    f"{name}={value!r} is not a verification level; expected "
+                    f"one of {sorted(VERIFICATION_LEVELS)} "
+                    f"({', '.join(VERIFICATION_LEVELS[k] for k in sorted(VERIFICATION_LEVELS))})")
+        # Caught here rather than at promotion time. A contract asking for a
+        # rung its own declarations cannot reach is not a run that fails, it is
+        # a contract that was never satisfiable, and the two deserve different
+        # messages.
+        if self.requires_level > self.declared_level:
+            raise ContractError(
+                f"this contract requires {level_name(self.requires_level)} and "
+                f"what it declares reaches only "
+                f"{level_name(self.declared_level)}. Either declare a check "
+                f"that reaches it, or say what these checks actually reach with "
+                f"checks_at=")
         if self.side_effect_class not in SIDE_EFFECT_CLASSES:
             raise ContractError(
                 f"unknown side_effect_class {self.side_effect_class!r}; "
