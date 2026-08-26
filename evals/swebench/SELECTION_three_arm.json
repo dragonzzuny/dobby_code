@@ -1,0 +1,72 @@
+{
+ "selected_at": "2026-08-26",
+ "pool": 200,
+ "repo": "django/django",
+ "rule": "gold_files >= 2, ordered by gold-file count desc, django__django-11532 excluded as already used in RESOLVE_pilot",
+ "arms": [
+  "A_claude",
+  "B_codex",
+  "D_dobby"
+ ],
+ "instances": [
+  {
+   "instance_id": "django__django-11138",
+   "gold_files": [
+    "django/db/backends/mysql/operations.py",
+    "django/db/backends/oracle/operations.py",
+    "django/db/backends/sqlite3/base.py",
+    "django/db/backends/sqlite3/operations.py"
+   ],
+   "difficulty": "1-4 hours",
+   "fail_to_pass": 1,
+   "pass_to_pass": 73
+  },
+  {
+   "instance_id": "django__django-13121",
+   "gold_files": [
+    "django/db/backends/base/operations.py",
+    "django/db/backends/mysql/operations.py",
+    "django/db/backends/sqlite3/operations.py",
+    "django/db/models/expressions.py"
+   ],
+   "difficulty": "15 min - 1 hour",
+   "fail_to_pass": 1,
+   "pass_to_pass": 168
+  },
+  {
+   "instance_id": "django__django-11400",
+   "gold_files": [
+    "django/contrib/admin/filters.py",
+    "django/db/models/fields/__init__.py",
+    "django/db/models/fields/reverse_related.py"
+   ],
+   "difficulty": "1-4 hours",
+   "fail_to_pass": 6,
+   "pass_to_pass": 58
+  },
+  {
+   "instance_id": "django__django-11734",
+   "gold_files": [
+    "django/db/models/fields/__init__.py",
+    "django/db/models/fields/related_lookups.py",
+    "django/db/models/sql/query.py"
+   ],
+   "difficulty": "15 min - 1 hour",
+   "fail_to_pass": 1,
+   "pass_to_pass": 275
+  },
+  {
+   "instance_id": "django__django-13195",
+   "gold_files": [
+    "django/contrib/messages/storage/cookie.py",
+    "django/contrib/sessions/middleware.py",
+    "django/http/response.py"
+   ],
+   "difficulty": "15 min - 1 hour",
+   "fail_to_pass": 5,
+   "pass_to_pass": 382
+  }
+ ],
+ "amended_at": "2026-08-26",
+ "amendment": "one_arm.py fetches a 200-row pool; the first selection was made from 300 and two instances (15629, 16263) fell outside it. The RULE is unchanged - django, gold_files >= 2, ordered by gold-file count desc, 11532 excluded - and re-applied to the 200-row pool the runner actually sees. Recorded rather than silently re-picked: a selection changed after runs have started is the place a corpus gets fitted to a result, and two arms had already run on the two instances that survive the change."
+}

@@ -113,6 +113,20 @@ def apply_patch(repo: str, patch: str, *, label: str) -> None:
     path = os.path.join(repo, f".{label}.diff")
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(patch)
+    # Already applied is not a failure. Scoring is a separate script from
+    # the arm run so that it can be repeated after a scoring bug without
+    # buying another set of provider calls -- and it could not be, because
+    # the second run re-applied the test patch to a tree already carrying
+    # it and raised. `--reverse --check` is git's own answer to "is this
+    # patch already in".
+    reverse = subprocess.run(["git", "-C", repo, "apply", "--reverse",
+                              "--check", path],
+                             capture_output=True, text=True,
+                             encoding="utf-8", errors="replace",
+                             timeout=300)
+    if reverse.returncode == 0:
+        os.remove(path)
+        return
     proc = subprocess.run(["git", "-C", repo, "apply", path],
                           capture_output=True, text=True, encoding="utf-8",
                           errors="replace", timeout=300)

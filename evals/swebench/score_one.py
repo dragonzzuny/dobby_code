@@ -60,7 +60,12 @@ def main(base: str, out: str, instance_id: str, arm: str, python: str) -> int:
     if os.path.exists(out):
         with open(out, encoding="utf-8") as fh:
             existing = json.load(fh)
-    existing[arm] = result
+    # Keyed by instance AND arm. It was keyed by arm alone, so scoring a second
+    # instance silently overwrote the first and a five-instance run left three
+    # rows on disk — one per arm, all of them the last instance scored. The
+    # console output was right and the record was wrong, which is the worse of
+    # the two ways round.
+    existing[f"{instance_id}::{arm}"] = result
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(existing, fh, ensure_ascii=False, indent=1)
 
