@@ -140,6 +140,107 @@ class TheLedgerAlone(unittest.TestCase):
                                                  config=ledger.config))
 
 
+class WhatTheWorkerAsksRunProviderFor(unittest.TestCase):
+    """The seam the fake worker above cannot reach, and where the hole was.
+
+    `FakeClaude` replaces `ProviderWorker` outright, so it tests runner ->
+    worker and never worker -> `run_provider`. The defect lived in the second
+    one: the worker passed an explicit `collect_usage=False` when the node had
+    no ledger, and `run_provider` reads False as "definitely not" while it
+    reads None as "use the ambient default". The ambient default is what
+    `providers.run.recording(collect_usage=True)` sets, which is how an
+    evaluation harness asks for tokens without switching a ledger on.
+
+    It stayed invisible because it was asymmetric. claude reports usage on the
+    path dobby already invokes and kept being counted; codex needs
+    `exec --json`, which is behind this flag, and vanished. In
+    `reports/RESULTS_three_arm_regression.md` the dobby column reads 1,122,506
+    tokens against 6,770,951 and 3,544,621 for the solo arms, with four of its
+    five rows marked `3 of 5 call(s) reported no usage; every total here is a
+    FLOOR`. A cheaper-looking number produced by not counting half the calls.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def call(self, *, collect_usage_in_context, usage, recorder=None):
+        """Drive the real worker with `run_provider` stubbed. Returns (kw, meta).
+
+        Patches `dobby.providers.run.run_provider`, not the name in `workers`:
+        the worker imports it inside `run()`, so the module attribute is what
+        the import resolves to.
+        """
+        import contextlib
+
+        from dobby.providers import run as run_module
+        from dobby.providers.run import ProviderResult
+        from dobby.runtime.workers import ProviderWorker
+
+        seen = {}
+
+        def stub(spec, prompt, **kw):
+            seen.update(kw)
+            resolved = kw.get("collect_usage")
+            if resolved is None:
+                resolved = run_module._COLLECT_DEFAULT
+            return ProviderResult(
+                provider=spec.id, ok=True, text='{"done": true}',
+                meta={}, duration_s=0.1,
+                usage=(usage if resolved else None))
+
+        node = claude_node()
+        node.config["schema"] = None
+        original = run_module.run_provider
+        run_module.run_provider = stub
+        try:
+            with (recorder or contextlib.nullcontext()):
+                result = ProviderWorker().run(node, {
+                    "repo": self.tmp.name, "attempt": 0, "isolated": False,
+                    "inputs": {}, "run_id": "r",
+                    "collect_usage": collect_usage_in_context})
+        finally:
+            run_module.run_provider = original
+        return seen, (result.meta or {})
+
+    def test_no_ledger_defers_instead_of_refusing(self):
+        """None, not False. False is the whole bug."""
+        kw, _ = self.call(collect_usage_in_context=False, usage={"o": 1})
+        self.assertIsNone(kw["collect_usage"])
+
+    def test_a_ledger_forces_collection(self):
+        kw, _ = self.call(collect_usage_in_context=True, usage={"o": 1})
+        self.assertIs(kw["collect_usage"], True)
+
+    def test_inside_a_recorder_the_usage_reaches_meta_with_no_ledger(self):
+        from dobby.providers.run import recording
+
+        _, meta = self.call(collect_usage_in_context=False,
+                            usage={"output_tokens": 42},
+                            recorder=recording())
+        self.assertEqual(meta.get("usage"), {"output_tokens": 42})
+
+    def test_outside_a_recorder_nothing_is_collected(self):
+        """The default the explicit False was protecting, kept.
+
+        Collecting changes the CLI's argv, and with no ledger and no recorder
+        nobody reads the result.
+        """
+        _, meta = self.call(collect_usage_in_context=False, usage={"o": 1})
+        self.assertNotIn("usage", meta)
+
+    def test_a_ledger_is_not_disarmed_by_a_recorder_that_said_no(self):
+        """Otherwise `fail_closed_on_unmeasured_usage` shuts the lane, and the
+        cause is a context manager three frames up."""
+        from dobby.providers.run import recording
+
+        kw, meta = self.call(collect_usage_in_context=True,
+                             usage={"output_tokens": 7},
+                             recorder=recording(collect_usage=False))
+        self.assertIs(kw["collect_usage"], True)
+        self.assertEqual(meta.get("usage"), {"output_tokens": 7})
+
+
 class TheWiring(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

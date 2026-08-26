@@ -339,18 +339,36 @@ class ProviderWorker(WorkerAdapter):
         # usage envelope and no envelope ever reached the runner, so a ledger
         # switched on would have recorded every call as `unmeasured` and — with
         # `fail_closed_on_unmeasured_usage` — closed the lane on the first one.
-        collect = bool(context.get("collect_usage"))
+        # None, not False, when this run has no ledger. `run_provider` reads
+        # None as "use the ambient default" and False as "definitely not", and
+        # passing an explicit False overrode `providers.run.recording(
+        # collect_usage=True)` -- which is how an evaluation harness asks for
+        # tokens without switching a quota ledger on.
+        #
+        # The cost of getting this wrong was asymmetric and therefore invisible
+        # until it was tabulated. claude reports usage on the path dobby
+        # already invokes, so it kept being counted; codex needs `exec --json`,
+        # which is behind this flag, so it vanished. A three-arm SWE-bench run
+        # produced a dobby column of 1,122,506 tokens against solo columns of
+        # 6.7M and 3.5M, and the true figure is unknown and larger. The harness
+        # said so itself -- `3 of 5 call(s) reported no usage; every total here
+        # is a FLOOR` -- which is the only reason the comparison was not
+        # published as a win. See reports/RESULTS_three_arm_regression.md.
+        requested = bool(context.get("collect_usage"))
         result = run_provider(
             spec, prompt, model=node.config.get("model"),
-            cwd=root, extra=grant, collect_usage=collect,
+            cwd=root, extra=grant,
+            collect_usage=True if requested else None,
             timeout_s=node.config.get("timeout_s"))
         meta = {"provider": provider_id, "model": node.config.get("model"),
                 "duration_s": result.duration_s, "prompt_chars": len(prompt)}
-        if collect:
+        if requested or result.usage is not None:
             # None when the envelope did not parse. Carried as None rather than
             # as {} — the ledger treats "did not parse" as unmeasured and not
             # as zero, and flattening the two here would take that decision
-            # away from it.
+            # away from it. `requested` on its own is not enough to gate this:
+            # a recorder can have collected usage that nobody on this node
+            # asked for, and dropping it here would put the hole back.
             meta["usage"] = result.usage
         if substituted:
             # Recorded, never silent. A run whose answer came from a different
