@@ -44,11 +44,25 @@ RUN_STATES = (QUEUED, RUNNING, WAITING, RECOVERING, SUCCEEDED, FAILED,
               CANCELLED)
 RUN_TERMINAL = {SUCCEEDED, FAILED, CANCELLED}
 
+#: A run that has STARTED may reach any terminal state from wherever it is.
+#:
+#: `WAITING` and `RECOVERING` used to be able to reach only `RUNNING` first,
+#: which is correct for one process and wrong for the several the lease design
+#: exists to support. Measured: four processes driving one run, and two of them
+#: died with `illegal run transition WAITING -> SUCCEEDED` -- one worker had
+#: parked the run while another was still finishing the last node, and the one
+#: that finished was refused permission to say so.
+#:
+#: `QUEUED` is deliberately NOT widened. Queued means nothing has run, so
+#: reaching `SUCCEEDED` from there would be a claim of work nobody did. The
+#: guarantee that a run only succeeds when its nodes passed their gates lives in
+#: `promotable` and `_finalize`, not here; this table's job is to refuse a
+#: sequence that could not have happened.
 _RUN_TRANSITIONS = {
     QUEUED: {RUNNING, CANCELLED},
     RUNNING: {WAITING, RECOVERING, SUCCEEDED, FAILED, CANCELLED},
-    WAITING: {RUNNING, CANCELLED, FAILED},
-    RECOVERING: {RUNNING, FAILED, CANCELLED},
+    WAITING: {RUNNING, RECOVERING, SUCCEEDED, FAILED, CANCELLED},
+    RECOVERING: {RUNNING, WAITING, SUCCEEDED, FAILED, CANCELLED},
     SUCCEEDED: set(),
     FAILED: set(),
     CANCELLED: set(),

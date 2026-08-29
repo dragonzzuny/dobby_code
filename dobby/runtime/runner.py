@@ -482,6 +482,10 @@ class Runner:
                    # about itself.
                    "isolated": self.placement_context.isolated,
                    "inputs": inputs,
+                   # Who actually produced each input, so a judge excludes the
+                   # provider that did the work rather than the one the
+                   # compiler guessed would.
+                   "input_authors": self._input_authors(run_id, node),
                    # Only when a ledger will read it: the flag changes the CLI's
                    # argv, and collecting what nobody settles is a cost with no
                    # reader.
@@ -746,6 +750,46 @@ class Runner:
                                    node.contract.effect_version):
             return None, key
         return self.store.effect_status(key), key
+
+    def _input_authors(self, run_id: str, node) -> dict:
+        """`{dependency node id: the provider that actually produced it}`.
+
+        Read from the promoted artifact, because the only place the answer is
+        true is after the fact. The compiler writes the critic's `exclude` from
+        the provider it was HANDED, and `_place` re-decides per node and
+        rewrites `node.config["provider"]`, so the two disagree the moment
+        placement moves anything. Measured on a compiled work order:
+
+            compile-time argument   claude
+            critic exclude          ["claude"]
+            implement-1 actually    codex
+            resolve_role("critic", exclude={"claude"})   ->   codex
+
+        The author grading its own work, which `AGENTS.md` names as the failure
+        `swarm/diversity.py` exists to catch, reached by a rule that was
+        enforced against the wrong name.
+
+        A node with no provider -- a command worker, a static one -- contributes
+        nothing, which is correct: there is no author to exclude.
+        """
+        authors: dict = {}
+        for dep in node.depends_on:
+            rows = self.store.artifacts(run_id, node_id=dep, state=PROMOTED)
+            if not rows:
+                continue
+            path = rows[-1].get("path")
+            if not path or not os.path.exists(path):
+                continue
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    blob = json.load(fh)
+            except (OSError, ValueError):
+                continue
+            meta = ((blob.get("evidence") or {}).get("meta") or {})
+            provider = meta.get("provider")
+            if isinstance(provider, str) and provider:
+                authors[dep] = provider
+        return authors
 
     def _promoted_inputs(self, run_id: str, task_graph: "G.TaskGraph",
                          node) -> dict:

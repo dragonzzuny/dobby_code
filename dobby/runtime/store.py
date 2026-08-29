@@ -523,6 +523,17 @@ class RunStore:
                                (run_id,)).fetchone()
             if row is None:
                 raise StoreError(f"no run {run_id!r}")
+            if row["state"] == to_state:
+                # Reporting the same fact twice is not a transition. With one
+                # process this never happened; with the several the lease design
+                # supports it happens constantly, and it used to raise
+                # `illegal run transition WAITING -> WAITING` -- two workers
+                # agreeing that the run is parked, and one of them dying for it.
+                #
+                # No event either. An event log is what a resume replays, and a
+                # row saying WAITING -> WAITING records a change that did not
+                # occur.
+                return
             G.check_run_transition(row["state"], to_state)
             conn.execute("UPDATE runs SET state=?, updated=? WHERE run_id=?",
                          (to_state, time.strftime("%Y-%m-%dT%H:%M:%S"), run_id))

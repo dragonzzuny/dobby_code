@@ -533,7 +533,26 @@ class AdvisoryJudgeWorker(WorkerAdapter):
                 f"node {node.node_id!r} judges {source!r}, which produced no "
                 f"promoted artifact — there is nothing to grade"))
 
+        # The compiler's guess, UNIONED with who actually produced the thing
+        # being graded. `exclude` is written when the graph is compiled, from
+        # the provider the compiler was handed; `_place` re-decides per node and
+        # may hand the work to somebody else entirely. Measured: a work order
+        # compiled with `claude` ran its implement node on `codex`, so the
+        # critic excluded `claude` and `resolve_role("critic", exclude=
+        # {"claude"})` returned `codex` -- the author grading itself, past a
+        # rule that was being enforced against the wrong name.
+        #
+        # Union rather than replace: the compile-time entry may name a provider
+        # that must not judge for a reason no artifact records.
         exclude = set(node.config.get("exclude") or ())
+        authors = context.get("input_authors") or {}
+        if source:
+            author = authors.get(source)
+            if author:
+                exclude.add(author)
+        else:
+            exclude.update(v for v in authors.values() if v)
+
         record = judge_criterion(
             criterion,
             json.dumps(artifact, ensure_ascii=False, indent=1, default=str),
@@ -554,7 +573,11 @@ class AdvisoryJudgeWorker(WorkerAdapter):
         return WorkerResult(True, payload=record,
                             raw=json.dumps(record, ensure_ascii=False),
                             meta={"advisory": True,
-                                  "judge_provider": record.get("judge_provider")})
+                                  "judge_provider": record.get("judge_provider"),
+                                  # What was actually kept out, so a report can
+                                  # show the independence instead of asserting
+                                  # it.
+                                  "judge_excluded": sorted(exclude)})
 
 
 class StaticWorker(WorkerAdapter):
