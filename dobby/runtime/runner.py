@@ -486,6 +486,8 @@ class Runner:
                    # provider that did the work rather than the one the
                    # compiler guessed would.
                    "input_authors": self._input_authors(run_id, node),
+                   # Where the operator's declared model table lives.
+                   "data_dir": self.data_dir,
                    # Only when a ledger will read it: the flag changes the CLI's
                    # argv, and collecting what nobody settles is a cost with no
                    # reader.

@@ -240,6 +240,9 @@ class CommandWorker(WorkerAdapter):
             raw=stdout[-4000:], meta=meta)
 
 
+from ..providers import models  # noqa: E402
+
+
 class ProviderWorker(WorkerAdapter):
     """Drive one agent CLI through the existing provider layer.
 
@@ -355,12 +358,29 @@ class ProviderWorker(WorkerAdapter):
         # is a FLOOR` -- which is the only reason the comparison was not
         # published as a win. See reports/RESULTS_three_arm_regression.md.
         requested = bool(context.get("collect_usage"))
+        # An explicit `model` on the node wins. Otherwise the operator's
+        # declared table decides, and with no table nothing is passed and the
+        # provider's own default stands -- which is what every run did before
+        # this existed. Measured on claude: the same prompt at `sonnet` cost
+        # $0.1203 against $0.2997 unset, for a lookup that reasoned about
+        # nothing. See `providers/models.py`.
+        pinned = node.config.get("model") or models.model_for(
+            provider_id, node.config.get("provider_role") or node.kind,
+            table=models.load_table(context.get("data_dir") or ""))
         result = run_provider(
-            spec, prompt, model=node.config.get("model"),
+            spec, prompt, model=pinned or None,
             cwd=root, extra=grant,
             collect_usage=True if requested else None,
             timeout_s=node.config.get("timeout_s"))
-        meta = {"provider": provider_id, "model": node.config.get("model"),
+        answered = ((result.usage or {}).get("model") or "")
+        meta = {"provider": provider_id, "model": pinned or None,
+                # What the PROVIDER said answered, kept beside what was asked
+                # for rather than merged with it. Measured: `--model haiku` is
+                # answered by `claude-sonnet-5`, twice, with no error -- a pin
+                # taken for cost that quietly was not applied. `None` means the
+                # CLI named nothing, which is not the same as agreement.
+                "model_reported": answered or None,
+                "model_honoured": models.honoured(pinned, answered),
                 "duration_s": result.duration_s, "prompt_chars": len(prompt)}
         if requested or result.usage is not None:
             # None when the envelope did not parse. Carried as None rather than
