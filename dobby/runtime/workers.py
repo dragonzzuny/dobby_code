@@ -382,6 +382,18 @@ class ProviderWorker(WorkerAdapter):
                 "model_reported": answered or None,
                 "model_honoured": models.honoured(pinned, answered),
                 "duration_s": result.duration_s, "prompt_chars": len(prompt)}
+
+        if models.strict() and meta["model_honoured"] is False:
+            # NON_RETRYABLE and not CAPACITY: the policy table would send
+            # RETRY_ELSEWHERE somewhere a `claude` model id cannot be honoured
+            # either. This is a declaration that this machine cannot satisfy,
+            # and the scheduler has no move that fixes a declaration.
+            return WorkerResult(
+                False, raw=result.text or "",
+                failure=Failure("NON_RETRYABLE",
+                                models.refusal(pinned, answered),
+                                {"pinned": pinned, "reported": answered}),
+                meta=meta)
         if requested or result.usage is not None:
             # None when the envelope did not parse. Carried as None rather than
             # as {} — the ledger treats "did not parse" as unmeasured and not

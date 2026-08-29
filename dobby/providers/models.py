@@ -138,3 +138,41 @@ def honoured(pinned: str, reported: str) -> bool | None:
 
 def _normalise(name: str) -> str:
     return "".join(ch for ch in str(name).lower() if ch.isalnum())
+
+
+#: Whether a pin that was NOT honoured should stop the node.
+#:
+#: Off by default. Turning it on everywhere would change what an existing run
+#: costs and how it fails, and a substitution is a billing surprise rather than
+#: a wrong answer -- the model that replied still replied.
+#:
+#: What it can and cannot catch, stated because the gap is real. It catches a
+#: provider that NAMES a model different from the one asked for, which is the
+#: measured case: `--model haiku` answered by `claude-sonnet-5`, twice. It
+#: cannot catch a provider that names nothing, and `codex` names nothing. So
+#: `None` is never a failure here; treating "we cannot tell" as a violation
+#: would turn this flag into "codex is banned", which is a different feature
+#: nobody asked for, and it would say so in the wrong words.
+STRICT_ENV = "DOBBY_REQUIRE_PINNED_MODEL"
+
+
+def strict() -> bool:
+    raw = (os.environ.get(STRICT_ENV) or "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def refusal(pinned: str, reported: str) -> str:
+    """Why a substituted model is not something to retry into.
+
+    Retrying the same provider reproduces it -- measured twice on the same
+    alias -- and moving to another provider cannot help, because a model id is
+    provider-specific and `sonnet` means nothing to codex. The configuration
+    cannot be satisfied here, so the fix is in the declaration and not in the
+    scheduler.
+    """
+    return (f"pinned model {pinned!r} but {reported!r} answered. Retrying does "
+            f"not change this: the same alias resolves the same way, and a "
+            f"model id belongs to one provider. Declare the id the provider "
+            f"actually resolves -- measured, {STRICT_ENV} was set and "
+            f"'claude-haiku-4-5-20251001' was honoured where 'haiku' was not "
+            f"-- or unset {STRICT_ENV} to accept the substitution.")

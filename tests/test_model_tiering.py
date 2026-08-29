@@ -238,5 +238,130 @@ class ThroughTheWorker(unittest.TestCase):
         self.assertIsNone(meta["model_honoured"])
 
 
+class StrictMode(unittest.TestCase):
+    """`DOBBY_REQUIRE_PINNED_MODEL`: a substitution stops the node.
+
+    Off by default, because turning it on everywhere would change what an
+    existing run costs and how it fails, and a substitution is a billing
+    surprise rather than a wrong answer -- the model that replied still
+    replied.
+
+    NON_RETRYABLE and not CAPACITY. `DEFAULT_POLICY[CAPACITY]` is
+    RETRY_ELSEWHERE, which would send a `claude` model id somewhere it cannot
+    be honoured either; and retrying the SAME provider reproduces the
+    substitution, measured twice on the same alias. The declaration is what
+    cannot be satisfied, and the scheduler has no move that fixes a
+    declaration.
+
+    What it cannot catch, stated because the gap is real: a provider that names
+    no model at all. `codex` names none, so `None` is never a failure here.
+    Treating "we cannot tell" as a violation would make this flag mean "codex
+    is banned", which is a different feature and would say so in the wrong
+    words.
+    """
+
+    def setUp(self):
+        from dobby.providers.models import STRICT_ENV
+
+        self.env = STRICT_ENV
+        self.original = os.environ.get(self.env)
+        self.addCleanup(self.restore)
+
+    def restore(self):
+        if self.original is None:
+            os.environ.pop(self.env, None)
+        else:
+            os.environ[self.env] = self.original
+
+    def test_it_is_off_unless_asked_for(self):
+        from dobby.providers.models import strict
+
+        os.environ.pop(self.env, None)
+        self.assertFalse(strict())
+
+    def test_the_usual_spellings_turn_it_on(self):
+        from dobby.providers.models import strict
+
+        for raw in ("1", "true", "TRUE", "yes", "on"):
+            os.environ[self.env] = raw
+            self.assertTrue(strict(), raw)
+
+    def test_anything_else_leaves_it_off(self):
+        from dobby.providers.models import strict
+
+        for raw in ("0", "false", "no", "", "maybe"):
+            os.environ[self.env] = raw
+            self.assertFalse(strict(), raw)
+
+    def test_the_refusal_names_both_models_and_a_way_out(self):
+        from dobby.providers.models import refusal
+
+        text = refusal("haiku", "claude-sonnet-5")
+        self.assertIn("haiku", text)
+        self.assertIn("claude-sonnet-5", text)
+        self.assertIn("claude-haiku-4-5-20251001", text)
+
+
+class StrictModeThroughTheWorker(ThroughTheWorker):
+    def setUp(self):
+        super().setUp()
+        from dobby.providers.models import STRICT_ENV
+
+        self.env = STRICT_ENV
+        self.original = os.environ.get(self.env)
+        os.environ[self.env] = "1"
+        self.addCleanup(self.restore)
+
+    def restore(self):
+        if self.original is None:
+            os.environ.pop(self.env, None)
+        else:
+            os.environ[self.env] = self.original
+
+    def test_a_substitution_fails_the_node(self):
+        self.declare({"claude": {"cheap": "haiku"}})
+        from dobby.providers import run as run_module
+        from dobby.providers.run import ProviderResult
+        from dobby.runtime import graph as G
+        from dobby.runtime.contracts import ArtifactContract
+        from dobby.runtime.workers import ProviderWorker
+
+        def stub(spec, prompt, **kw):
+            return ProviderResult(provider=spec.id, ok=True, text="{}",
+                                  meta={}, duration_s=0.1,
+                                  usage={"model": "claude-sonnet-5"})
+
+        node = G.TaskNode(node_id="n", kind="scout", worker="provider",
+                          instruction="i",
+                          contract=ArtifactContract(
+                              output_schema={"type": "object"}),
+                          config={"provider": "claude",
+                                  "provider_role": "scout", "schema": None})
+        original = run_module.run_provider
+        run_module.run_provider = stub
+        try:
+            result = ProviderWorker().run(node, {
+                "repo": self.tmp.name, "attempt": 0, "isolated": False,
+                "inputs": {}, "run_id": "r", "data_dir": self.data,
+                "collect_usage": True})
+        finally:
+            run_module.run_provider = original
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.failure.failure_class, "NON_RETRYABLE")
+        self.assertIs(result.meta["model_honoured"], False)
+
+    def test_an_honoured_pin_still_passes(self):
+        self.declare({"claude": {"cheap": "sonnet"}})
+        _, meta = self.call(role="scout", answered="claude-sonnet-5")
+        self.assertIs(meta["model_honoured"], True)
+
+    def test_a_provider_naming_nothing_is_not_failed(self):
+        """Otherwise the flag means "codex is banned"."""
+        self.declare({"claude": {"cheap": "sonnet"}})
+        _, meta = self.call(role="scout", answered=None)
+        self.assertIsNone(meta["model_honoured"])
+
+
 if __name__ == "__main__":
     unittest.main()

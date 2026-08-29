@@ -169,6 +169,115 @@ class OneRunManyProcesses(MultiProcessCase):
         self.assertEqual(set(winner["attempts"].values()), {1})
 
 
+class TheLeaseIsNotStealable(MultiProcessCase):
+    """A live worker's lease must survive another worker's bookkeeping.
+
+    Found by running this file under load, where it failed four times in six.
+    `_execute_node` promoted a node from PENDING to READY out of its OWN copy
+    of the graph, and `LEASED -> READY` is a legal transition because that is
+    how a lost lease is recovered. The event log of a failing round:
+
+        PENDING -> READY   "dependencies satisfied"   (worker A)
+        node_leased        A
+        attempt_started
+        LEASED  -> READY   "dependencies satisfied"   (worker B, stale memory)
+        node_leased        B
+        attempt_started
+        LEASED  -> RUNNING "attempt 2"
+
+    B's node still said PENDING, so B wrote READY over a lease A was holding
+    and took it. Both ran the node; `n0` ended with two promoted artifacts, and
+    the invariant that caught it was `_promoted_inputs` refusing a second
+    promotion one layer downstream -- correctly, and far too late to prevent
+    the second provider call from being paid for.
+
+    `set_node_state(expect=...)` makes that promotion a compare-and-set in the
+    same transaction as the read, so a worker that loses the race says so
+    instead of overwriting somebody. Measured after: ten rounds of three
+    processes, zero crashes, zero repeated attempts, one SUCCEEDED per round.
+    """
+
+    ROUNDS = 3
+
+    def test_no_node_is_ever_promoted_twice(self):
+        """The invariant the theft broke, checked at the store."""
+        from dobby.runtime.store import RunStore
+
+        for _ in range(self.ROUNDS):
+            self.setUp()
+            run_id = self.seed()
+            self.race(run_id)
+            store = RunStore(self.data)
+            for node_id in (f"n{i}" for i in range(self.NODES)):
+                promoted = store.artifacts(run_id, node_id=node_id,
+                                           state="PROMOTED")
+                self.assertLessEqual(
+                    len(promoted), 1,
+                    f"{node_id} promoted {len(promoted)} artifacts: "
+                    f"{[p['artifact_id'] for p in promoted]}")
+
+    def test_a_lease_is_never_written_over_by_a_bookkeeping_move(self):
+        """`LEASED -> READY` for `dependencies satisfied` is the theft. Lease
+        RECOVERY may still do it, and says a different reason."""
+        from dobby.runtime.store import RunStore
+
+        for _ in range(self.ROUNDS):
+            self.setUp()
+            run_id = self.seed()
+            self.race(run_id)
+            store = RunStore(self.data)
+            stolen = [e for e in store.events(run_id)
+                      if e["kind"] == "node_state"
+                      and e["payload"].get("from") == "LEASED"
+                      and e["payload"].get("to") == "READY"
+                      and "dependencies" in (e["payload"].get("reason") or "")]
+            self.assertEqual(stolen, [], "a live lease was overwritten")
+
+
+class CompareAndSet(unittest.TestCase):
+    """`set_node_state(expect=...)` on its own."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        from dobby.runtime.store import RunStore
+
+        self.store = RunStore(os.path.join(self.tmp, "d"))
+        node = G.TaskNode(node_id="n", kind="plan", worker="static",
+                          instruction="i", config={"payload": {}})
+        self.run_id = self.store.create_run("t", G.TaskGraph([node]))
+
+    def state(self):
+        return self.store.load_run(self.run_id)["graph"].nodes["n"].state
+
+    def test_it_moves_when_the_expectation_holds(self):
+        self.assertTrue(self.store.set_node_state(
+            self.run_id, "n", G.READY, expect=G.PENDING))
+        self.assertEqual(self.state(), G.READY)
+
+    def test_it_refuses_and_writes_nothing_when_it_does_not(self):
+        self.store.set_node_state(self.run_id, "n", G.READY, expect=G.PENDING)
+        self.store.lease_node(self.run_id, "n", holder="somebody/1")
+        self.assertEqual(self.state(), G.LEASED)
+
+        before = len(self.store.events(self.run_id))
+        self.assertFalse(self.store.set_node_state(
+            self.run_id, "n", G.READY, expect=G.PENDING))
+        self.assertEqual(self.state(), G.LEASED, "the lease was overwritten")
+        self.assertEqual(len(self.store.events(self.run_id)), before,
+                         "a refused write must not leave an event")
+
+    def test_without_an_expectation_it_behaves_as_before(self):
+        self.assertTrue(self.store.set_node_state(self.run_id, "n", G.READY))
+        self.assertEqual(self.state(), G.READY)
+
+    def test_a_self_transition_reports_success_and_writes_no_event(self):
+        self.store.set_node_state(self.run_id, "n", G.READY)
+        before = len(self.store.events(self.run_id))
+        self.assertTrue(self.store.set_node_state(self.run_id, "n", G.READY))
+        self.assertEqual(len(self.store.events(self.run_id)), before)
+
+
 class TheRulesThatMadeItPossible(unittest.TestCase):
     """Stated separately, because each is a decision and not a detail."""
 

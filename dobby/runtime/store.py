@@ -550,15 +550,54 @@ class RunStore:
 
     # -- nodes -------------------------------------------------------------
     def set_node_state(self, run_id: str, node_id: str, to_state: str, *,
-                       reason: str = "", enforce: bool = True) -> None:
+                       reason: str = "", enforce: bool = True,
+                       expect: str | None = None) -> bool:
+        """Move a node. Returns whether this caller is the one that moved it.
+
+        `expect` makes it a compare-and-set, and it exists because of a measured
+        lease theft. `_execute_node` promoted a node from PENDING to READY out
+        of its OWN copy of the graph, and `LEASED -> READY` is legal because
+        that is how a lost lease is recovered. Two processes, three nodes:
+
+            PENDING -> READY   "dependencies satisfied"   (worker A)
+            node_leased        A
+            attempt_started
+            LEASED  -> READY   "dependencies satisfied"   (worker B, stale)
+            node_leased        B
+            attempt_started
+
+        B's in-memory node still said PENDING, so B wrote READY over a lease a
+        LIVE worker was holding, took it, and both ran the node. Two promoted
+        artifacts for one node, which `_promoted_inputs` then refused as a
+        broken invariant -- correctly, and one layer too late.
+
+        With `expect`, the write happens only if the stored state is still what
+        the caller thought, in the same transaction as the read. A caller that
+        loses says so by getting `False` instead of overwriting somebody.
+        """
         if to_state not in G.NODE_STATES:
             raise StoreError(f"unknown node state {to_state!r}")
         with self._tx() as conn:
             row = conn.execute(
                 "SELECT state FROM nodes WHERE run_id=? AND node_id=?",
                 (run_id, node_id)).fetchone()
+            if row is not None and expect is not None                     and row["state"] != expect:
+                return False
             if row is None:
                 raise StoreError(f"no node {node_id!r} in run {run_id!r}")
+            if row["state"] == to_state:
+                # The same fact reported twice, exactly as at the run level.
+                # Two workers each holding their own copy of the graph both see
+                # a node PENDING and both move it to READY; the second used to
+                # die with `illegal node transition READY -> READY`. Measured:
+                # three processes on one run, two dead, four times in six.
+                #
+                # No event, because an event log is what a resume replays and a
+                # row saying READY -> READY records a change that did not
+                # happen. The lease, not this, is what stops two workers doing
+                # the WORK -- and it still does: `lease_node` is one UPDATE
+                # with the expected state in its WHERE clause.
+                return True
             if enforce:
                 G.check_node_transition(row["state"], to_state)
             elif to_state not in G.RECOVERY_DESTINATIONS:
@@ -590,6 +629,7 @@ class RunStore:
             self._append_event(conn, run_id, "node_state",
                                {"from": row["state"], "to": to_state,
                                 "reason": reason}, node_id=node_id)
+            return True
 
     def lease_node(self, run_id: str, node_id: str, *, holder: str,
                    ttl_s: float = DEFAULT_LEASE_TTL_S) -> bool:

@@ -382,8 +382,21 @@ class Runner:
     def _execute_node(self, run_id: str, task_graph: "G.TaskGraph", node,
                       budget: RunBudget, tracer) -> None:
         if node.state == G.PENDING:
-            self._set_node(run_id, task_graph, node, G.READY,
-                           reason="dependencies satisfied")
+            # Compare-and-set, because this decision comes from THIS process's
+            # copy of the graph. `LEASED -> READY` is legal -- it is how a lost
+            # lease is recovered -- so a worker whose memory still said PENDING
+            # used to write READY over a lease a live worker was holding, take
+            # it, and run the node a second time. Measured: two promoted
+            # artifacts for one node.
+            if not self.store.set_node_state(
+                    run_id, node.node_id, G.READY,
+                    reason="dependencies satisfied", expect=G.PENDING):
+                node.state = self.store.load_run(run_id)["graph"].nodes[
+                    node.node_id].state
+                with self._budget_lock:
+                    budget.refund(node)
+                return
+            node.state = G.READY
         ttl = float(node.config.get("timeout_s") or DEFAULT_NODE_TIMEOUT_S)
         if not self.store.lease_node(run_id, node.node_id,
                                      holder=worker_identity(),

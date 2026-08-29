@@ -517,6 +517,8 @@ def choose_graph(store, project_id: str, item, *, manifest, make_graph,
             return make_graph(item.outcome or item.title, provider=provider,
                               execute_command=execute_command,
                               acceptance_checks=list(item.acceptance_checks),
+                              checks_at=getattr(item, "checks_at",
+                                                V_EXISTENCE),
                               static=static), f"{chosen.value}: {why}"
         # COMPILED_SERIAL and AGY_ISOLATED_DELEGATE both want the plan compiled,
         # so the flag stops being a flag: the class turns it on. This is PR 6 —
@@ -527,6 +529,7 @@ def choose_graph(store, project_id: str, item, *, manifest, make_graph,
         return make_graph(item.outcome or item.title, provider=provider,
                           execute_command=execute_command,
                           acceptance_checks=list(item.acceptance_checks),
+                          checks_at=getattr(item, "checks_at", V_EXISTENCE),
                           static=static), GENERIC
 
     raw = plan_for(store, project_id, item)
@@ -534,6 +537,7 @@ def choose_graph(store, project_id: str, item, *, manifest, make_graph,
         return make_graph(item.outcome or item.title, provider=provider,
                           execute_command=execute_command,
                           acceptance_checks=list(item.acceptance_checks),
+                          checks_at=getattr(item, "checks_at", V_EXISTENCE),
                           static=static), GENERIC
 
     plan = PlanSpec(**{k: (tuple(v) if isinstance(v, list) else v)
@@ -550,6 +554,7 @@ def choose_graph(store, project_id: str, item, *, manifest, make_graph,
         return make_graph(item.outcome or item.title, provider=provider,
                           execute_command=execute_command,
                           acceptance_checks=list(item.acceptance_checks),
+                          checks_at=getattr(item, "checks_at", V_EXISTENCE),
                           static=static), GENERIC
     try:
         graph = compile_graph(plan, item=item, manifest=manifest,
@@ -559,5 +564,6 @@ def choose_graph(store, project_id: str, item, *, manifest, make_graph,
         return make_graph(item.outcome or item.title, provider=provider,
                           execute_command=execute_command,
                           acceptance_checks=list(item.acceptance_checks),
+                          checks_at=getattr(item, "checks_at", V_EXISTENCE),
                           static=static), f"{GENERIC}: {exc}"
     return graph, f"plan:{plan.plan_id}"

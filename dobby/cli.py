@@ -1483,6 +1483,47 @@ def cmd_prompt(args):
     _out(out)
 
 
+def _levels_of_graph(graph, floor, writes, level_name):
+    """Rows for any graph, plus the writing nodes below `floor`.
+
+    Split out of `_runtime_levels` when the command learned to read a real
+    project work order. The default graph and a compiled plan have the same
+    question asked of them -- what could each step prove -- and answering it
+    twice in two places is how the two answers start to differ.
+    """
+    downstream = _levels_downstream_checks(graph)
+    rows, below = [], []
+    for node_id in graph.topological_order():
+        node = graph.nodes[node_id]
+        contract = node.contract
+        own = contract.declared_level
+        checked_by = downstream.get(node_id, {})
+        effective = max([own, *checked_by.values()])
+        changes = contract.side_effect_class in writes
+        row = {"node": node_id, "kind": node.kind,
+               "changes_things": changes,
+               "side_effect_class": contract.side_effect_class,
+               "verifiable_at": level_name(own),
+               "effective_at": level_name(effective),
+               "checked_downstream_by": {n: level_name(v)
+                                         for n, v in checked_by.items()},
+               "from": _levels_because(contract)}
+        rows.append(row)
+        if floor is not None and changes and effective < floor:
+            below.append(row)
+    return rows, below
+
+
+def _levels_note() -> str:
+    return ("`verifiable_at` is what this contract declares on its own; "
+            "`effective_at` adds the acceptance checks of nodes that depend on "
+            "it. Both are the STRONGEST rung reachable if every check passes, "
+            "not a result. A shell check counts as EXISTENCE unless its "
+            "contract says otherwise with checks_at, because a command line is "
+            "an opaque string and guessing at its strength is the failure this "
+            "ladder is for.")
+
+
 def _runtime_levels(args, repo, default_graph) -> int:
     """What each step of a graph could prove, BEFORE any provider is paid.
 
@@ -1538,27 +1579,7 @@ def _runtime_levels(args, repo, default_graph) -> int:
         _out({"error": str(exc)})
         raise SystemExit(2)
 
-    downstream = _levels_downstream_checks(graph)
-
-    rows, below = [], []
-    for node_id in graph.topological_order():
-        node = graph.nodes[node_id]
-        contract = node.contract
-        own = contract.declared_level
-        checked_by = downstream.get(node_id, {})
-        effective = max([own, *checked_by.values()])
-        changes = contract.side_effect_class in writes
-        row = {"node": node_id, "kind": node.kind,
-               "changes_things": changes,
-               "side_effect_class": contract.side_effect_class,
-               "verifiable_at": level_name(own),
-               "effective_at": level_name(effective),
-               "checked_downstream_by": {n: level_name(v)
-                                         for n, v in checked_by.items()},
-               "from": _levels_because(contract)}
-        rows.append(row)
-        if floor is not None and changes and effective < floor:
-            below.append(row)
+    rows, below = _levels_of_graph(graph, floor, writes, level_name)
 
     _out({"graph": rows,
           "required_of_writing_nodes": level_name(floor) if floor else None,
@@ -1760,6 +1781,77 @@ def cmd_runtime(args):
     _out(payload)
 
 
+def _project_levels(args, repo, data, ProjectStore) -> None:
+    """What each OPEN item's real graph could prove, before it is run.
+
+    `dobby runtime levels` grades the default four-node shape. This grades what
+    a project would actually execute: `workorder.choose_graph` picks the
+    compiled plan when there is one and the generic shape otherwise, and the
+    answer differs between them -- a compiled plan puts the writing in an
+    `implement` order with its own contract, and the fast path puts it
+    somewhere else again.
+
+    Grading the shape somebody will run, rather than one that resembles it, is
+    the whole reason this exists. On `django__django-11138` the arm's single
+    acceptance check asked whether the changed files still parse; the run
+    reported "every acceptance check passed" and four `timezones` tests were
+    broken. That was decided in the ITEM, before anything was paid for.
+    """
+    from .project import workorder as W
+    from .project.models import ProjectManifest, WorkItem
+    from .runtime.contracts import (EXTERNAL_IRREVERSIBLE, EXTERNAL_REVERSIBLE,
+                                    LOCAL_WRITE, VERIFICATION_LEVELS,
+                                    level_name)
+    from .runtime.runner import default_graph
+
+    writes = {LOCAL_WRITE, EXTERNAL_REVERSIBLE, EXTERNAL_IRREVERSIBLE}
+    by_name = {name: value for value, name in VERIFICATION_LEVELS.items()}
+    floor = None
+    if args.require:
+        floor = by_name.get(str(args.require).strip().upper())
+        if floor is None:
+            _out({"error": f"unknown level {args.require!r} for --require",
+                  "expected": sorted(by_name)})
+            raise SystemExit(2)
+
+    store = ProjectStore(data)
+    project = store.load_project(args.project)
+    manifest = project["manifest"]
+    if isinstance(manifest, dict):
+        manifest = ProjectManifest(**manifest)
+    portfolio = project["portfolio"]
+    items = list(getattr(portfolio, "items", portfolio) or [])
+    items = [i if isinstance(i, WorkItem) else WorkItem.from_dict(i)
+             for i in items]
+    open_items = [i for i in items if i.state not in ("DONE", "CANCELLED")]
+
+    reported, below_any = [], []
+    for item in open_items:
+        graph, shape = W.choose_graph(
+            store, project["project_id"], item, manifest=manifest,
+            make_graph=default_graph, static=True,
+            policy=args.policy or "", compile_plans=False)
+        rows, below = _levels_of_graph(graph, floor, writes, level_name)
+        reported.append({
+            "work_item_id": item.work_item_id,
+            "title": item.title,
+            "shape": shape,
+            "acceptance_checks": len(item.acceptance_checks),
+            "item_checks_at": level_name(getattr(item, "checks_at", 1)),
+            "graph": rows,
+            "below_the_floor": [r["node"] for r in below]})
+        below_any.extend((item.work_item_id, r["node"]) for r in below)
+
+    _out({"project_id": project["project_id"],
+          "items": reported,
+          "required_of_writing_nodes": level_name(floor) if floor else None,
+          "below_the_floor": [{"work_item_id": w, "node": n}
+                              for w, n in below_any],
+          "note": _levels_note()})
+    if below_any:
+        raise SystemExit(1)
+
+
 def cmd_project(args):
     """The unit above a run: a portfolio that survives the session working it.
 
@@ -1776,6 +1868,9 @@ def cmd_project(args):
 
     repo = _repo(args)
     data = _data(args)
+
+    if args.action == "levels":
+        return _project_levels(args, repo, data, ProjectStore)
 
     if args.action == "init":
         specs = _read_json(args.items) if args.items else []
@@ -2534,7 +2629,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("action",
                    choices=["init", "status", "list", "next", "attach-run",
                             "open", "close", "events", "run", "plan",
-                            "check", "refine", "scorecard", "review"])
+                            "check", "refine", "scorecard", "review",
+                            "levels"])
     p.add_argument("work_item", nargs="?", default=None,
                    help="work item id for attach-run; session id for close; "
                         "the topic for plan")
@@ -2577,6 +2673,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "pinned planner, implementer, critic and report to one "
                         "CLI, which made the role policy decorative and made "
                         "the critic the author. Still accepted; warns")
+    p.add_argument("--require", default=None, metavar="LEVEL",
+                   help="levels: the rung every WRITING node must reach "
+                        "(EXISTENCE|STRUCTURE|CONTRACT|BEHAVIOR). Exits 1 when "
+                        "one cannot, so this can be an acceptance check")
     p.add_argument("--override-provider", default=None,
                    help="run: force one provider, for reproducing a run or an "
                         "incident. It may NOT bypass isolation or a quota — an "

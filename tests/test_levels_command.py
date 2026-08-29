@@ -215,5 +215,137 @@ class TheLadderItReads(unittest.TestCase):
         self.assertEqual(level_name(contract.declared_level), "BEHAVIOR")
 
 
+class ARealProjectWorkOrder(unittest.TestCase):
+    """`dobby project levels`: the graph that will actually run.
+
+    `runtime levels` grades the default four-node shape. A project runs what
+    `workorder.choose_graph` picks -- the compiled plan when there is one, the
+    generic shape otherwise -- and the answer differs between them. Grading a
+    shape that resembles the one somebody will run is how a report ends up true
+    of a graph nobody executed.
+
+    Writing this found a defect of exactly the kind it is for. `WorkItem`
+    gained `checks_at` and it was threaded into `compile_graph`, which is the
+    PLANNED path. The five `make_graph` call sites that produce the GENERIC
+    shape passed `acceptance_checks` and not `checks_at`, so an item declaring
+    BEHAVIOR ran a verify node at EXISTENCE. The command reported
+    `item_checks_at=BEHAVIOR` beside `effective_at=EXISTENCE` on its first run,
+    which is the disagreement it exists to surface, and it surfaced its own.
+    """
+
+    ITEMS = {"items": [
+        {"work_item_id": "W1", "title": "weakly checked",
+         "outcome": "make the endpoint paginate",
+         "acceptance_checks": ["python -c \"import sys; sys.exit(0)\""]},
+        {"work_item_id": "W2", "title": "strongly checked",
+         "outcome": "support ?sort=",
+         "acceptance_checks": ["python -m unittest discover -s tests"],
+         "checks_at": 4}]}
+
+    @classmethod
+    def setUpClass(cls):
+        import shutil
+        import tempfile
+
+        cls.tmp = tempfile.mkdtemp()
+        cls.root = os.path.join(cls.tmp, "repo")
+        os.makedirs(cls.root)
+        with open(os.path.join(cls.root, "app.py"), "w",
+                  encoding="utf-8", newline="\n") as fh:
+            fh.write("x = 1\n")
+        env = dict(os.environ)
+        env["PYTHONIOENCODING"] = "utf-8"
+        for argv in (["git", "init", "-q", "."],
+                     ["git", "config", "user.email", "t@t"],
+                     ["git", "config", "user.name", "t"],
+                     ["git", "add", "-A"],
+                     ["git", "commit", "-qm", "init"]):
+            subprocess.run(argv, cwd=cls.root, capture_output=True, text=True,
+                           env=env, timeout=120)
+        cls.items_path = os.path.join(cls.tmp, "items.json")
+        with open(cls.items_path, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(cls.ITEMS, fh, ensure_ascii=False)
+        cls._cleanup = lambda: shutil.rmtree(cls.tmp, ignore_errors=True)
+
+        proc = subprocess.run(
+            [sys.executable, "-m", "dobby.cli", "project", "init",
+             "--repo", cls.root, "--root", cls.root,
+             "--items", cls.items_path, "--no-baseline",
+             "--smoke", 'python -c "import sys; sys.exit(0)"'],
+            cwd=REPO, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", env=env, timeout=600)
+        assert proc.returncode == 0, proc.stderr
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._cleanup()
+
+    def levels(self, *args):
+        env = dict(os.environ)
+        env["PYTHONIOENCODING"] = "utf-8"
+        proc = subprocess.run(
+            [sys.executable, "-m", "dobby.cli", "project", "levels",
+             "--repo", self.root, *args],
+            cwd=REPO, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", env=env, timeout=600)
+        try:
+            return proc.returncode, json.loads(proc.stdout)
+        except ValueError:
+            return proc.returncode, {"_stdout": proc.stdout,
+                                     "_stderr": proc.stderr}
+
+    def item(self, out, work_item_id):
+        return next(i for i in out["items"]
+                    if i["work_item_id"] == work_item_id)
+
+    def writing_node(self, item):
+        return next(r for r in item["graph"] if r["changes_things"])
+
+    def test_it_reports_every_open_item(self):
+        code, out = self.levels()
+        self.assertEqual(code, 0, out)
+        self.assertEqual({i["work_item_id"] for i in out["items"]},
+                         {"W1", "W2"})
+
+    def test_it_names_the_shape_that_would_run(self):
+        _, out = self.levels()
+        for item in out["items"]:
+            self.assertTrue(item["shape"], item)
+
+    def test_the_items_declaration_reaches_the_graph(self):
+        """The defect. `item_checks_at` and the graph used to disagree."""
+        _, out = self.levels()
+        strong = self.item(out, "W2")
+        self.assertEqual(strong["item_checks_at"], "BEHAVIOR")
+        self.assertEqual(self.writing_node(strong)["effective_at"], "BEHAVIOR")
+
+    def test_a_weakly_checked_item_stays_weak(self):
+        _, out = self.levels()
+        weak = self.item(out, "W1")
+        self.assertEqual(weak["item_checks_at"], "EXISTENCE")
+        self.assertEqual(self.writing_node(weak)["effective_at"], "EXISTENCE")
+
+    def test_the_floor_separates_the_two_items(self):
+        code, out = self.levels("--require", "BEHAVIOR")
+        self.assertEqual(code, 1, out)
+        self.assertEqual([b["work_item_id"] for b in out["below_the_floor"]],
+                         ["W1"])
+
+    def test_a_floor_both_reach_exits_zero(self):
+        code, out = self.levels("--require", "EXISTENCE")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["below_the_floor"], [])
+
+    def test_no_floor_never_fails(self):
+        code, out = self.levels()
+        self.assertEqual(code, 0)
+        self.assertIsNone(out["required_of_writing_nodes"])
+
+    def test_an_unknown_level_is_refused(self):
+        code, out = self.levels("--require", "VERY-STRONG")
+        self.assertEqual(code, 2, out)
+        self.assertIn("expected", out)
+
+
 if __name__ == "__main__":
     unittest.main()
