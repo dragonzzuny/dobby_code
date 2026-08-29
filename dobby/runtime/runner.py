@@ -192,6 +192,18 @@ class Runner:
         from the normal one is a route that only executes after a crash, which
         is when it is least affordable for it to be wrong.
         """
+        # One store connection for the whole run, closed in the session's own
+        # `finally`. Measured on a 16-node graph with a worker that returns
+        # instantly: 300 store transactions at 27.3 ms each opening their own
+        # connection, against 4.7 ms each on a held one. Outside a run nothing
+        # changes -- `_tx` still opens per call, so a `status` command still
+        # leaves no handle for `rmtree` to trip over.
+        with self.store.session():
+            return self._run(run_id, budget=budget, approvals=approvals,
+                             max_steps=max_steps)
+
+    def _run(self, run_id: str, *, budget: RunBudget | None = None,
+             approvals: set | None = None, max_steps: int = 100) -> RunResult:
         state = self.store.load_run(run_id)
         task_graph: G.TaskGraph = state["graph"]
         notes = self._reconcile(run_id, task_graph)

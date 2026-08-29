@@ -41,6 +41,7 @@ import json
 import os
 import socket
 import sqlite3
+import threading
 import time
 import uuid
 
@@ -224,17 +225,52 @@ def transaction(path: str):
     run that satisfied it — does not have to reach into a private method to get
     the same guarantees.
     """
-    conn = sqlite3.connect(path, timeout=30.0, isolation_level="IMMEDIATE")
-    conn.row_factory = sqlite3.Row
+    conn = connect(path)
     try:
-        # WAL so a reader (a status command) never blocks the running worker.
-        # Set outside the transaction: sqlite refuses a journal-mode change from
-        # inside one.
-        conn.execute("PRAGMA journal_mode=WAL")
         with conn:
             yield conn
     finally:
         conn.close()
+
+
+#: Durability of a commit, from `DOBBY_SQLITE_SYNCHRONOUS`. Default FULL.
+#:
+#: Under WAL, `NORMAL` still gives a consistent database and still survives the
+#: process being killed -- an application crash loses nothing, because the WAL
+#: file already has the frames. What it gives up is the OS crash and the power
+#: cut: the most recent commits can be lost. Measured on this machine, 300
+#: transactions on a held connection: 4.7 ms/tx at FULL against 0.30 ms/tx at
+#: NORMAL.
+#:
+#: FULL is the default and stays the default. This store is what a resume
+#: reads, so trading its durability is a deployment decision somebody makes on
+#: purpose for a specific machine -- a CI runner rebuilding from scratch, a
+#: throughput benchmark -- and not something a version bump does to them.
+_SYNCHRONOUS_MODES = ("FULL", "NORMAL", "EXTRA", "OFF")
+
+
+def _synchronous() -> str:
+    raw = (os.environ.get("DOBBY_SQLITE_SYNCHRONOUS") or "FULL").strip().upper()
+    if raw not in _SYNCHRONOUS_MODES:
+        raise StoreError(
+            f"DOBBY_SQLITE_SYNCHRONOUS={raw!r} is not a sqlite synchronous "
+            f"mode; expected one of {_SYNCHRONOUS_MODES}. Refused rather than "
+            f"defaulted: a typo silently falling back to FULL would make a "
+            f"machine somebody tuned behave like one they did not.")
+    return raw
+
+
+def connect(path: str) -> sqlite3.Connection:
+    """One configured connection. The caller closes it."""
+    conn = sqlite3.connect(path, timeout=30.0, isolation_level="IMMEDIATE")
+    conn.row_factory = sqlite3.Row
+    # WAL so a reader (a status command) never blocks the running worker.
+    # Set outside the transaction: sqlite refuses a journal-mode change from
+    # inside one. Measured at 4% of a 300-transaction loop, so repeating it per
+    # connection is not worth the memo it would take to skip.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(f"PRAGMA synchronous={_synchronous()}")
+    return conn
 
 
 def worker_identity() -> str:
@@ -307,14 +343,35 @@ def _strict_spec(node) -> str:
 class RunStore:
     """Durable state for every run in one project.
 
-    Opened per operation rather than held open: a long-lived connection across a
-    run that can last an hour is a lock somebody else waits on, and the cost of
-    reopening a local SQLite file is not measurable next to a provider call.
+    Opened per operation by default, and held for the length of a `session()`.
+
+    The default was chosen because an open handle on Windows makes
+    `shutil.rmtree` fail with PermissionError, which broke every temp-directory
+    cleanup in the suite. That reason still holds. The reason given alongside it
+    did not: "the cost of reopening a local SQLite file is not measurable next
+    to a provider call" is true of one provider call and false of the harness.
+    Measured on this machine, 300 transactions:
+
+        connection per transaction   27.3 ms/tx
+        one connection reused         4.7 ms/tx
+
+    A 16-node graph runs about 19 transactions per node, so the difference is
+    roughly 430 ms of pure harness time per node -- invisible behind a 300 s
+    agent call, and most of the wall clock for a graph of deterministic ones.
+
+    `session()` is the narrow fix: hold one connection for the duration of a
+    run, close it in a `finally`, and leave every call outside a run exactly as
+    it was. Holding the connection is also not the same as holding a LOCK --
+    under WAL a lock is taken per transaction and released at its commit, so a
+    reader is never waiting on the handle itself.
     """
 
     def __init__(self, data_dir: str):
         self.data_dir = data_dir
         self.path = store_path(data_dir)
+        #: The connection held by `session()`, per thread. Set before any call
+        #: that might reach `_tx`, including the schema creation below.
+        self._local = threading.local()
         #: Spans that could not be written. Reported rather than raised — see
         #: `record_span` — so a metrics table can say it is short instead of
         #: presenting a partial sum as a whole.
@@ -347,9 +404,41 @@ class RunStore:
                 conn.execute(f"ALTER TABLE nodes ADD COLUMN {column} {ddl}")
 
     @contextlib.contextmanager
+    def session(self):
+        """Hold one connection for this thread until the block exits.
+
+        Thread-local, because `sqlite3` connections refuse use from a thread
+        other than the one that made them and `max_parallel > 1` runs nodes on
+        several. A worker thread with no session of its own simply falls back to
+        a connection per transaction, which is the behaviour every caller had
+        before this existed.
+
+        Re-entrant: a nested `session()` is a no-op rather than a second
+        connection, so a caller does not have to know whether its caller
+        already opened one.
+        """
+        if getattr(self._local, "conn", None) is not None:
+            yield
+            return
+        conn = connect(self.path)
+        self._local.conn = conn
+        try:
+            yield
+        finally:
+            self._local.conn = None
+            conn.close()
+
+    @contextlib.contextmanager
     def _tx(self):
-        with transaction(self.path) as conn:
-            yield conn
+        held = getattr(self._local, "conn", None)
+        if held is None:
+            with transaction(self.path) as conn:
+                yield conn
+            return
+        # `with conn` commits on success and rolls back on an exception, and
+        # leaves the handle open. That is the whole saving.
+        with held:
+            yield held
 
     # -- events ------------------------------------------------------------
     def _append_event(self, conn: sqlite3.Connection, run_id: str, kind: str,

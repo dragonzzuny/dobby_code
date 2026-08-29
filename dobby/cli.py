@@ -395,6 +395,14 @@ def cmd_doctor(args):
     Deliberately reports NEGATIVES prominently: a doctor that only lists what
     works leaves the user to discover the gaps during a real task.
     """
+    from .providers.base import clear_which_cache
+
+    # `which` answers are memoised for the life of a process (see
+    # `ProviderSpec.which`). This command's entire job is to say what is on this
+    # machine right now, so it asks again rather than reporting what was true
+    # when something else looked.
+    clear_which_cache()
+
     from .providers import report as fleet_report
     repo = _repo(args)
     data = _data(args)
