@@ -271,5 +271,71 @@ class ThroughTheRunner(unittest.TestCase):
         self.assertIn("verified at STRUCTURE", detail)
 
 
+class TheProjectLayerCanDeclareItToo(unittest.TestCase):
+    """Where the work actually happens, and where it could not be said.
+
+    The rung could be declared in `default_graph` and on the CLI, which is to
+    say everywhere except the layer the SWE-bench arm and every real project
+    run through. `WorkItem` had `acceptance_checks` and no way to say what they
+    reach, so every project item sat silently at the floor -- a declaration
+    path that exists but not at the point of use is the `claude_quota` shape:
+    present, importable, and reaching nothing.
+    """
+
+    def item(self, **kw):
+        from dobby.project.models import WorkItem
+
+        base = dict(work_item_id="W001", project_id="p", title="paginate",
+                    outcome="make it paginate",
+                    acceptance_checks=["python -m unittest discover -s tests"])
+        base.update(kw)
+        return WorkItem(**base)
+
+    def test_an_item_defaults_to_the_floor(self):
+        self.assertEqual(self.item().checks_at, V_EXISTENCE)
+
+    def test_an_item_may_declare_what_its_checks_reach(self):
+        self.assertEqual(self.item(checks_at=V_BEHAVIOR).checks_at, V_BEHAVIOR)
+
+    def test_claiming_a_rung_with_no_check_to_reach_it_is_refused(self):
+        """The vacuous-contract shape one layer up: nothing to run, and a label
+        saying it was run thoroughly."""
+        from dobby.project.models import ProjectError
+
+        with self.assertRaises(ProjectError) as caught:
+            self.item(acceptance_checks=[], checks_at=V_BEHAVIOR)
+        self.assertIn("no acceptance check", str(caught.exception))
+
+    def test_a_level_outside_the_ladder_is_refused(self):
+        from dobby.project.models import ProjectError
+
+        with self.assertRaises(ProjectError):
+            self.item(checks_at=99)
+
+    def test_the_declaration_reaches_the_compiled_verify_contract(self):
+        """The half that makes it more than a stored field."""
+        import tempfile
+
+        from dobby.project import architecture as A, workorder as W
+        from dobby.project.models import ProjectManifest
+        from dobby.runtime.contracts import LOCAL_WRITE
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root:
+            manifest = ProjectManifest(project_id="p", root=root,
+                                       repo_digest="d",
+                                       smoke_checks=("pytest -q",))
+            plan = A.PlanSpec(
+                plan_id="pl-1", work_item_id="W001", objective="paginate it",
+                side_effect_class=LOCAL_WRITE,
+                execution_steps=({"role": "implement", "objective": "add it",
+                                  "write_set": ["app.py"],
+                                  "read_set": ["app.py"]},))
+            for level in (V_EXISTENCE, V_BEHAVIOR):
+                graph = W.compile_graph(plan, item=self.item(checks_at=level),
+                                        manifest=manifest, static=True)
+                self.assertEqual(
+                    graph.nodes["verify"].contract.checks_at, level)
+
+
 if __name__ == "__main__":
     unittest.main()

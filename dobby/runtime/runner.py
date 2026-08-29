@@ -38,7 +38,7 @@ from . import graph as G
 from .contracts import (Artifact, ArtifactContract, ContractError,
                         PayloadTampered,
                         PROMOTED, REJECTED,
-                        SCHEMAS, VERIFIED, artifact_path,
+                        SCHEMAS, V_EXISTENCE, VERIFIED, artifact_path,
                         idempotency_key, verify_payload)
 from .failures import (DEFAULT_POLICY, Failure, POLICY_BLOCKED, REPAIR,
                        RETRY_ELSEWHERE, RETRY_SAME, TRANSIENT_PROVIDER, WAIT,
@@ -930,6 +930,7 @@ class Runner:
 def default_graph(task: str, *, provider: str | None = None,
                   execute_command: str | None = None,
                   acceptance_checks: list[str] | None = None,
+                  checks_at: int | None = None,
                   static: bool = False) -> "G.TaskGraph":
     """plan -> execute -> verify -> report.
 
@@ -980,8 +981,12 @@ def default_graph(task: str, *, provider: str | None = None,
         node_id="verify", kind="verify", depends_on=["execute"],
         worker="static",
         instruction="The project's own checks, run by the gate.",
-        contract=ArtifactContract(output_schema=SCHEMAS["test_report"],
-                                  acceptance_checks=checks),
+        contract=ArtifactContract(
+            output_schema=SCHEMAS["test_report"], acceptance_checks=checks,
+            # What the caller says these checks reach. Defaulted rather than
+            # guessed: a command line is opaque, and `contracts.checks_at`
+            # carries the argument for why nobody infers this.
+            checks_at=(V_EXISTENCE if checks_at is None else checks_at)),
         config={"payload": {"command": "; ".join(checks) or "(none declared)",
                             "exit_code": 0}})
 

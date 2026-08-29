@@ -1500,13 +1500,18 @@ def _runtime_levels(args, repo, default_graph) -> int:
     writes = {LOCAL_WRITE, EXTERNAL_REVERSIBLE, EXTERNAL_IRREVERSIBLE}
     by_name = {name: value for value, name in VERIFICATION_LEVELS.items()}
 
-    floor = None
-    if args.require:
-        floor = by_name.get(str(args.require).strip().upper())
-        if floor is None:
-            _out({"error": f"unknown level {args.require!r}",
+    def rung(raw, flag):
+        if not raw:
+            return None
+        value = by_name.get(str(raw).strip().upper())
+        if value is None:
+            _out({"error": f"unknown level {raw!r} for {flag}",
                   "expected": sorted(by_name)})
             raise SystemExit(2)
+        return value
+
+    floor = rung(args.require, "--require")
+    declared = rung(getattr(args, "checks_at", None), "--checks-at")
 
     # `static=True` when nobody was named. `default_graph` refuses to build a
     # graph with no worker, correctly -- but this command grades the SHAPE of
@@ -1519,34 +1524,45 @@ def _runtime_levels(args, repo, default_graph) -> int:
             provider=args.provider, execute_command=args.execute,
             acceptance_checks=[c for c in (args.check or "").split("|")
                                if c.strip()],
+            checks_at=declared,
             static=not (args.provider or args.execute))
     except ValueError as exc:
         _out({"error": str(exc)})
         raise SystemExit(2)
 
+    downstream = _levels_downstream_checks(graph)
+
     rows, below = [], []
     for node_id in graph.topological_order():
         node = graph.nodes[node_id]
         contract = node.contract
-        level = contract.declared_level
+        own = contract.declared_level
+        checked_by = downstream.get(node_id, {})
+        effective = max([own, *checked_by.values()])
         changes = contract.side_effect_class in writes
         row = {"node": node_id, "kind": node.kind,
                "changes_things": changes,
                "side_effect_class": contract.side_effect_class,
-               "verifiable_at": level_name(level),
+               "verifiable_at": level_name(own),
+               "effective_at": level_name(effective),
+               "checked_downstream_by": {n: level_name(v)
+                                         for n, v in checked_by.items()},
                "from": _levels_because(contract)}
         rows.append(row)
-        if floor is not None and changes and level < floor:
+        if floor is not None and changes and effective < floor:
             below.append(row)
 
     _out({"graph": rows,
           "required_of_writing_nodes": level_name(floor) if floor else None,
           "below_the_floor": below,
-          "note": ("`verifiable_at` is the STRONGEST rung this contract could "
-                   "reach if every check passes -- not a result. A shell check "
-                   "counts as EXISTENCE unless its contract says otherwise with "
+          "note": ("`verifiable_at` is what this contract declares on its own; "
+                   "`effective_at` adds the acceptance checks of nodes that "
+                   "depend on it. Both are the STRONGEST rung reachable if "
+                   "every check passes, not a result. A shell check counts as "
+                   "EXISTENCE unless its contract says otherwise with "
                    "checks_at, because a command line is an opaque string and "
-                   "guessing at its strength is the failure this ladder is for.")})
+                   "guessing at its strength is the failure this ladder is "
+                   "for.")})
     # Raised, not returned. `main` calls `args.fn(args)` and drops the value, so
     # a returned code would have made this print its finding and exit 0 -- a
     # gate that describes instead of stopping, which is the exact defect the
@@ -1554,6 +1570,46 @@ def _runtime_levels(args, repo, default_graph) -> int:
     # `--require BEHAVIOR` run below correctly named `execute` and exited 0.
     if below:
         raise SystemExit(1)
+
+
+def _levels_downstream_checks(graph) -> dict:
+    """For each node, the dependents whose ACCEPTANCE CHECKS grade its work.
+
+    Without this the command was unusable and I shipped it that way. The default
+    graph puts the acceptance checks on `verify` and the writing on `execute`,
+    so `--require BEHAVIOR` failed no matter which test suite the caller
+    declared: the floor was being asked of a node that structurally cannot carry
+    a check. A gate that always fires teaches people to stop passing the flag,
+    which is the same end as a gate that never fires.
+
+    Only ACCEPTANCE CHECKS travel upstream, and the restriction is the whole
+    point. A dependent's `output_schema` grades that dependent's own payload; a
+    dependent's `grounding` grades claims inside it. Neither observes what the
+    upstream node wrote. A shell command does, because it runs against the tree
+    the upstream node changed -- which is true in this runtime because nodes
+    share a workspace, and would stop being true under per-node isolation.
+    """
+    dependents: dict = {}
+    for node_id, node in graph.nodes.items():
+        for parent in node.depends_on:
+            dependents.setdefault(parent, set()).add(node_id)
+
+    reach: dict = {}
+    for node_id in graph.nodes:
+        seen, stack = set(), list(dependents.get(node_id, ()))
+        while stack:
+            current = stack.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            stack.extend(dependents.get(current, ()))
+        graded = {}
+        for other in sorted(seen):
+            contract = graph.nodes[other].contract
+            if contract.acceptance_checks:
+                graded[other] = contract.checks_at
+        reach[node_id] = graded
+    return reach
 
 
 def _levels_because(contract) -> list[str]:
@@ -2451,6 +2507,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--corpus", default=None,
                    help="bench: JSON file of tasks. Without it the example "
                         "SHAPE runs, whose numbers are not a result")
+    p.add_argument("--checks-at", default=None, metavar="LEVEL",
+                   help="what the commands given with --check actually reach "
+                        "(EXISTENCE|STRUCTURE|CONTRACT|BEHAVIOR). Stated, never "
+                        "inferred: a command line is opaque and a guess that "
+                        "flatters is what this ladder exists to catch")
     p.add_argument("--require", default=None, metavar="LEVEL",
                    help="levels: the rung every WRITING node must be able to "
                         "reach (EXISTENCE|STRUCTURE|CONTRACT|BEHAVIOR). Exits 1 "

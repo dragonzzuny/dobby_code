@@ -27,6 +27,8 @@ import json
 import time
 from dataclasses import dataclass, field, asdict
 
+from ..runtime.contracts import V_EXISTENCE, VERIFICATION_LEVELS
+
 # -- work item states --------------------------------------------------------
 OPEN = "OPEN"
 READY = "READY"
@@ -180,6 +182,20 @@ class WorkItem:
     #: declared scope is checked rather than described. Empty means "check the
     #: tree", which is weaker and still fail-closed.
     expected_paths: list = field(default_factory=list)
+    #: What rung of `runtime.contracts` VERIFICATION_LEVELS this item's
+    #: acceptance checks reach, stated by whoever wrote them.
+    #:
+    #: The runtime could already record which rung an artifact was verified at,
+    #: and every item in this layer sat silently at the floor because there was
+    #: nowhere to say otherwise. The declaration path existed in the CLI and in
+    #: `default_graph`, which is to say it existed everywhere except where the
+    #: work happens.
+    #:
+    #: Declared, never inferred, and defaulted to the floor. `pytest -q` and
+    #: `python -c "pass"` are the same shape to a process reading a list of
+    #: strings, and a guess that flatters is the failure the ladder exists to
+    #: catch. An undeclared check counts as EXISTENCE: it ran and exited zero.
+    checks_at: int = V_EXISTENCE
     #: The plan that made this item gradeable, if an architect was asked.
     #: Recorded rather than inferred: without it, an item whose
     #: uncertainty was the reason for the call still reads as uncertain
@@ -192,6 +208,18 @@ class WorkItem:
             raise ProjectError(
                 f"unknown work item state {self.state!r}; expected one of "
                 f"{WORK_ITEM_STATES}")
+        if self.checks_at not in VERIFICATION_LEVELS:
+            raise ProjectError(
+                f"checks_at={self.checks_at!r} is not a verification level; "
+                f"expected one of {sorted(VERIFICATION_LEVELS)}")
+        # Claiming a rung for checks that do not exist is the vacuous-contract
+        # shape one layer up: nothing to run, and a label saying it was run
+        # thoroughly.
+        if self.checks_at > V_EXISTENCE and not self.acceptance_checks:
+            raise ProjectError(
+                f"this item declares checks_at="
+                f"{VERIFICATION_LEVELS[self.checks_at]} and has no acceptance "
+                f"check to reach it with")
 
     @property
     def needs_architect(self) -> bool:

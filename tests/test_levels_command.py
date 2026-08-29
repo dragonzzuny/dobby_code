@@ -116,6 +116,89 @@ class TheFloorStops(unittest.TestCase):
         self.assertNotIn("report", listed)
 
 
+class TheFloorCanActuallyBeSatisfied(unittest.TestCase):
+    """The defect this class exists for: the gate always failed.
+
+    The default graph puts the acceptance checks on `verify` and the writing on
+    `execute`, so the first version of `--require BEHAVIOR` failed no matter
+    which test suite the caller declared -- the floor was asked of a node that
+    structurally cannot carry a check. Every case had been tested EXCEPT the one
+    that matters, whether a caller doing everything right can pass. A gate that
+    always fires teaches people to stop passing the flag, which ends in the same
+    place as a gate that never fires.
+
+    Two rules now decide it, and both are visible in the output rather than
+    inferred by the reader:
+
+    - a dependent's ACCEPTANCE CHECKS grade the node it depends on, because a
+      shell command runs against the tree that node changed;
+    - a dependent's schema and grounding do NOT, because they grade that
+      dependent's own payload.
+    """
+
+    def test_a_declared_suite_downstream_satisfies_the_floor(self):
+        code, out = levels("--check", "pytest -q", "--checks-at", "BEHAVIOR",
+                           "--require", "BEHAVIOR")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out["below_the_floor"], [])
+
+    def test_and_the_output_says_which_node_did_the_grading(self):
+        """Otherwise the pass reads as magic.
+
+        `execute` is EXISTENCE on its own here: with no `--execute` command it
+        carries an empty schema and a LOCAL_WRITE, and nothing else. The whole
+        distance to BEHAVIOR is bought by a node downstream of it, and the row
+        has to name which one.
+        """
+        _, out = levels("--check", "pytest -q", "--checks-at", "BEHAVIOR")
+        execute = next(r for r in out["graph"] if r["node"] == "execute")
+        self.assertEqual(execute["verifiable_at"], "EXISTENCE")
+        self.assertEqual(execute["effective_at"], "BEHAVIOR")
+        self.assertEqual(execute["checked_downstream_by"],
+                         {"verify": "BEHAVIOR"})
+
+    def test_a_deterministic_execute_command_raises_its_own_rung(self):
+        """With `--execute` the node gets a test_report schema of its own, so
+        it is STRUCTURE before anything downstream is counted. Kept as its own
+        case because the previous test's numbers came from a run WITH this flag
+        and were pasted into a run without it."""
+        _, out = levels("--execute", "make build")
+        execute = next(r for r in out["graph"] if r["node"] == "execute")
+        self.assertEqual(execute["verifiable_at"], "STRUCTURE")
+
+    def test_an_undeclared_suite_does_not_satisfy_it(self):
+        """The same `pytest -q`, with nobody saying what it reaches. This is the
+        case that has to keep failing, or `--checks-at` is decoration."""
+        code, out = levels("--check", "pytest -q", "--require", "BEHAVIOR")
+        self.assertEqual(code, 1, out)
+        execute = next(r for r in out["graph"] if r["node"] == "execute")
+        self.assertEqual(execute["checked_downstream_by"],
+                         {"verify": "EXISTENCE"})
+
+    def test_no_checks_at_all_still_fails(self):
+        code, _ = levels("--require", "BEHAVIOR")
+        self.assertEqual(code, 1)
+
+    def test_a_downstream_schema_does_not_lift_an_upstream_node(self):
+        """`report` declares a schema and prose_at and no acceptance check, so
+        it grades itself and contributes nothing upstream."""
+        _, out = levels()
+        execute = next(r for r in out["graph"] if r["node"] == "execute")
+        self.assertNotIn("report", execute["checked_downstream_by"])
+
+    def test_a_bad_checks_at_is_refused_by_name(self):
+        code, out = levels("--check", "x", "--checks-at", "HUGE")
+        self.assertEqual(code, 2, out)
+        self.assertIn("--checks-at", out["error"])
+
+    def test_effective_is_never_below_own(self):
+        _, out = levels("--check", "pytest -q", "--checks-at", "BEHAVIOR")
+        order = ["NONE", "EXISTENCE", "STRUCTURE", "CONTRACT", "BEHAVIOR"]
+        for row in out["graph"]:
+            self.assertGreaterEqual(order.index(row["effective_at"]),
+                                    order.index(row["verifiable_at"]), row)
+
+
 class TheLadderItReads(unittest.TestCase):
     """The command's answer must match the contract's own property."""
 
