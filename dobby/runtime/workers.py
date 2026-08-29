@@ -412,6 +412,10 @@ class ProviderWorker(WorkerAdapter):
                 False, raw=result.text or "",
                 failure=classify_provider_error(
                     result.error or "", exit_code=result.exit_code,
+                    # The api provider already put the status here and it was
+                    # being dropped on the floor at the one place the decision
+                    # is made.
+                    status=(result.meta or {}).get("status"),
                     empty_output=(result.exit_code == 0
                                   and not (result.text or "").strip())),
                 meta=meta)

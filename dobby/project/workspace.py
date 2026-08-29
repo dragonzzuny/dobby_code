@@ -138,12 +138,68 @@ def changed_paths(worktree: str) -> ChangeManifest:
                           deleted=tuple(sorted(set(deleted))), raw=out)
 
 
+class Escapes(ValueError):
+    """A path that does not stay inside the project when it is resolved."""
+
+
+def normalise(path: str) -> str:
+    """A repo-relative POSIX path, or `Escapes` if it does not stay inside.
+
+    The gate and the COMPILER disagreed about what "inside" means, which is the
+    two-enforcement-points shape this repository keeps finding. The compiler
+    resolves a declared write path and refuses one landing outside the root;
+    the gate compared strings, so with an allow set of `["src"]`:
+
+        src/a.py               allowed, correctly
+        src/../etc/passwd      allowed -- it starts with "src/"
+        src/../../outside.txt  allowed -- so did this
+        ./src/a.py             REFUSED -- and it is the same file
+        src//a.py              allowed by accident
+
+    `git status --porcelain` does not emit those forms, so nothing was reaching
+    them today. That is a property of one producer, and `gate` is a public
+    function that `merge` trusts as its only check before `shutil.copy2` writes
+    into the project. A check that is only correct because of who happens to
+    call it is the shape of the store-layer hole an audit of this repository
+    found in the artifact gate.
+    """
+    text = str(path).replace("\\", "/").strip()
+    if not text:
+        raise Escapes("an empty path")
+    if text.startswith("/") or (len(text) > 1 and text[1] == ":"):
+        raise Escapes(f"{path!r} is absolute")
+    parts: list[str] = []
+    for segment in text.split("/"):
+        if segment in ("", "."):
+            continue
+        if segment == "..":
+            if not parts:
+                raise Escapes(f"{path!r} resolves outside the project root")
+            parts.pop()
+            continue
+        parts.append(segment)
+    if not parts:
+        # `.` or `src/..` -- the root itself. Meaningful as an ALLOW entry and
+        # never as a changed path.
+        return "."
+    return "/".join(parts)
+
+
 def _within(path: str, allowed: str) -> bool:
-    """Whether `path` is the allowed path or lives under it, as a directory."""
+    """Whether `path` is the allowed path or lives under it, as a directory.
+
+    Both sides are normalised first, so `./src/a.py` and `src/a.py` are the same
+    file to this function -- which they are on disk.
+    """
+    try:
+        path, allowed = normalise(path), normalise(allowed)
+    except Escapes:
+        return False
+    if allowed == ".":
+        return True
     if path == allowed:
         return True
-    prefix = allowed if allowed.endswith("/") else allowed + "/"
-    return path.startswith(prefix)
+    return path.startswith(allowed + "/")
 
 
 def gate(manifest: ChangeManifest, *, allowed, protected=None) -> list[str]:
@@ -158,7 +214,14 @@ def gate(manifest: ChangeManifest, *, allowed, protected=None) -> list[str]:
     allow = tuple(allowed or ())
     violations: list[str] = []
 
-    for path in manifest.paths:
+    for raw in manifest.paths:
+        try:
+            path = normalise(raw)
+        except Escapes as exc:
+            violations.append(
+                f"{raw} cannot enter the project: {exc}. A changed path is "
+                f"repo-relative and stays inside the tree it changed")
+            continue
         for pattern in patterns:
             if pattern.search(path):
                 violations.append(
@@ -235,6 +298,29 @@ def _restore(root: str, snapshot: dict) -> list[str]:
     return failures
 
 
+def _inside(root: str, path: str) -> str:
+    """The absolute target for `path`, or `MergeRefused` if it leaves `root`.
+
+    `gate` compares strings and cannot see a SYMLINK. A worktree may legitimately
+    contain one, and `root/src/link` already being a link to somewhere else is a
+    write that lands outside the project through a path that reads as inside it.
+    `realpath` resolves links on both sides, which is the only way to ask the
+    question the filesystem will actually answer.
+
+    Second check on purpose. `gate` is the decision and this is the containment;
+    the artifact store learned the same lesson when a rule enforced on an object
+    turned out not to be enforced at the door a consumer actually read.
+    """
+    base = os.path.realpath(root)
+    target = os.path.realpath(os.path.join(root, path))
+    if target != base and not target.startswith(base + os.sep):
+        raise MergeRefused(
+            f"{path!r} resolves to {target!r}, which is outside the project "
+            f"root {base!r}. Nothing is written through a path that leaves the "
+            f"tree, however it reads")
+    return target
+
+
 def merge(manifest: ChangeManifest, *, worktree: str, root: str, allowed,
           protected=None, smoke=(), config: dict | None = None,
           run_smoke=None) -> dict:
@@ -262,13 +348,13 @@ def merge(manifest: ChangeManifest, *, worktree: str, root: str, allowed,
     copied, removed = [], []
     try:
         for path in manifest.written:
-            source, target = os.path.join(worktree, path), os.path.join(root,
-                                                                        path)
+            source = os.path.join(worktree, path)
+            target = _inside(root, path)
             os.makedirs(os.path.dirname(target) or root, exist_ok=True)
             shutil.copy2(source, target)
             copied.append(path)
         for path in manifest.deleted:
-            target = os.path.join(root, path)
+            target = _inside(root, path)
             if os.path.exists(target):
                 os.remove(target)
                 removed.append(path)

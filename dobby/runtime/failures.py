@@ -178,22 +178,85 @@ _AUTH_MARKERS = ("not logged in", "login required", "authentication failed",
                  "invalid api key", "no api key", "expired token", "401", "403")
 
 
+#: HTTP status -> class, when a status is available. Read BEFORE the prose,
+#: because a status code is a fact and an error string is a description of one.
+#:
+#: Measured by injecting failures into `providers/api.call_api` and classifying
+#: what came back. Before this existed:
+#:
+#:     429 rate limit    CAPACITY            RETRY_ELSEWHERE   correct
+#:     500 server error  NON_RETRYABLE       FAIL              WRONG
+#:     DNS failure       NON_RETRYABLE       FAIL              WRONG
+#:     connection refused NON_RETRYABLE      FAIL              WRONG
+#:     timeout           TRANSIENT_PROVIDER  RETRY_SAME        correct
+#:
+#: The prose markers list "502", "503", "504" and "internal server error", and
+#: a bare 500 with a body saying `{"error":"internal"}` matches none of them; a
+#: `URLError` whose reason stringifies to "refused" misses "connection refused"
+#: by two words. Both are transient conditions that were ending runs, and the
+#: status that would have said so was already sitting in `result.meta`.
+def _from_status(status: int) -> "Failure | None":
+    if status == 408 or 500 <= status <= 599:
+        return Failure(TRANSIENT_PROVIDER,
+                       f"HTTP {status} from the provider, which is the "
+                       f"provider's side and not this request's",
+                       {"status": status})
+    if status == 429:
+        return Failure(CAPACITY, f"HTTP {status}: rate limited",
+                       {"status": status})
+    if status in (401, 407):
+        return Failure(NON_RETRYABLE,
+                       f"HTTP {status}: authentication failed — retrying "
+                       f"cannot log anyone in", {"status": status})
+    if status == 403:
+        return Failure(POLICY_BLOCKED,
+                       f"HTTP {status}: the provider refused for a permission "
+                       f"it could not obtain without a human",
+                       {"status": status})
+    if 400 <= status <= 499:
+        return Failure(NON_RETRYABLE,
+                       f"HTTP {status}: the request was refused, and the same "
+                       f"request will be refused again", {"status": status})
+    return None
+
+
+#: Reasons a connection never produced a status at all. Retried, because the
+#: common cause is a blip and the policy bounds it at three attempts -- and
+#: because a run dying on a DNS hiccup is the failure this was found by.
+_UNREACHABLE_MARKERS = (
+    "network error reaching", "getaddrinfo", "name or service not known",
+    "temporary failure in name resolution", "refused", "unreachable",
+    "no route to host", "connection aborted", "ssl", "handshake",
+)
+
+
 def classify_provider_error(error: str, *, exit_code: int | None = None,
-                            empty_output: bool = False) -> Failure:
-    """Turn a provider's failure text into a class the scheduler can act on.
+                            empty_output: bool = False,
+                            status: int | None = None) -> Failure:
+    """Turn a provider's failure into a class the scheduler can act on.
+
+    `status` is read first when there is one. It is the structured fact; the
+    error string is somebody's description of it, and the two disagreed -- see
+    `_from_status`.
 
     `empty_output` is separated from the error text because exit-0-with-no-stdout
     is a distinct condition: the process succeeded and produced nothing, which is
     a broken contract rather than a broken provider.
     """
     text = (error or "").lower()
-    evidence = {"exit_code": exit_code, "error": (error or "")[:400]}
+    evidence = {"exit_code": exit_code, "error": (error or "")[:400],
+                "status": status}
 
     if empty_output:
         return Failure(CONTRACT_VIOLATION,
                        "the provider exited successfully and produced no output; "
                        "an empty answer must not be treated as a considered one",
                        evidence)
+    if status is not None:
+        decided = _from_status(int(status))
+        if decided is not None:
+            return Failure(decided.failure_class, decided.detail, evidence)
+
     if any(m in text for m in _AUTH_MARKERS):
         return Failure(NON_RETRYABLE,
                        "authentication failed — retrying cannot log anyone in",
@@ -206,6 +269,11 @@ def classify_provider_error(error: str, *, exit_code: int | None = None,
         return Failure(CAPACITY, "provider capacity or rate limit", evidence)
     if any(m in text for m in _TRANSIENT_MARKERS):
         return Failure(TRANSIENT_PROVIDER, "transient provider fault", evidence)
+    if any(m in text for m in _UNREACHABLE_MARKERS):
+        return Failure(TRANSIENT_PROVIDER,
+                       "the provider could not be reached, which is a "
+                       "condition of the network rather than of this request",
+                       evidence)
     if not text:
         return Failure(NON_RETRYABLE,
                        "the provider failed without saying why", evidence)
