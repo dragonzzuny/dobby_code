@@ -219,8 +219,20 @@ class Runner:
             return self._report(run_id, task_graph, [], budget,
                                 notes + [f"run is already {state['state']}"])
         if state["state"] != G.RUNNING:
-            self.store.set_run_state(run_id, G.RUNNING,
-                                     reason="runner attached")
+            # Compare-and-set against the state this process just read. Another
+            # worker can finish the run between the read and this write, and
+            # attaching to a run that has already finished is not an error --
+            # it means there is nothing left to do.
+            if not self.store.set_run_state(run_id, G.RUNNING,
+                                            reason="runner attached",
+                                            expect=state["state"]):
+                current = self.store.load_run(run_id)["state"]
+                if current in G.RUN_TERMINAL:
+                    return self._report(
+                        run_id, task_graph, [], budget,
+                        notes + [f"another worker finished this run while this "
+                                 f"one was attaching; it is {current}"],
+                        state=current)
 
         tracer = Tracer(self.store, run_id)
         deferred: list[dict] = []
@@ -311,10 +323,18 @@ class Runner:
                     f"its lease is still held by {lease['owner']}, which is "
                     f"running. Left alone.")
                 continue
-            self.store.finish_attempt(
-                run_id, row["node_id"], row["attempt"],
-                outcome=G.RETRYABLE_FAILURE, failure_class=TRANSIENT_PROVIDER,
-                detail=G.INTERRUPTED_DETAIL)
+            # `only_if_open`, because every survivor of a killed worker sees
+            # the same open attempt with the same dead lease and they all try
+            # to close it. Exactly one can, and the rest were not wrong to try.
+            if not self.store.finish_attempt(
+                    run_id, row["node_id"], row["attempt"],
+                    outcome=G.RETRYABLE_FAILURE,
+                    failure_class=TRANSIENT_PROVIDER,
+                    detail=G.INTERRUPTED_DETAIL, only_if_open=True):
+                notes.append(
+                    f"{row['node_id']}: attempt {row['attempt']} was "
+                    f"recovered by another worker first")
+                continue
             node = task_graph.nodes.get(row["node_id"])
             if node is not None and node.state not in G.NODE_TERMINAL:
                 self._set_node(run_id, task_graph, node, G.READY,

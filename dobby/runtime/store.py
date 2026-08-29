@@ -515,7 +515,20 @@ class RunStore:
                 "graph": G.TaskGraph.from_dict({"nodes": specs})}
 
     def set_run_state(self, run_id: str, to_state: str, *,
-                      reason: str = "") -> None:
+                      reason: str = "", expect: str | None = None) -> bool:
+        """Move a run. Returns whether this caller is the one that moved it.
+
+        `expect` is the same compare-and-set the node level needed, and for the
+        same reason. `Runner.run` reads the run state, sees it is not terminal,
+        and writes RUNNING to say it has attached. Under load another worker
+        finishes the run in between, and the attach used to die with
+        `illegal run transition SUCCEEDED -> RUNNING`. Measured: one in
+        forty-eight stress rounds at four workers.
+
+        Attaching to a run that has just finished is not an error. It means
+        there is nothing to do, and the caller should read the state and
+        report rather than raise.
+        """
         if to_state not in G.RUN_STATES:
             raise StoreError(f"unknown run state {to_state!r}")
         with self._tx() as conn:
@@ -523,6 +536,8 @@ class RunStore:
                                (run_id,)).fetchone()
             if row is None:
                 raise StoreError(f"no run {run_id!r}")
+            if expect is not None and row["state"] != expect:
+                return False
             if row["state"] == to_state:
                 # Reporting the same fact twice is not a transition. With one
                 # process this never happened; with the several the lease design
@@ -533,13 +548,14 @@ class RunStore:
                 # No event either. An event log is what a resume replays, and a
                 # row saying WAITING -> WAITING records a change that did not
                 # occur.
-                return
+                return True
             G.check_run_transition(row["state"], to_state)
             conn.execute("UPDATE runs SET state=?, updated=? WHERE run_id=?",
                          (to_state, time.strftime("%Y-%m-%dT%H:%M:%S"), run_id))
             self._append_event(conn, run_id, "run_state",
                                {"from": row["state"], "to": to_state,
                                 "reason": reason})
+            return True
 
     def list_runs(self, *, limit: int = 50) -> list[dict]:
         with self._tx() as conn:
@@ -722,7 +738,15 @@ class RunStore:
 
     def finish_attempt(self, run_id: str, node_id: str, attempt: int, *,
                        outcome: str, failure_class: str | None = None,
-                       detail: str = "") -> None:
+                       detail: str = "", only_if_open: bool = False) -> bool:
+        """Close an open attempt. Returns whether THIS caller closed it.
+
+        `only_if_open` turns "it was not open" from an error into a `False`.
+        The raise is right for the single-writer case it was written for -- you
+        closed something you never opened -- and wrong for recovery, where
+        several workers legitimately try to close the same interrupted attempt
+        and exactly one can.
+        """
         if outcome not in G.ATTEMPT_OUTCOMES:
             raise StoreError(f"unknown attempt outcome {outcome!r}")
         with self._tx() as conn:
@@ -732,6 +756,14 @@ class RunStore:
                 "AND outcome=?",
                 (time.strftime("%Y-%m-%dT%H:%M:%S"), outcome, failure_class,
                  detail[:2000], run_id, node_id, attempt, G.STARTED))
+            if cur.rowcount != 1 and only_if_open:
+                # Somebody else closed it. That is a lost race and not a bug:
+                # several survivors of a killed worker all see the same open
+                # attempt with the same dead lease, and exactly one of them
+                # wins the UPDATE. Measured under load: five of eight kill
+                # rounds, three workers each raising
+                # `attempt 1 of n0 is not open`.
+                return False
             if cur.rowcount != 1:
                 raise StoreError(
                     f"attempt {attempt} of {node_id} is not open (already "
@@ -741,6 +773,7 @@ class RunStore:
                                 "failure_class": failure_class,
                                 "detail": detail[:2000]},
                                node_id=node_id, attempt=attempt)
+            return True
 
     def attempts(self, run_id: str, node_id: str | None = None) -> list[dict]:
         query = "SELECT * FROM attempts WHERE run_id=?"
