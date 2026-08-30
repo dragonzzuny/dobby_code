@@ -26,23 +26,93 @@ The parts, and the question each one owns:
                    to say
 """
 
-from .contracts import (Artifact, ArtifactContract, EXTERNAL_IRREVERSIBLE,
-                        EXTERNAL_REVERSIBLE, LOCAL_WRITE, NONE, SCHEMAS,
-                        idempotency_key, validate_schema)
-from .failures import (DEFAULT_POLICY, FAILURE_CLASSES, Failure,
-                       classify_provider_error, classify_verifier_failure)
-from .flywheel import harvest, report as flywheel_report
-from .graph import GraphError, TaskGraph, TaskNode
-from .metrics import Measurement, percentile, report as metrics_report, scorecard
-from .placement import (Breaker, ConcurrencyLimiter, Placement,
-                        ProviderPlacement, Weights)
-from .runner import Runner, RunResult, default_graph
-from .scheduler import BudgetExceeded, RunBudget, Scheduler
-from .store import RunStore, StoreError, new_run_id
-from .trace import NullTracer, Span, Tracer, render_timeline, to_otlp
-from .verify import Verifier, VerifierResult, promotable
-from .workers import (CommandWorker, ProviderWorker, StaticWorker,
-                      WorkerRegistry, WorkerResult)
+# Lazily, and the public names are unchanged. Same reasoning as
+# `dobby/project/__init__.py`: twelve submodules imported to present one
+# flat API, 0.55s before anything ran, paid by every command that touched
+# the package even to read one name.
+#
+# PEP 562: `from dobby.x import Name` still works, `from dobby.x import
+# submodule` still works (the import system falls back to importing the
+# submodule when `__getattr__` raises), star imports still work because
+# `__all__` is declared, and nothing is read from disk until a name is asked
+# for. Checked first: no module under either package does anything at import
+# time, so there is no registration to lose by deferring.
+#
+# The ALIAS is why the value is a pair. `from .metrics import report as
+# metrics_report` binds `metrics_report` here and `report` there, and a first
+# version of this map stored only the alias -- so the lookup went looking for
+# `metrics_report` inside `metrics` and raised ImportError on a name that had
+# worked for a year.
+_LAZY = {
+    "Artifact": ("contracts", "Artifact"),
+    "ArtifactContract": ("contracts", "ArtifactContract"),
+    "Breaker": ("placement", "Breaker"),
+    "BudgetExceeded": ("scheduler", "BudgetExceeded"),
+    "CommandWorker": ("workers", "CommandWorker"),
+    "ConcurrencyLimiter": ("placement", "ConcurrencyLimiter"),
+    "DEFAULT_POLICY": ("failures", "DEFAULT_POLICY"),
+    "EXTERNAL_IRREVERSIBLE": ("contracts", "EXTERNAL_IRREVERSIBLE"),
+    "EXTERNAL_REVERSIBLE": ("contracts", "EXTERNAL_REVERSIBLE"),
+    "FAILURE_CLASSES": ("failures", "FAILURE_CLASSES"),
+    "Failure": ("failures", "Failure"),
+    "GraphError": ("graph", "GraphError"),
+    "LOCAL_WRITE": ("contracts", "LOCAL_WRITE"),
+    "Measurement": ("metrics", "Measurement"),
+    "NONE": ("contracts", "NONE"),
+    "NullTracer": ("trace", "NullTracer"),
+    "Placement": ("placement", "Placement"),
+    "ProviderPlacement": ("placement", "ProviderPlacement"),
+    "ProviderWorker": ("workers", "ProviderWorker"),
+    "RunBudget": ("scheduler", "RunBudget"),
+    "RunResult": ("runner", "RunResult"),
+    "RunStore": ("store", "RunStore"),
+    "Runner": ("runner", "Runner"),
+    "SCHEMAS": ("contracts", "SCHEMAS"),
+    "Scheduler": ("scheduler", "Scheduler"),
+    "Span": ("trace", "Span"),
+    "StaticWorker": ("workers", "StaticWorker"),
+    "StoreError": ("store", "StoreError"),
+    "TaskGraph": ("graph", "TaskGraph"),
+    "TaskNode": ("graph", "TaskNode"),
+    "Tracer": ("trace", "Tracer"),
+    "Verifier": ("verify", "Verifier"),
+    "VerifierResult": ("verify", "VerifierResult"),
+    "Weights": ("placement", "Weights"),
+    "WorkerRegistry": ("workers", "WorkerRegistry"),
+    "WorkerResult": ("workers", "WorkerResult"),
+    "classify_provider_error": ("failures", "classify_provider_error"),
+    "classify_verifier_failure": ("failures", "classify_verifier_failure"),
+    "default_graph": ("runner", "default_graph"),
+    "flywheel_report": ("flywheel", "report"),
+    "harvest": ("flywheel", "harvest"),
+    "idempotency_key": ("contracts", "idempotency_key"),
+    "metrics_report": ("metrics", "report"),
+    "new_run_id": ("store", "new_run_id"),
+    "percentile": ("metrics", "percentile"),
+    "promotable": ("verify", "promotable"),
+    "render_timeline": ("trace", "render_timeline"),
+    "scorecard": ("metrics", "scorecard"),
+    "to_otlp": ("trace", "to_otlp"),
+    "validate_schema": ("contracts", "validate_schema"),
+}
+
+
+def __getattr__(name):
+    where = _LAZY.get(name)
+    if where is None:
+        raise AttributeError(
+            f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+
+    module, original = where
+    value = getattr(importlib.import_module(f".{module}", __name__),
+                    original)
+    globals()[name] = value          # second lookup skips this entirely
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_LAZY))
 
 __all__ = [
     "Artifact", "ArtifactContract", "Breaker", "BudgetExceeded",

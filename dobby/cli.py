@@ -2728,7 +2728,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "repaired from its own failing acceptance check and "
                         "retried; an item that gives nothing to change is "
                         "never retried (dobby/project/reattempt.py)")
-    from .project.inquiry import STAGE_KEYS
+    # From the leaf, not from `inquiry`. This runs while the parser is
+    # being BUILT, so every command paid for the stage machinery to
+    # render one help string.
+    from .project.stages import STAGE_KEYS
     p.add_argument("--stages", default=None,
                    help="plan: comma-separated subset of the inquiry stages "
                         f"({','.join(STAGE_KEYS)})")

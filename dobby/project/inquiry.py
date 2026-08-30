@@ -117,7 +117,17 @@ STAGES: tuple[Stage, ...] = (
           E.DEBUG, after=("evaluation",), impact=2),
 )
 
-STAGE_KEYS = tuple(s.key for s in STAGES)
+#: Imported rather than defined, so `dobby/cli.py` can render its help without
+#: importing this module and everything behind it. The assertion is what makes
+#: one of them the source of truth instead of two lists that agree by habit --
+#: and it earned itself immediately: the first hand-copied version of
+#: `stages.py` dropped `background`.
+from .stages import STAGE_KEYS  # noqa: E402
+
+assert tuple(s.key for s in STAGES) == STAGE_KEYS, (
+    f"project/stages.py lists {STAGE_KEYS} and STAGES here defines "
+    f"{tuple(s.key for s in STAGES)}; the CLI reads the first and the loop "
+    f"reads the second")
 
 #: Where a stage's artifact lands. Under `.dobby/` because these are operational
 #: run artifacts, and in a per-topic directory so two inquiries in one repository
