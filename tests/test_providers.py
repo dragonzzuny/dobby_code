@@ -443,16 +443,34 @@ class TestResolvedPathIsWhatGetsLaunched(unittest.TestCase):
     def _capture_argv(self, spec, resolved):
         seen = {}
 
-        def fake_run(argv, **kwargs):
+        class FakeProcess:
+            returncode = 0
+
+            def communicate(self, timeout=None):
+                return "DOBBY_OK", ""
+
+            def kill(self):
+                pass
+
+        def fake_popen(argv, **kwargs):
             seen["argv"] = argv
             seen["shell"] = kwargs.get("shell")
-            return types.SimpleNamespace(returncode=0, stdout="DOBBY_OK",
-                                         stderr="")
+            seen["kwargs"] = kwargs
+            return FakeProcess()
 
-        # ProviderSpec is a frozen dataclass, so the instance rejects patching.
-        # The class attribute is not protected by frozen-ness.
+        # Patched at `Popen` and not at `run`. `run_provider` used to call
+        # `subprocess.run` and now calls `_run_killing_the_tree`, which is
+        # a `Popen` plus a `communicate` so a timeout can take the whole
+        # process tree with it. These tests kept patching a function nobody
+        # called and started raising a KeyError -- the loud version of a
+        # security property asserted against code that no longer runs.
+        # `Popen` is the bottom of this stack, so a later move cannot slip
+        # past it the same way.
+        #
+        # ProviderSpec is a frozen dataclass, so the instance rejects
+        # patching. The class attribute is not protected by frozen-ness.
         with mock.patch.object(type(spec), "which", return_value=resolved), \
-                mock.patch.object(run_mod.subprocess, "run", fake_run):
+                mock.patch.object(run_mod.subprocess, "Popen", fake_popen):
             result = run_provider(spec, "hello")
         return seen, result
 
@@ -484,6 +502,14 @@ class TestResolvedPathIsWhatGetsLaunched(unittest.TestCase):
         seen, _ = self._capture_argv(spec, "/x/tool")
         self.assertIs(seen["shell"], False)
 
+    def test_stdin_is_closed_so_nothing_waits_on_a_human(self):
+        """The other half of "headless": a tool that prompts gets EOF rather
+        than a hang nobody is watching."""
+        spec = self._cli_spec()
+        seen, _ = self._capture_argv(spec, "/x/tool")
+        self.assertEqual(seen["kwargs"].get("stdin"),
+                         run_mod.subprocess.DEVNULL)
+
     def test_the_resolved_path_is_recorded_in_meta(self):
         spec = self._cli_spec()
         _, result = self._capture_argv(spec, "/x/tool")
@@ -496,8 +522,12 @@ class TestResolvedPathIsWhatGetsLaunched(unittest.TestCase):
         def refuse(argv, **kwargs):
             raise FileNotFoundError(2, "no such file")
 
+        # `Popen`, not `run`. This patch was dead for as long as it named
+        # the old function: the real `Popen` failed on a path that does
+        # not exist and reached the same branch, so the test passed while
+        # asserting nothing about the code it meant to drive.
         with mock.patch.object(type(spec), "which", return_value="/x/tool.CMD"), \
-                mock.patch.object(run_mod.subprocess, "run", refuse):
+                mock.patch.object(run_mod.subprocess, "Popen", refuse):
             result = run_provider(spec, "hello")
         self.assertFalse(result.ok)
         self.assertIn("/x/tool.CMD", result.error)

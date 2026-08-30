@@ -29,14 +29,30 @@ def codex_stream(filler_chars: int) -> str:
 
 
 class _Proc:
+    """Stands in for the launched process.
+
+    `run_provider` used to call `subprocess.run` and now calls
+    `_run_killing_the_tree`, which is a `Popen` plus a `communicate` so that a
+    timeout takes the whole process tree with it rather than only the direct
+    child. This fake grew `communicate` and `kill` to match; patching the
+    function nobody calls any more turned four assertions about token
+    accounting into four assertions about a subprocess that really ran.
+    """
+
     def __init__(self, stdout):
         self.stdout, self.stderr, self.returncode = stdout, "", 0
+
+    def communicate(self, timeout=None):
+        return self.stdout, self.stderr
+
+    def kill(self):
+        pass
 
 
 class TestUsageSurvivesCap(unittest.TestCase):
     def _run(self, stdout, **kw):
         spec = registry().get("codex")
-        with mock.patch("subprocess.run", return_value=_Proc(stdout)), \
+        with mock.patch("subprocess.Popen", return_value=_Proc(stdout)), \
              mock.patch.object(type(spec), "which", lambda self: "codex"):
             return run_provider(spec, "prompt", collect_usage=True, **kw)
 

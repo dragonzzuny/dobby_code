@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import contextlib
 
+import signal
 import os
 import subprocess
 import time
@@ -143,6 +144,76 @@ _COLLECT_DEFAULT = False
 #: Windows CreateProcess limit for the entire command line. Not a dobby choice
 #: and not tunable; the guard in `run_provider` exists to name it accurately.
 WINDOWS_COMMAND_LINE_MAX = 32_767
+
+
+def kill_tree(proc) -> str:
+    """Kill `proc` AND everything it started. Returns what was done, for a log.
+
+    `subprocess.run(timeout=...)` kills the direct child and nothing below it.
+    Measured on this machine: a grandchild launched with DETACHED_PROCESS and no
+    inherited pipes was still writing files five seconds after the provider had
+    timed out and the node had been recorded as failed.
+
+    That is not a tidiness problem. An agent CLI starts language servers, git,
+    docker, node; an orphan of one keeps a lock, keeps spending, and can still
+    be WRITING INTO THE REPOSITORY after this runtime has told itself the
+    attempt is over -- which is the effect accounting saying one thing while
+    the disk does another.
+
+    Windows has no process groups worth the name, so `taskkill /T` walks the
+    tree by pid. POSIX gets a session of its own at launch (`start_new_session`)
+    so the whole group can be signalled at once. Both fall back to killing the
+    one process rather than raising: a partial kill beats an exception on the
+    timeout path.
+    """
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                           capture_output=True, timeout=20)
+            return "taskkill /T /F"
+        except (OSError, subprocess.SubprocessError):
+            pass
+    else:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            return "killpg SIGKILL"
+        except (OSError, ProcessLookupError):
+            pass
+    try:
+        proc.kill()
+        return "kill (direct child only)"
+    except OSError:
+        return "could not kill"
+
+
+def _run_killing_the_tree(argv, *, timeout=None, capture_output=False,
+                          **kwargs):
+    """`subprocess.run`, except a timeout takes the whole tree with it.
+
+    Kept as a thin wrapper so the ordinary path is the ordinary path: same
+    arguments, same `CompletedProcess`, same `TimeoutExpired`. The only
+    difference is what has stopped running by the time the exception is raised.
+    """
+    if capture_output:
+        kwargs.setdefault("stdout", subprocess.PIPE)
+        kwargs.setdefault("stderr", subprocess.PIPE)
+    if os.name != "nt":
+        kwargs.setdefault("start_new_session", True)
+    proc = subprocess.Popen(argv, shell=False, **kwargs)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        kill_tree(proc)
+        # Drain what the tree already wrote, so the caller is not left with a
+        # pipe nobody read. A second timeout here means something is still
+        # holding the handle, and waiting forever for it is the hang this
+        # function exists to end.
+        try:
+            out, err = proc.communicate(timeout=15)
+        except subprocess.TimeoutExpired:
+            out, err = "", ""
+        raise subprocess.TimeoutExpired(argv, timeout, output=out, stderr=err)
+    return subprocess.CompletedProcess(argv, proc.returncode, out, err)
 
 
 def run_provider(spec: ProviderSpec, prompt: str, *,
@@ -256,9 +327,8 @@ def run_provider(spec: ProviderSpec, prompt: str, *,
         "timeout_s": limit,
     }
     try:
-        proc = subprocess.run(
+        proc = _run_killing_the_tree(
             argv,
-            shell=False,                    # prompt text can never be shell syntax
             stdin=subprocess.DEVNULL,       # fail fast instead of waiting on a human
             capture_output=True,
             text=True, encoding="utf-8", errors="replace",
