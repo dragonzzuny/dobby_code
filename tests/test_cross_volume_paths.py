@@ -24,11 +24,17 @@ plainest case of exactly that. Measured, before the fix, with a write_set of
 A bare ValueError slips past every `except PlanNotCompilable` in the loop, so
 the guard read as a crash rather than as the refusal it is.
 
-These tests use literal drive letters and are therefore Windows-shaped. They
-run everywhere: on POSIX there is one volume and the strings are simply
-ordinary absolute paths, which the same code must also handle. The behaviour
-under test is "a path that cannot be made relative is outside", and that is
-true on both.
+The drive-letter cases are Windows-only, and the first version of this file
+claimed otherwise -- "on POSIX there is one volume and the strings are simply
+ordinary absolute paths". They are not. On POSIX `D:\elsewhere\a.py` is a
+RELATIVE path naming a directory called `D:`, so it lands INSIDE the root and
+every assertion here inverts. CI said so on all four POSIX jobs while both
+Windows jobs passed, which is the second time this session that a claim about
+another platform was wrong in the same direction.
+
+So those cases skip off Windows, and the same-volume cases -- a genuinely
+absolute path outside the root -- run everywhere, because that question and its
+answer are platform-independent.
 """
 
 import os
@@ -46,9 +52,11 @@ from dobby.project import workorder as W  # noqa: E402
 from dobby.project.models import ProjectManifest, WorkItem  # noqa: E402
 from dobby.runtime.contracts import LOCAL_WRITE  # noqa: E402
 
-#: A path that cannot be made relative to a project on another volume. On POSIX
-#: this is just an absolute path somewhere else, which is the same question.
+#: A path on another Windows volume. NOT an absolute path on POSIX -- there it
+#: names a directory called `D:` relative to wherever you are.
 ELSEWHERE = "D:" + os.sep + "elsewhere" + os.sep + "a.py"
+
+WINDOWS_ONLY = "drive letters mean nothing on POSIX; see the module docstring"
 
 
 class TheStandardLibraryReallyDoesRefuse(unittest.TestCase):
@@ -82,11 +90,15 @@ class TheCompilerRefusesRatherThanCrashes(unittest.TestCase):
         return W.compile_orders(plan, item=self.item, manifest=self.manifest)
 
     def test_a_cross_volume_write_set_is_a_refusal_and_not_a_ValueError(self):
+        if os.name != "nt":
+            self.skipTest(WINDOWS_ONLY)
         with self.assertRaises(W.PlanNotCompilable) as caught:
             self.compile_with([ELSEWHERE])
         self.assertIn("outside the project root", str(caught.exception))
 
     def test_the_refusal_names_the_path_that_caused_it(self):
+        if os.name != "nt":
+            self.skipTest(WINDOWS_ONLY)
         with self.assertRaises(W.PlanNotCompilable) as caught:
             self.compile_with([ELSEWHERE])
         self.assertIn("elsewhere", str(caught.exception))
@@ -111,6 +123,8 @@ class TheCodeGraphCallsItOutside(unittest.TestCase):
     def test_a_cross_volume_path_has_no_module_name(self):
         """`""` is what the existing "outside the root" branch returns, so a
         caller sees one answer for one condition."""
+        if os.name != "nt":
+            self.skipTest(WINDOWS_ONLY)
         self.assertEqual(module_name(ELSEWHERE, self.tmp.name), "")
 
     def test_a_path_inside_the_root_still_gets_its_name(self):
@@ -127,6 +141,8 @@ class TheReportFallsBackToAnAbsolutePath(unittest.TestCase):
     what it did. An absolute path in a report is merely less tidy."""
 
     def test_a_cross_volume_path_comes_back_absolute(self):
+        if os.name != "nt":
+            self.skipTest(WINDOWS_ONLY)
         got = _repo_relative(ELSEWHERE, "C:" + os.sep + "proj")
         self.assertTrue(os.path.isabs(got), got)
         self.assertIn("elsewhere", got)
