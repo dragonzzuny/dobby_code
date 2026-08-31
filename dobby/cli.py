@@ -276,7 +276,7 @@ def cmd_slice(args):
         decisions=[{"what": f"routed to level {plan.level}",
                     "why": "; ".join(plan.justification),
                     "rejected": "higher agency levels (unjustified cost)"}],
-        evidence=[spec["criteria"], os.path.relpath(traj.path, repo)],
+        evidence=[spec["criteria"], _repo_relative(traj.path, repo)],
         next_steps=["run with a real provider panel: dobby panel"])
     _out({
         "scenario": args.scenario,
@@ -291,8 +291,8 @@ def cmd_slice(args):
                      "records": [{"criterion": r["criterion"],
                                   "passed": r["passed"]}
                                  for r in evaluation["records"]]},
-        "trajectory": os.path.relpath(traj.path, repo),
-        "handoff": os.path.relpath(handoff, repo),
+        "trajectory": _repo_relative(traj.path, repo),
+        "handoff": _repo_relative(handoff, repo),
     })
 
 
@@ -389,6 +389,22 @@ def cmd_friction(args):
 
 
 # ------------------------------------------------------------- doctor ----
+def _repo_relative(path: str, repo: str) -> str:
+    """`path` relative to `repo`, or the absolute path when it cannot be.
+
+    `os.path.relpath` raises ValueError when the two are on different Windows
+    volumes, and the data directory is not required to share a volume with the
+    checkout -- a CI runner puts the workspace on D: while TEMP is on C:. This
+    is a REPORT field: an absolute path in it is slightly less tidy, and a
+    ValueError out of a reporting line is a command that dies while saying what
+    it did.
+    """
+    try:
+        return os.path.relpath(path, repo)
+    except ValueError:
+        return os.path.abspath(path)
+
+
 def cmd_doctor(args):
     """Everything this machine can and cannot do, with the reason for each.
 

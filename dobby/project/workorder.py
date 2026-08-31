@@ -146,12 +146,28 @@ def _relative(path: str, root: str) -> str:
         raise PlanNotCompilable("a step declared an empty path")
     absolute = os.path.abspath(os.path.join(root, text))
     inside = os.path.abspath(root)
-    if os.path.commonpath([absolute, inside]) != inside:
-        raise PlanNotCompilable(
-            f"a step wants to write {text!r}, which resolves outside the "
-            f"project root {root!r}. A plan may describe the work; it may not "
-            f"widen where the work happens")
-    return os.path.relpath(absolute, inside).replace("\\", "/")
+    # `commonpath` and `relpath` BOTH raise ValueError when the two paths are on
+    # different Windows volumes, and a plan is a model's output -- an absolute
+    # path on another drive is exactly the thing this function exists to refuse.
+    # It crashed instead, with a bare ValueError that slips past every
+    # `except PlanNotCompilable` in the loop and reads as a fault rather than a
+    # refusal. Measured: a write_set of `D:\elsewhere\a.py` against a project
+    # on C: raised `ValueError: Paths don't have the same drive`.
+    #
+    # `sandbox.py` already carries this lesson in its own guard; this is the
+    # same one, in the other place that needed it.
+    outside = PlanNotCompilable(
+        f"a step wants to write {text!r}, which resolves outside the "
+        f"project root {root!r}. A plan may describe the work; it may not "
+        f"widen where the work happens")
+    try:
+        if os.path.commonpath([absolute, inside]) != inside:
+            raise outside
+        return os.path.relpath(absolute, inside).replace("\\", "/")
+    except ValueError:
+        # A different volume cannot be inside the root, so the refusal is the
+        # right answer rather than a fallback.
+        raise outside from None
 
 
 def _paths(step: dict, key: str, root: str) -> tuple:

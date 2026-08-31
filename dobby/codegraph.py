@@ -67,7 +67,15 @@ def module_name(path: str, root: str) -> str:
     root_abs = os.path.abspath(root)
     path_abs = (path if os.path.isabs(path)
                 else os.path.join(root_abs, path))
-    rel = os.path.relpath(os.path.abspath(path_abs), root_abs)
+    try:
+        rel = os.path.relpath(os.path.abspath(path_abs), root_abs)
+    except ValueError:
+        # Different Windows volumes. That is the plainest possible case of
+        # "outside the root", and the branch below already knows what to do
+        # with one -- it just never got there, because `relpath` raised first.
+        # Returns what that branch returns, so a caller sees one answer for one
+        # condition.
+        return ""
     rel = rel.replace(os.sep, "/")
     if rel.startswith("../"):
         # Outside the root: there is no module name for it, and inventing one
