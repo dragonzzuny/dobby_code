@@ -26,7 +26,7 @@ the guard read as a crash rather than as the refusal it is.
 
 The drive-letter cases are Windows-only, and the first version of this file
 claimed otherwise -- "on POSIX there is one volume and the strings are simply
-ordinary absolute paths". They are not. On POSIX `D:\elsewhere\a.py` is a
+ordinary absolute paths". They are not. On POSIX `D:/elsewhere/a.py` is a
 RELATIVE path naming a directory called `D:`, so it lands INSIDE the root and
 every assertion here inverts. CI said so on all four POSIX jobs while both
 Windows jobs passed, which is the second time this session that a claim about
