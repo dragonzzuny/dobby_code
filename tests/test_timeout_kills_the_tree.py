@@ -177,5 +177,86 @@ class TheWrapperItself(TreeCase):
                     pipe.close()
 
 
+class ThePosixBranchIsSimulated(unittest.TestCase):
+    """What `kill_tree` DECIDES on POSIX, checked from a machine that is not.
+
+    This branch was written here and first executed on a CI runner, and it took
+    the runner with it: the ubuntu job died with "The hosted runner lost
+    communication with the server" while both Windows jobs passed. `killpg` on
+    `os.getpgid(child)` kills the caller's whole process group when the child is
+    not its own group leader -- which is every child NOT launched with
+    `start_new_session`, and also a child that has already exited.
+
+    A simulation is weaker than running it. It is much stronger than shipping a
+    branch nobody has ever evaluated, which is what happened.
+    """
+
+    def decide(self, *, posix, pgid, pid=4242, killpg_raises=None):
+        """Run `kill_tree` with the platform and the group id both faked."""
+        import dobby.providers.run as run_module
+
+        killed = {}
+
+        class FakeProc:
+            def __init__(self):
+                self.pid = pid
+
+            def kill(self):
+                killed["fallback"] = True
+
+        def getpgid(_pid):
+            if pgid is None:
+                raise ProcessLookupError("gone")
+            return pgid
+
+        def killpg(group, sig):
+            if killpg_raises:
+                raise killpg_raises
+            killed["group"] = group
+
+        # `os.getpgid` and `os.killpg` do not EXIST on Windows, so they are
+        # installed and removed rather than saved and restored. That absence is
+        # also why this branch could not be exercised here and had to be
+        # simulated.
+        import unittest.mock as _mock
+
+        with _mock.patch.object(run_module.os, "name",
+                                "posix" if posix else "nt"),                 _mock.patch.object(run_module.os, "getpgid", getpgid,
+                                   create=True),                 _mock.patch.object(run_module.os, "killpg", killpg,
+                                   create=True),                 _mock.patch.object(run_module.signal, "SIGKILL", 9,
+                                   create=True):
+            verdict = run_module.kill_tree(FakeProc())
+        return verdict, killed
+
+    def test_a_child_leading_its_own_group_gets_the_group_killed(self):
+        verdict, killed = self.decide(posix=True, pgid=4242)
+        self.assertIn("killpg", verdict)
+        self.assertEqual(killed.get("group"), 4242)
+
+    def test_a_child_in_the_callers_group_is_never_killpg_ed(self):
+        """The defect. 1 is not the child's pid, so this would have been the
+        runner's own group."""
+        verdict, killed = self.decide(posix=True, pgid=1)
+        self.assertNotIn("group", killed, "it signalled somebody else's group")
+        self.assertTrue(killed.get("fallback"), verdict)
+
+    def test_a_child_that_already_exited_is_not_killpg_ed(self):
+        verdict, killed = self.decide(posix=True, pgid=None)
+        self.assertNotIn("group", killed)
+        self.assertTrue(killed.get("fallback"), verdict)
+
+    def test_a_refused_killpg_falls_back_rather_than_raising(self):
+        verdict, killed = self.decide(posix=True, pgid=4242,
+                                      killpg_raises=PermissionError("no"))
+        self.assertTrue(killed.get("fallback"), verdict)
+
+    def test_the_wrapper_asks_for_its_own_session_on_posix(self):
+        """Which is what makes the group check pass in the ordinary case."""
+        import inspect
+
+        source = inspect.getsource(_run_killing_the_tree)
+        self.assertIn('kwargs.setdefault("start_new_session", True)', source)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -174,11 +174,26 @@ def kill_tree(proc) -> str:
         except (OSError, subprocess.SubprocessError):
             pass
     else:
+        # ONLY when the child leads its own group. `_run_killing_the_tree`
+        # launches with `start_new_session=True` precisely so it does, and a
+        # child that does NOT -- one launched by some other caller, or one that
+        # already exited so the pid was reused -- has the CALLER's group id, and
+        # `killpg` on that kills this process and everything beside it.
+        #
+        # Measured, and this is not a hypothetical: with the guard absent, the
+        # ubuntu CI job died with "The hosted runner lost communication with the
+        # server". The Windows jobs passed. That is what a POSIX branch written
+        # on Windows and never executed there looks like.
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            return "killpg SIGKILL"
-        except (OSError, ProcessLookupError):
-            pass
+            group = os.getpgid(proc.pid)
+        except OSError:
+            group = None
+        if group is not None and group == proc.pid:
+            try:
+                os.killpg(group, signal.SIGKILL)
+                return "killpg SIGKILL"
+            except OSError:
+                pass
     try:
         proc.kill()
         return "kill (direct child only)"
