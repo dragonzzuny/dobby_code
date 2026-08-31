@@ -227,10 +227,45 @@ def transaction(path: str):
     """
     conn = connect(path)
     try:
-        with conn:
+        with _immediate(conn):
             yield conn
     finally:
         conn.close()
+
+
+@contextlib.contextmanager
+def _immediate(conn: sqlite3.Connection):
+    """A transaction that holds the write lock from its FIRST statement.
+
+    `sqlite3` defers `BEGIN` until a statement that writes, whatever
+    `isolation_level` says, so a SELECT at the top of a read-modify-write runs
+    outside any transaction and two processes can both read the old value before
+    either writes. Every compare-and-set in this file is such a sequence.
+
+    Measured. Four workers on one run, with `set_node_state(expect=PENDING)`
+    already in place:
+
+        node_state  PENDING -> READY   "dependencies satisfied"   worker A
+        node_leased A
+        attempt_started
+        node_state  PENDING -> READY   "dependencies satisfied"   worker B
+
+    Both compare-and-sets saw PENDING and both succeeded, because neither read
+    was inside a transaction. The `expect` guard was correct and was being
+    asked a question nobody had locked.
+
+    `BEGIN IMMEDIATE` takes the RESERVED lock up front, so the read and the
+    write are one serialisable unit. Under WAL a reader is still not blocked;
+    what serialises is writer against writer, which is exactly the contention
+    this store has.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield conn
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
 
 
 #: Durability of a commit, from `DOBBY_SQLITE_SYNCHRONOUS`. Default FULL.
@@ -435,9 +470,10 @@ class RunStore:
             with transaction(self.path) as conn:
                 yield conn
             return
-        # `with conn` commits on success and rolls back on an exception, and
-        # leaves the handle open. That is the whole saving.
-        with held:
+        # `_immediate` rather than `with held`: the same explicit BEGIN the
+        # per-call path takes, so a held connection is not a weaker transaction
+        # than a fresh one. The handle stays open, which is the whole saving.
+        with _immediate(held):
             yield held
 
     # -- events ------------------------------------------------------------

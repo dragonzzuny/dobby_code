@@ -27,7 +27,7 @@ import json
 import time
 from dataclasses import dataclass, field, asdict
 
-from ..runtime.contracts import V_EXISTENCE, VERIFICATION_LEVELS
+from ..runtime.contracts import (V_EXISTENCE, V_NONE, VERIFICATION_LEVELS)
 
 # -- work item states --------------------------------------------------------
 OPEN = "OPEN"
@@ -196,6 +196,20 @@ class WorkItem:
     #: strings, and a guess that flatters is the failure the ladder exists to
     #: catch. An undeclared check counts as EXISTENCE: it ran and exited zero.
     checks_at: int = V_EXISTENCE
+    #: The rung this item's writing must actually be verified at, or V_NONE for
+    #: "no floor". Off by default.
+    #:
+    #: `checks_at` is what the checks REACH; this is what the item DEMANDS. They
+    #: are different sentences and only the second can be wrong on its own: an
+    #: item asking for BEHAVIOR while declaring a syntax check is a definition
+    #: that nothing could satisfy, and it is refused here rather than after a
+    #: provider has been paid.
+    #:
+    #: `ArtifactContract.requires_level` had this exact meaning, a gate in
+    #: `promotable` honouring it, tests covering it -- and no producer anywhere.
+    #: A capability with no declaration site is the `claude_quota` shape, and
+    #: this is the declaration site.
+    requires_level: int = V_NONE
     #: The plan that made this item gradeable, if an architect was asked.
     #: Recorded rather than inferred: without it, an item whose
     #: uncertainty was the reason for the call still reads as uncertain
@@ -220,6 +234,18 @@ class WorkItem:
                 f"this item declares checks_at="
                 f"{VERIFICATION_LEVELS[self.checks_at]} and has no acceptance "
                 f"check to reach it with")
+        if self.requires_level not in VERIFICATION_LEVELS:
+            raise ProjectError(
+                f"requires_level={self.requires_level!r} is not a verification "
+                f"level; expected one of {sorted(VERIFICATION_LEVELS)}")
+        if self.requires_level > self.checks_at:
+            raise ProjectError(
+                f"work item {self.work_item_id!r} requires "
+                f"{VERIFICATION_LEVELS[self.requires_level]} and its acceptance "
+                f"checks are declared to reach only "
+                f"{VERIFICATION_LEVELS[self.checks_at]}. Nothing could satisfy "
+                f"this item, so it is refused here rather than after a provider "
+                f"has been paid to try")
 
     @property
     def needs_architect(self) -> bool:

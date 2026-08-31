@@ -30,11 +30,22 @@ Two changes, and the second is deliberately redundant:
     _inside()     the absolute target is re-checked at the WRITE, with realpath,
                   because a symlink is invisible to any string comparison
 
-NOT VERIFIED HERE: the symlink case. Creating one on this machine needs
-privileges this process does not have (`OSError` from `os.symlink`), so
-`_inside` is exercised through `..` escapes, which realpath resolves the same
-way. Whether it stops a symlink escape on a machine that can make one is
-untested, and is stated rather than assumed.
+VERIFIED, after a first attempt gave up too early. `os.symlink` raises OSError
+without privileges this process has, and that was recorded as "not verifiable
+here". It was verifiable: a Windows directory JUNCTION needs no privileges, and
+`mklink /J` builds the same escape. Pointing `root/src` at a directory outside
+the project and merging `src/a.py`:
+
+    gate       PASSES -- "src/a.py" is inside the declared write set, and it is
+    _inside    REFUSES -- it resolves to <outside>/a.py
+
+Nothing was written outside and the file there was untouched. That is the case
+`_inside` exists for and no string comparison could have caught it.
+
+Still not covered: a POSIX symlink, on a machine that makes those. The
+mechanism is `os.path.realpath` on both sides, which resolves symlinks and
+junctions alike, so the same code runs -- but it has been run against one of
+the two.
 """
 
 import os
@@ -159,6 +170,67 @@ class ContainmentAtTheWrite(unittest.TestCase):
 
     def test_the_root_itself_is_allowed(self):
         self.assertEqual(_inside(self.root, "."), os.path.realpath(self.root))
+
+
+class AJunctionCannotSmuggleAWriteOut(unittest.TestCase):
+    """The case `gate` cannot see, tried for real.
+
+    A Windows directory junction needs no privileges, unlike `os.symlink`, so
+    the escape written off as unverifiable is buildable here. `gate` passes
+    `src/a.py` -- it IS inside the declared write set -- and `_inside` refuses
+    it, because the path resolves somewhere else entirely.
+    """
+
+    def setUp(self):
+        if os.name != "nt":
+            self.skipTest("directory junctions are a Windows facility; on "
+                          "POSIX this needs a symlink and the privileges "
+                          "for one")
+        import subprocess
+
+        self.outside = tempfile.mkdtemp()
+        self.root = tempfile.mkdtemp()
+        self.work = tempfile.mkdtemp()
+        self.addCleanup(self.cleanup)
+        self.victim = os.path.join(self.outside, "victim.txt")
+        with open(self.victim, "w", encoding="utf-8",
+                  newline="\n") as fh:
+            fh.write("untouched\n")
+        os.makedirs(os.path.join(self.work, "src"))
+        with open(os.path.join(self.work, "src", "a.py"), "w",
+                  encoding="utf-8", newline="\n") as fh:
+            fh.write("written by the isolated run\n")
+        made = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", os.path.join(self.root, "src"),
+             self.outside], capture_output=True, text=True)
+        if made.returncode != 0:
+            self.skipTest(f"could not create a junction: {made.stderr[:80]}")
+
+    def cleanup(self):
+        import subprocess
+
+        for d in (self.root, self.work):
+            subprocess.run(["cmd", "/c", "rmdir", "/S", "/Q", d],
+                           capture_output=True)
+        shutil.rmtree(self.outside, ignore_errors=True)
+
+    def test_the_gate_alone_would_have_let_it_through(self):
+        """Not a gate failure -- a layer the gate cannot reach."""
+        self.assertEqual(gate(changed("src/a.py"), allowed=["src"]), [])
+
+    def test_the_write_is_refused(self):
+        with self.assertRaises(MergeRefused) as caught:
+            merge(changed("src/a.py"), worktree=self.work, root=self.root,
+                  allowed=["src"], protected=[])
+        self.assertIn("outside the project root", str(caught.exception))
+
+    def test_nothing_landed_outside(self):
+        with self.assertRaises(MergeRefused):
+            merge(changed("src/a.py"), worktree=self.work, root=self.root,
+                  allowed=["src"], protected=[])
+        self.assertFalse(os.path.exists(os.path.join(self.outside, "a.py")))
+        with open(self.victim, encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), "untouched\n")
 
 
 class MergeRefusesRatherThanWriting(unittest.TestCase):

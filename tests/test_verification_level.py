@@ -337,5 +337,96 @@ class TheProjectLayerCanDeclareItToo(unittest.TestCase):
                     graph.nodes["verify"].contract.checks_at, level)
 
 
+class TheFloorHasADeclarationSite(unittest.TestCase):
+    """`requires_level` had a gate, tests, and no producer.
+
+    `ArtifactContract.requires_level` was honoured by `promotable` and refused
+    at construction when unsatisfiable, and nothing in the repository ever set
+    it -- the `claude_quota` shape, which is what this session has spent its
+    time removing. `WorkItem.requires_level` is the declaration site: an item
+    says what rung its writing must actually be verified at, and the compiler
+    carries it onto the verify contract.
+
+    `checks_at` is what the checks REACH; `requires_level` is what the item
+    DEMANDS. Only the second can be wrong on its own, and it is refused at the
+    ITEM so the message names the item rather than an anonymous contract, and
+    before a provider has been paid to try.
+    """
+
+    def item(self, **kw):
+        from dobby.project.models import WorkItem
+
+        base = dict(work_item_id="W001", project_id="p", title="t",
+                    outcome="o",
+                    acceptance_checks=["python -m unittest discover -s tests"])
+        base.update(kw)
+        return WorkItem(**base)
+
+    def test_there_is_no_floor_by_default(self):
+        self.assertEqual(self.item().requires_level, V_NONE)
+
+    def test_an_item_may_demand_a_rung_its_checks_reach(self):
+        item = self.item(checks_at=V_BEHAVIOR, requires_level=V_BEHAVIOR)
+        self.assertEqual(item.requires_level, V_BEHAVIOR)
+
+    def test_demanding_more_than_the_checks_reach_is_refused_at_the_item(self):
+        from dobby.project.models import ProjectError
+
+        with self.assertRaises(ProjectError) as caught:
+            self.item(requires_level=V_BEHAVIOR)      # checks_at is EXISTENCE
+        message = str(caught.exception)
+        self.assertIn("W001", message)
+        self.assertIn("BEHAVIOR", message)
+        self.assertIn("EXISTENCE", message)
+
+    def test_a_level_outside_the_ladder_is_refused(self):
+        from dobby.project.models import ProjectError
+
+        with self.assertRaises(ProjectError):
+            self.item(requires_level=99)
+
+    def test_the_demand_reaches_the_compiled_verify_contract(self):
+        """The half that makes it more than a stored field."""
+        import tempfile
+
+        from dobby.project import architecture as A, workorder as W
+        from dobby.project.models import ProjectManifest
+        from dobby.runtime.contracts import LOCAL_WRITE
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as root:
+            manifest = ProjectManifest(project_id="p", root=root,
+                                       repo_digest="d",
+                                       smoke_checks=("pytest -q",))
+            plan = A.PlanSpec(
+                plan_id="pl-1", work_item_id="W001", objective="o",
+                side_effect_class=LOCAL_WRITE,
+                execution_steps=({"role": "implement", "objective": "x",
+                                  "write_set": ["app.py"],
+                                  "read_set": ["app.py"]},))
+            for demand in (V_NONE, V_BEHAVIOR):
+                item = self.item(checks_at=V_BEHAVIOR, requires_level=demand)
+                graph = W.compile_graph(plan, item=item, manifest=manifest,
+                                        static=True)
+                self.assertEqual(
+                    graph.nodes["verify"].contract.requires_level, demand)
+
+    def test_promotable_still_honours_it(self):
+        """The gate that was already there, now with something to gate."""
+        contract = ArtifactContract(
+            output_schema={"type": "object"},
+            acceptance_checks=[NOOP_CHECK],
+            checks_at=V_BEHAVIOR, requires_level=V_BEHAVIOR)
+        verdict = Verifier(repo=self.tmp()).verify(contract, {"done": True})
+        self.assertEqual(verdict.level, V_BEHAVIOR)
+        self.assertTrue(promotable(contract, verdict))
+
+    def tmp(self):
+        import tempfile
+
+        holder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(holder.cleanup)
+        return holder.name
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -270,5 +270,76 @@ class ThroughARun(unittest.TestCase):
         self.assertEqual(len(promoted), 3)
 
 
+class ReadModifyWriteIsSerialised(StoreCase):
+    """A compare-and-set has to be inside a transaction to mean anything.
+
+    `sqlite3` defers `BEGIN` until a statement that WRITES, whatever
+    `isolation_level` says. So the SELECT at the top of every compare-and-set in
+    this store ran outside any transaction, and two processes could both read
+    the old value before either wrote. Measured, four workers on one run, with
+    `set_node_state(expect=PENDING)` already in place:
+
+        PENDING -> READY   "dependencies satisfied"   worker A
+        node_leased        A
+        attempt_started
+        PENDING -> READY   "dependencies satisfied"   worker B
+
+    Both guards saw PENDING and both passed. The guard was right and was being
+    asked a question nobody had locked. `BEGIN IMMEDIATE` takes the write lock
+    from the first statement, so the read and the write are one unit.
+    """
+
+    def test_two_threads_cannot_both_win_the_same_compare_and_set(self):
+        node = G.TaskNode(node_id="n", kind="plan", worker="static",
+                          instruction="i", config={"payload": {}})
+        run_id = self.store.create_run("t", G.TaskGraph([node]))
+        results, errors = [], []
+        start = threading.Barrier(2)
+
+        def contend():
+            try:
+                start.wait(timeout=10)
+                results.append(self.store.set_node_state(
+                    run_id, "n", G.READY, expect=G.PENDING))
+            except Exception as exc:            # pragma: no cover - reported
+                errors.append(exc)
+
+        threads = [threading.Thread(target=contend) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(results), [False, True],
+                         "both callers were told they had moved the node")
+
+    def test_the_losing_write_leaves_no_event(self):
+        node = G.TaskNode(node_id="n", kind="plan", worker="static",
+                          instruction="i", config={"payload": {}})
+        run_id = self.store.create_run("t", G.TaskGraph([node]))
+        self.store.set_node_state(run_id, "n", G.READY, expect=G.PENDING)
+        before = len(self.store.events(run_id))
+        self.store.set_node_state(run_id, "n", G.READY, expect=G.PENDING)
+        self.assertEqual(len(self.store.events(run_id)), before)
+
+    def test_a_transaction_still_rolls_back_on_an_exception(self):
+        """`BEGIN IMMEDIATE` is hand-rolled now, so the unhappy path is ours."""
+        node = G.TaskNode(node_id="n", kind="plan", worker="static",
+                          instruction="i", config={"payload": {}})
+        run_id = self.store.create_run("t", G.TaskGraph([node]))
+        with self.assertRaises(RuntimeError):
+            with self.store._tx() as conn:
+                conn.execute(
+                    "UPDATE nodes SET state=? WHERE run_id=? AND node_id=?",
+                    (G.SKIPPED, run_id, "n"))
+                raise RuntimeError("boom")
+        self.assertEqual(self.state_of(run_id, "n"), G.PENDING,
+                         "the aborted write was committed anyway")
+
+    def state_of(self, run_id, node_id):
+        return self.store.load_run(run_id)["graph"].nodes[node_id].state
+
+
 if __name__ == "__main__":
     unittest.main()

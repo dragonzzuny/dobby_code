@@ -66,7 +66,7 @@ import os
 
 from ..runtime import graph as G
 from ..runtime.contracts import (LOCAL_WRITE, NONE, SCHEMAS, V_EXISTENCE,
-                                 ArtifactContract)
+                                 V_NONE, ArtifactContract)
 from .models import ProjectError
 
 # -- roles a plan may ask for -------------------------------------------------
@@ -398,7 +398,13 @@ def compile_graph(plan, *, item, manifest, provider: str | None = None,
             # the implement orders upstream of it: the rung it declares is the
             # rung those writes are verified at, and leaving it at the floor
             # made every project item look like the weakest possible one.
-            checks_at=getattr(item, "checks_at", V_EXISTENCE)),
+            checks_at=getattr(item, "checks_at", V_EXISTENCE),
+            # The item's DEMAND, as against what its checks reach. The contract
+            # refuses an unsatisfiable pair at construction and `promotable`
+            # enforces it at run time, so a verify node that declared a suite
+            # and then reached a lower rung -- a check that could not run -- does
+            # not promote on the strength of the declaration alone.
+            requires_level=getattr(item, "requires_level", V_NONE)),
         config={"payload": {
             "command": "; ".join(item.acceptance_checks) or "(none declared)",
             "exit_code": 0}})
