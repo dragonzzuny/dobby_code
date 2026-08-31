@@ -24,6 +24,9 @@ from dobby.runtime import (ArtifactContract, ConcurrencyLimiter,
 from dobby.runtime import graph as G
 from dobby.runtime.placement import (CLOSED, COOLDOWN_S, FAILURE_THRESHOLD,
                                      HALF_OPEN, OPEN, Breaker, UNKNOWN_PRIOR)
+from dobby.runtime.failures import Failure
+from dobby.runtime.workers import (WorkerAdapter, WorkerRegistry,
+                                   WorkerResult)
 
 
 def provider_node(node_id="work", kind="execute", **config):
@@ -291,19 +294,69 @@ class ParallelNodes(unittest.TestCase):
                              f"{node_id} ran more than once")
 
     def test_the_two_independent_nodes_are_dispatched_together(self):
+        """Both must be IN FLIGHT at once, proved by a barrier rather than by
+        two timestamps happening to overlap.
+
+        The timestamp version measured a coincidence. These nodes finish in
+        microseconds, so whether their spans overlap depends on how quickly the
+        pool hands the second one to a thread -- and on a loaded two-core CI
+        runner it does not. Measured there: an overlap of -25.5ms, reported as
+        "parallelism is off" on a runtime whose parallelism was fine. Red CI
+        for a property nobody had broken is worse than no test.
+
+        A two-party barrier cannot be satisfied by sequential execution at any
+        speed: the first arrival blocks until the second arrives. If only one
+        node is ever in flight, this times out and fails for the reason the old
+        assertion was reaching for.
+        """
+        barrier = threading.Barrier(2, timeout=30)
+        arrived = []
+
+        class Meeting(WorkerAdapter):
+            name = "static"
+
+            def run(self, node, context):
+                if node.node_id in ("left", "right"):
+                    arrived.append(node.node_id)
+                    barrier.wait()
+                return WorkerResult(True, payload={"id": node.node_id})
+
         runner = Runner(self.tmp.name, data_dir=self.data, max_parallel=2,
+                        workers=WorkerRegistry({"static": Meeting()}),
                         sleep=lambda _s: None)
         run_id = runner.start("fan out and join", self.diamond())
-        runner.run(run_id)
-        spans = {s["name"]: s for s in runner.store.spans(run_id)
-                 if s["kind"] == "node"}
-        left, right = spans["node:left"], spans["node:right"]
-        # Overlapping intervals. Sequential execution cannot produce this.
-        overlap = (min(left["ended_ms"], right["ended_ms"])
-                   - max(left["started_ms"], right["started_ms"]))
-        self.assertGreater(
-            overlap, 0,
-            "the two independent nodes did not overlap; parallelism is off")
+        result = runner.run(run_id)
+
+        self.assertEqual(result.state, G.SUCCEEDED, result.to_dict())
+        self.assertEqual(sorted(arrived), ["left", "right"],
+                         "both independent nodes have to reach the barrier")
+
+    def test_one_worker_at_a_time_cannot_pass_that_barrier(self):
+        """The control. Same graph, `max_parallel=1`, and the barrier is never
+        met -- which is what makes the test above evidence rather than a
+        formality."""
+        barrier = threading.Barrier(2, timeout=3)
+        timed_out = []
+
+        class Meeting(WorkerAdapter):
+            name = "static"
+
+            def run(self, node, context):
+                if node.node_id in ("left", "right"):
+                    try:
+                        barrier.wait()
+                    except threading.BrokenBarrierError:
+                        timed_out.append(node.node_id)
+                        return WorkerResult(False, failure=Failure(
+                            "NON_RETRYABLE", "the barrier was never met"))
+                return WorkerResult(True, payload={"id": node.node_id})
+
+        runner = Runner(self.tmp.name, data_dir=self.data, max_parallel=1,
+                        workers=WorkerRegistry({"static": Meeting()}),
+                        sleep=lambda _s: None)
+        runner.run(runner.start("fan out and join", self.diamond()))
+        self.assertTrue(timed_out,
+                        "sequential execution met a two-party barrier")
 
     def test_sequential_is_still_the_default(self):
         runner = Runner(self.tmp.name, data_dir=self.data,
