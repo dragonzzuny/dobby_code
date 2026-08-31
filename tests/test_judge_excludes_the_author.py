@@ -118,6 +118,7 @@ class ARealWorkOrder(unittest.TestCase):
                         data_dir=os.path.join(self.root, "d"),
                         workers=WorkerRegistry({"provider": self.author,
                                                 "judge": self.spy}),
+                        available_providers={"claude", "codex", "gemini"},
                         sleep=lambda _s: None)
         return runner.run(runner.start("t", graph))
 

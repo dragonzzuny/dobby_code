@@ -226,6 +226,7 @@ class ThroughTheRunner(unittest.TestCase):
         runner = Runner(repo=self.tmp.name,
                         data_dir=os.path.join(self.tmp.name, "d"),
                         workers=WorkerRegistry({"provider": writer}),
+                        available_providers={"claude", "codex", "gemini"},
                         sleep=lambda _s: None)
         node = G.TaskNode(
             node_id="report", kind="report", worker="provider",

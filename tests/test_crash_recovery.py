@@ -91,6 +91,7 @@ WORKER = textwrap.dedent('''
     die_on = sys.argv[5] if len(sys.argv) > 5 and sys.argv[5] != "-" else None
     runner = Runner(repo=repo, data_dir=data,
                     workers=WorkerRegistry({"provider": Worker(die_on)}),
+                    available_providers={"claude", "codex", "gemini"},
                     sleep=lambda _s: None)
 
     if mode == "seed":

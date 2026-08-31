@@ -166,7 +166,8 @@ class ProviderPlacement:
     """Ranks providers for a node from the recorded scorecard."""
 
     def __init__(self, store, *, weights: Weights = DEFAULT_WEIGHTS,
-                 allow_network: bool = False, scorecard: dict | None = None):
+                 allow_network: bool = False, scorecard: dict | None = None,
+                 available: "set | None" = None):
         self.store = store
         self.weights = weights
         self.allow_network = allow_network
@@ -174,6 +175,27 @@ class ProviderPlacement:
         #: Read once per placement pass. Recomputing it per candidate would
         #: re-read every run in the store for each provider.
         self._card = scorecard
+        #: The fleet to place against, or None to ask this machine.
+        #:
+        #: The same kind of seam as `scorecard`: a fact placement reads from the
+        #: environment, injectable by a caller that already knows it. A caller
+        #: that supplies its own WORKERS -- a test driving the runtime with a
+        #: fake adapter -- is such a caller, and had no way to say so.
+        #:
+        #: The cost of not having it: CI has been red for thirty consecutive
+        #: runs, back to 2026-08-21, with 42 tests failing on
+        #:
+        #:     --override-provider claude is not selectable here: it is not a
+        #:     candidate for this role.  candidates: []
+        #:
+        #: The runners have no agent CLI installed, which is correct and is
+        #: exactly what an empty fleet means. The tests were exercising the
+        #: RUNTIME with an injected worker and still consulting the real PATH
+        #: for a binary they were never going to launch.
+        #:
+        #: `None` keeps the probe, so nothing in production changes; a set says
+        #: "assume this fleet", which is a sentence a test can be held to.
+        self._available = None if available is None else set(available)
 
     # -- state -------------------------------------------------------------
     def breaker(self, provider: str) -> Breaker:
@@ -233,7 +255,8 @@ class ProviderPlacement:
         role = node.config.get("provider_role") or node_role_for(node.kind)
         policy = ROLE_POLICY.get(role)
 
-        usable = set(available_ids(allow_network=self.allow_network))
+        usable = (set(self._available) if self._available is not None
+                  else set(available_ids(allow_network=self.allow_network)))
         rejected: dict = {}
         eligible: list = []
 

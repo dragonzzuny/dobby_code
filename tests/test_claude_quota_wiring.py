@@ -260,7 +260,8 @@ class TheWiring(unittest.TestCase):
         return Runner(repo=self.tmp.name, data_dir=self.data,
                       workers=WorkerRegistry({"provider": worker}),
                       override_provider=provider,
-                      quota=quota, sleep=lambda _s: None)
+                      quota=quota, available_providers={"claude", "codex", "gemini"},
+                      sleep=lambda _s: None)
 
     def test_it_is_off_unless_asked_for(self):
         worker = FakeClaude()

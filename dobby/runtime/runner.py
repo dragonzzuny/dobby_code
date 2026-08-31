@@ -120,6 +120,7 @@ class Runner:
                  placement_context=None,
                  override_provider: str | None = None,
                  quota=None,
+                 available_providers: "set | None" = None,
                  sleep=time.sleep):
         import threading
         self.repo = os.path.abspath(repo)
@@ -131,8 +132,13 @@ class Runner:
         #: for a graph whose steps mostly depend on each other, and raising it
         #: only helps a graph with a genuine fan-out.
         self.max_parallel = max(1, max_parallel)
+        #: `available_providers` is for a caller that supplies its own WORKERS
+        #: and therefore already knows the fleet -- a test driving this runtime
+        #: with an injected adapter, which was still consulting the real PATH
+        #: for a binary it was never going to launch. None keeps the probe.
         self.placement = ProviderPlacement(self.store,
-                                           allow_network=allow_network)
+                                           allow_network=allow_network,
+                                           available=available_providers)
         #: Claude admission control, or None. OFF by default, deliberately: a
         #: ledger that appeared without being asked for would change what every
         #: existing run costs and how it fails, which is not a thing a bug fix

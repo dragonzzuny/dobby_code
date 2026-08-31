@@ -71,6 +71,7 @@ WORKER = textwrap.dedent('''
 
     runner = Runner(repo=repo, data_dir=data,
                     workers=WorkerRegistry({"provider": Slow()}),
+                    available_providers={"claude", "codex", "gemini"},
                     sleep=lambda _s: None)
     if mode == "seed":
         print(runner.start("shared task", G.TaskGraph(nodes)))

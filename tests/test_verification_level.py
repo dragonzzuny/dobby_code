@@ -214,6 +214,7 @@ class ThroughTheRunner(unittest.TestCase):
         runner = Runner(repo=self.tmp.name,
                         data_dir=os.path.join(self.tmp.name, "d"),
                         workers=WorkerRegistry({"provider": self.Ok()}),
+                        available_providers={"claude", "codex", "gemini"},
                         sleep=lambda _s: None)
         node = G.TaskNode(node_id="n", kind="report", worker="provider",
                           instruction="i", contract=contract,
@@ -253,6 +254,7 @@ class ThroughTheRunner(unittest.TestCase):
         second = Runner(repo=self.tmp.name,
                         data_dir=os.path.join(self.tmp.name, "d"),
                         workers=WorkerRegistry({"provider": self.Ok()}),
+                        available_providers={"claude", "codex", "gemini"},
                         sleep=lambda _s: None)
         rows = second.store.artifacts(result.run_id, node_id="n",
                                       state="PROMOTED")

@@ -125,7 +125,8 @@ WORKER = textwrap.dedent('''
     parallel = int(os.environ.get("STRESS_PARALLEL", "1"))
     runner = Runner(repo=repo, data_dir=data,
                     workers=WorkerRegistry({"provider": Work()}),
-                    max_parallel=parallel, sleep=lambda _s: None)
+                    max_parallel=parallel, available_providers={"claude", "codex", "gemini"},
+                    sleep=lambda _s: None)
     if mode == "seed":
         print(runner.start("stress", build()))
     else:

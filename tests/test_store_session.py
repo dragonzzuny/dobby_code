@@ -215,6 +215,7 @@ class ThroughARun(unittest.TestCase):
     def runner(self):
         return Runner(repo=self.tmp, data_dir=os.path.join(self.tmp, "d"),
                       workers=WorkerRegistry({"provider": Instant()}),
+                      available_providers={"claude", "codex", "gemini"},
                       sleep=lambda _s: None)
 
     def graph(self, n):

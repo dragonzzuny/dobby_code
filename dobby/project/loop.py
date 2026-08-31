@@ -94,22 +94,56 @@ _STOP_FOR_OUTCOME = {
 }
 
 
+#: A rejected plan gets ONE more attempt, with the rejection handed back.
+#:
+#: Bounded at one on purpose. Two is a budget decision nobody made, and a plan
+#: rejected twice for the same stated reason is a provider that cannot act on
+#: that reason rather than one that missed it.
+PLAN_REPAIR_ATTEMPTS = 1
+
+
 def _ask_the_architect(data_dir, project_id, item, envelope, *, provider,
                        propose):
-    """One bounded call, and its failures are decisions rather than exceptions.
+    """One bounded call, then one repair, and failures are decisions.
 
     A provider that is absent, times out or answers in prose is not a crash of
     the loop: it is a plan that could not be obtained, which is exactly the
     `REJECTED` outcome the store records with the reason attached.
+
+    THE REPAIR, and why it is not a guess. `architecture.evaluate` rejects a
+    plan for reasons it states as sentences, deterministically -- "the plan
+    drops acceptance check(s) already on this item: [...]. An architect may add
+    to the definition of done and may never narrow it". That is a machine's
+    finding about a specific plan, not a model's theory about a failure, and
+    `ArchitectureRequest.failure_context` already carries such text into the
+    architect's prompt. Everything needed to ask again was present and nothing
+    asked.
+
+    Measured, and this is why it is here. On `django__django-13121` the gate
+    refused the plan for exactly that reason and the loop stopped with ONE
+    provider call against a budget of five, scoring 0/1 on an instance a single
+    claude call resolved. The refusal was correct. Ending there was the waste.
     """
-    try:
-        return A.request_architecture(
-            data_dir, item.work_item_id, project_id=project_id,
-            session_id=envelope.session_id, provider=provider,
-            propose=propose)
-    except A.PlanRejected as exc:
-        return A.PlanDecision(request_digest="", plan_id=None,
-                              outcome=A.REJECTED, reason=str(exc))
+    context: tuple = ()
+    for attempt in range(PLAN_REPAIR_ATTEMPTS + 1):
+        try:
+            decision = A.request_architecture(
+                data_dir, item.work_item_id, project_id=project_id,
+                session_id=envelope.session_id, provider=provider,
+                propose=propose, failure_context=context)
+        except A.PlanRejected as exc:
+            decision = A.PlanDecision(request_digest="", plan_id=None,
+                                      outcome=A.REJECTED, reason=str(exc))
+        if decision.outcome != A.REJECTED or attempt >= PLAN_REPAIR_ATTEMPTS:
+            return decision
+        # The reason travels verbatim. Paraphrasing it here would put this
+        # module's reading of the gate in front of what the gate said.
+        context = (
+            "A previous plan for this item was REJECTED. Fix exactly this and "
+            "propose again:",
+            decision.reason or "(the rejection carried no reason)",
+        )
+    return decision
 
 
 def advance(data_dir: str, *, project_id: str | None = None,
