@@ -492,6 +492,52 @@ def child_env(extra: dict | None = None) -> dict:
     return env
 
 
+#: Every environment variable this engine reads, with what it does when unset.
+#:
+#: Declared in one place so `doctor` can report the ones an operator has
+#: TURNED ON. A machine behaving differently from the defaults is the first
+#: thing a diagnosis needs, and until now `doctor` reported the platform, the
+#: files and the fleet -- and not the switches, which are the only part a human
+#: chose. Two of the three were in no document either.
+#:
+#: A name here that nothing reads is a lie of the same kind this table exists
+#: to prevent, so `tests/test_switches.py` asserts each one is read by the
+#: module that claims it.
+SWITCHES: tuple = (
+    ("DOBBY_SQLITE_SYNCHRONOUS",
+     "dobby/runtime/store.py",
+     "FULL",
+     "sqlite commit durability; NORMAL is ~15x faster per transaction and "
+     "loses the most recent commits on an OS crash or power cut"),
+    ("DOBBY_REQUIRE_PINNED_MODEL",
+     "dobby/providers/models.py",
+     "off",
+     "when set, a provider answering with a model other than the one pinned "
+     "fails the node instead of being recorded and accepted"),
+    ("DOBBY_APPROVAL_DIR",
+     "dobby/gates.py",
+     "(the repo's own)",
+     "where gate approval records are read from and written to"),
+)
+
+
+def switches() -> list[dict]:
+    """What the operator has turned on, and what each one changes.
+
+    Only the SET ones carry a value: printing every default would bury the one
+    line that explains why this machine behaves unlike the last one.
+    """
+    import os as _os
+
+    out = []
+    for name, where, default, what in SWITCHES:
+        raw = _os.environ.get(name)
+        out.append({"name": name, "set": raw is not None,
+                    "value": raw if raw is not None else None,
+                    "default": default, "read_by": where, "changes": what})
+    return out
+
+
 def describe_platform() -> dict:
     """Facts a report can cite about what this machine can and cannot verify."""
     return {

@@ -497,6 +497,15 @@ def cmd_doctor(args):
               "knowledge files or re-run `dobby init --scan`",
               blocking=False)
 
+    # What the operator has turned on. Reported rather than checked: a switch
+    # is a choice, not a fault. It appears here because a machine behaving
+    # unlike the defaults is the first thing a diagnosis needs, and `doctor`
+    # reported the platform, the files and the fleet -- everything except the
+    # part a human chose.
+    from .core.platform import switches as _switches
+
+    turned_on = [s for s in _switches() if s["set"]]
+
     boot = os.path.join(data, "knowledge", "kg.bootstrap.json")
     check("bootstrapped", os.path.exists(boot), boot,
           "run: dobby init --scan <host-root> (the project is not instantiated)",
@@ -537,6 +546,8 @@ def cmd_doctor(args):
         "version": __import__("dobby").__version__,
         "repo": repo,
         "checks": checks,
+        "switches": _switches(),
+        "switches_set": [s["name"] for s in turned_on],
         "failed": [c["check"] for c in failed],
         "blocking_failures": [c["check"] for c in blocking_failures],
         "advisory_gaps": [c["check"] for c in advisory],
