@@ -155,6 +155,7 @@ def _read_tail(data_dir: str, limit: int = TAIL_LINES) -> list[Entry]:
     with open(path, encoding="utf-8") as f:
         lines = f.readlines()[-limit:]
     out: list[Entry] = []
+    unread = 0
     for line in lines:
         line = line.strip()
         if not line:
@@ -162,21 +163,41 @@ def _read_tail(data_dir: str, limit: int = TAIL_LINES) -> list[Entry]:
         try:
             out.append(Entry(**json.loads(line)))
         except (json.JSONDecodeError, TypeError):
-            # A corrupt line must not break the status prompt.
+            # A corrupt line must not break the status prompt -- and it must
+            # not disappear either. This is a MONEY ledger: a line nobody could
+            # read is spend that happened and was not counted, so a total built
+            # without it is a floor, not a measurement.
+            #
+            # Measured: five lines, two corrupt, and `summarize` reported three
+            # calls and `complete: True`. The same shape the token axes were
+            # fixed for, in the file that answers "what did this cost".
+            unread += 1
             continue
+    _read_tail.unread = unread
     return out
+
+
+#: Lines the last `_read_tail` could not parse. An attribute rather than a
+#: second return value: several callers unpack this and none asked for a tuple,
+#: and the number belongs to the read that produced it.
+_read_tail.unread = 0
 
 
 def summarize(data_dir: str, *, window_s: float | None = None,
               limit: int = TAIL_LINES) -> dict:
     """Aggregate the ledger. `window_s` restricts to the recent past."""
     entries = _read_tail(data_dir, limit)
+    unread = _read_tail.unread
     if window_s is not None:
         cutoff = time.time() - window_s
         entries = [e for e in entries if e.t >= cutoff]
     if not entries:
-        return {"calls": 0, "providers": {},
-                "note": "no agent calls recorded"}
+        return {"calls": 0, "providers": {}, "unread_lines": unread,
+                "ledger_complete": unread == 0,
+                "note": ("no agent calls recorded" if not unread else
+                         f"no readable agent calls; {unread} ledger line(s) "
+                         f"could not be parsed, so this is not a measurement "
+                         f"of zero spend")}
 
     per: dict[str, dict] = {}
     for e in entries:
@@ -255,6 +276,13 @@ def summarize(data_dir: str, *, window_s: float | None = None,
         # False as soon as one call reported no dollars: the total is then the
         # metered providers' spend and not the run's.
         "dollars_complete": len(costed) == len(entries),
+        # Lines the reader could not parse at all. Beside the other two
+        # completeness flags because it is the same question one level down:
+        # `tokens_complete` asks whether every counted call reported usage,
+        # and this asks whether every recorded call was counted. A ledger with
+        # unread lines is a FLOOR on spend, not a measurement of it.
+        "unread_lines": unread,
+        "ledger_complete": unread == 0,
         # Oldest call to now, so a status bar can say how long this has been
         # going. `t - duration` is when the first call STARTED; the timestamp
         # alone is when it finished.
@@ -351,6 +379,13 @@ def statusline(data_dir: str, *, active: Sequence[dict] = (),
             if summary["cost_usd_reported"] is not None:
                 total += f" ${summary['cost_usd_reported']:.2f}"
             parts.append(total)
+
+    # Said last and said plainly. `+` marks a total built from calls that
+    # reported no usage; this is one level down -- lines the reader could not
+    # parse at all, which are spend that happened and was never counted. A
+    # status bar that shows a number without this reads as a measurement.
+    if summary.get("unread_lines"):
+        parts.append(f"!{summary['unread_lines']} unread")
 
     return " | ".join(parts) if parts else "dobby: idle"
 
