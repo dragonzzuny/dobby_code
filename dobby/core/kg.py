@@ -99,6 +99,12 @@ class KnowledgeGraph:
     def __init__(self, ontology: Ontology, nodes: list[dict] | None = None,
                  edges: list[dict] | None = None):
         self.ontology = ontology
+        #: Edges a MERGE could not add, as `(edge, reason)`. Empty unless
+        #: `bootstrap.merged_graph` filled it: an edge dropped there points at
+        #: a node that lost the merge, and the graph has to be able to say so
+        #: rather than come back quietly thinner than the files it was built
+        #: from.
+        self.dropped_edges: list = []
         self.nodes: dict[str, dict] = {}
         self.edges: list[dict] = []
         self._adj: dict[str, list[tuple[str, str]]] = {}

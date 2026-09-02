@@ -468,6 +468,35 @@ def cmd_doctor(args):
             continue
         check(f"data:{rel}", True, f"{len(parsed)} top-level key(s)")
 
+    # Edges the merge could not add. Advisory, because a graph missing some of
+    # its edges still answers most questions -- and BLOCKING would refuse to
+    # start a machine that is merely thinner than its files. Reported at all
+    # because it used to be reported nowhere: `merged_graph` dropped them with
+    # a comment claiming it counted, and nothing counted, so a graph could lose
+    # edges between a write and a read with no reader able to tell.
+    try:
+        from .core.bootstrap import merged_graph as _merged
+        from .core.kg import Ontology as _Ontology
+
+        dropped = getattr(
+            _merged(_Ontology.load(os.path.join(data, "ontology.json")),
+                    data),
+            "dropped_edges", [])
+    except Exception as exc:                       # doctor never dies of this
+        dropped = []
+        check("kg_edges", False, f"could not be examined: {exc}",
+              "the checks above name the file to fix; re-run afterwards",
+              blocking=False)
+    else:
+        check("kg_edges", not dropped,
+              ("every declared edge loaded" if not dropped else
+               f"{len(dropped)} edge(s) dropped, first: "
+               + "; ".join(f"{e.get('src')}->{e.get('dst')}"
+                           for e, _ in dropped[:3])),
+              "an edge naming a node that is not in the graph; fix the "
+              "knowledge files or re-run `dobby init --scan`",
+              blocking=False)
+
     boot = os.path.join(data, "knowledge", "kg.bootstrap.json")
     check("bootstrapped", os.path.exists(boot), boot,
           "run: dobby init --scan <host-root> (the project is not instantiated)",

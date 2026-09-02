@@ -191,9 +191,22 @@ def merged_graph(ontology, data_dir: str):
     g = KnowledgeGraph(ontology)
     for n in nodes.values():
         g.add_node(n)
+    # The comment here used to say "drop silently but count" and nothing
+    # counted. Measured on a two-node graph with three declared edges, one of
+    # them valid: two vanished and `merged_graph` returned a graph that looked
+    # complete. A knowledge graph that thins itself between a write and a read,
+    # with no reader able to tell, is the shape this repository refuses
+    # everywhere else -- a missing check reads exactly like a passing one.
+    #
+    # The loss rides on the GRAPH rather than in the return type, because eight
+    # call sites unpack this and none of them asked for a tuple. `dropped_edges`
+    # is a list of `(edge, reason)`, so a caller can name what it lost instead
+    # of being told a number.
+    dropped: list = []
     for e in edges:
         try:
             g.add_edge(e)
-        except Exception:
-            pass  # edge to a node that lost the merge; drop silently but count
+        except Exception as exc:
+            dropped.append((e, f"{type(exc).__name__}: {exc}"))
+    g.dropped_edges = dropped
     return g
