@@ -207,6 +207,11 @@ def side_effect_duplicate_rate(store, *, limit: int = 500) -> Measurement:
 
 def report(store, *, limit: int = 500) -> dict:
     """Every operational metric, with its sample size and its gaps named."""
+    with store.session():
+        return _report(store, limit=limit)
+
+
+def _report(store, *, limit) -> dict:
     measured = {
         "task_success_at_verifier": task_success_at_verifier(store, limit=limit),
         "cost_per_verified_task": cost_per_verified_task(store, limit=limit),
@@ -279,6 +284,11 @@ def scorecard(store, *, limit: int = 500, window: int = 50) -> dict:
     usable, and one that was fine last month and is broken now must not be
     protected by its record.
     """
+    with store.session():
+        return _scorecard(store, limit=limit, window=window)
+
+
+def _scorecard(store, *, limit, window) -> dict:
     stats: dict[tuple, ProviderStats] = {}
     for run in store.list_runs(limit=limit):
         outcomes = {(r["node_id"], r["attempt"]): r
