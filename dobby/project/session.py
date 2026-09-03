@@ -30,12 +30,25 @@ from .store import ProjectStore, new_session_id
 
 
 def _unconfirmed_by_run(run_store, run_ids) -> dict:
-    """Unconfirmed external effects, keyed by run. Empty entries are dropped."""
+    """Unconfirmed external effects, keyed by run. Empty entries are dropped.
+
+    One connection for the whole walk. This is called once per item the
+    portfolio has ever finished, from `open_session`, which is itself called
+    once per item worked -- so a per-call connection makes a shift cost
+    O(items) and a portfolio O(items^2). Measured on this machine:
+
+        completed items   connections in open_session   open_session
+                      1                             7         0.220s
+                    100                           106         1.011s
+
+    The same fix `metrics.report` needed, in the layer above it.
+    """
     out = {}
-    for run_id in {r for r in run_ids if r}:
-        pending = run_store.unconfirmed_effects(run_id)
-        if pending:
-            out[run_id] = pending
+    with run_store.session():
+        for run_id in {r for r in run_ids if r}:
+            pending = run_store.unconfirmed_effects(run_id)
+            if pending:
+                out[run_id] = pending
     return out
 
 
