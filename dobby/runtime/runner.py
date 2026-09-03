@@ -41,6 +41,7 @@ from .contracts import (Artifact, ArtifactContract, ContractError,
                         SCHEMAS, V_EXISTENCE, VERIFIED, artifact_path,
                         idempotency_key, verify_payload)
 from .failures import (DEFAULT_POLICY, Failure, POLICY_BLOCKED, REPAIR,
+                       classify_provider_error,
                        RETRY_ELSEWHERE, RETRY_SAME, TRANSIENT_PROVIDER, WAIT,
                        backoff_delay)
 from .placement import ConcurrencyLimiter, ProviderPlacement
@@ -595,6 +596,20 @@ class Runner:
                                       f"{type(exc).__name__}: {exc}")
                 else:
                     failure = result.failure
+                    if failure is None and not result.ok:
+                        # A failed attempt with no CLASS, but with text saying
+                        # why. `WorkerResult.failure` is optional and every
+                        # adapter in this package fills it -- an adapter
+                        # somebody else writes need not, and the classless
+                        # branch below would then call a rate limit
+                        # NON_RETRYABLE and end the run on something the policy
+                        # table knows how to retry.
+                        #
+                        # The same classifier the provider worker uses, on the
+                        # same kind of text, so a custom adapter gets the same
+                        # answer for the same words rather than a worse one for
+                        # not having done the classification itself.
+                        failure = classify_provider_error(result.raw or "")
                     work_span.attributes.update(result.meta or {})
                 if result is None or not result.ok:
                     work_span.end("ERROR",
