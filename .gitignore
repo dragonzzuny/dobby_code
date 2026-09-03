@@ -25,3 +25,15 @@ Thumbs.db
 # OMC / agent-runtime session state (not part of the product)
 .omc/
 .claude/settings.local.json
+
+# Packaging output. Added with `pyproject.toml`: `python -m build` leaves these
+# in the working tree, they are regenerated from source every time, and a
+# repository that tracked them would be shipping a stale copy of itself.
+build/
+dist/
+*.egg-info/
+
+# Scratch lists a chunked test run writes into the repo root. They exist for
+# seconds and were committed by accident once; a pattern is cheaper than
+# remembering to delete them.
+/[a-z][0-9].txt
