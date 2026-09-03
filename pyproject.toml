@@ -1,0 +1,70 @@
+# Packaging, alongside `install.sh` rather than instead of it.
+#
+# The two answer different questions and this file does NOT replace the
+# installer:
+#
+#   install.sh    puts a COPY of the engine inside a host project, next to that
+#                 project's own `.dobby/` data, and never overwrites the data or
+#                 the host's AGENTS.md. That is the deployment this harness is
+#                 designed around -- the engine travels, the curated knowledge
+#                 stays put -- and a `pip install` cannot do it, because pip
+#                 installs into an environment and knows nothing about which
+#                 project's knowledge it is supposed to leave alone.
+#
+#   pip install   puts the engine on the import path once, for a machine that
+#                 runs `dobby` against several projects, and gives `pip` the
+#                 dependency instead of a warning telling somebody to install
+#                 PyYAML by hand.
+#
+# Neither is the "real" one. Both are recorded here so the next person does not
+# have to work out which is which from two scripts and a CI file.
+#
+# Deliberately NOT declared: an upper bound on Python, or pinned dependency
+# versions. CI runs 3.10 and 3.12 on three platforms and that is the range
+# actually measured; claiming more would be a claim nothing tested.
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dobby"
+description = "A portable agent harness: verified results only, and a record of what was verified"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+# Read from `dobby/__init__.py`, which is the one place the version lives.
+# `dobby/core/__init__.py` used to declare its own and they disagreed --
+# "2.0.0" against "0.1.0" -- with nothing importing the first and `doctor`
+# reporting the second. `tests/test_version.py` holds them together.
+dynamic = ["version"]
+
+# PyYAML is the only third-party import in the whole engine, confirmed by
+# walking every module's AST rather than by reading a requirements file that
+# might be stale. It is imported lazily at each use, `doctor` reports it as a
+# blocking check when absent, and the CLI still starts without it -- so this
+# dependency makes the common case work rather than papering over a hard
+# requirement.
+dependencies = ["PyYAML>=5.1"]
+
+[project.scripts]
+dobby = "dobby.cli:main"
+
+[tool.setuptools]
+# Named rather than discovered. `find` would sweep in `tests`, `tools`, `evals`
+# and `mcp`, which are part of the repository and not part of the engine --
+# `install.sh` copies `tests` and `mcp` deliberately and separately, and a
+# `pip install` that silently shipped `evals` would install this project's own
+# measurement corpus into somebody else's environment.
+packages = [
+    "dobby",
+    "dobby.core",
+    "dobby.memory",
+    "dobby.project",
+    "dobby.providers",
+    "dobby.runtime",
+    "dobby.swarm",
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "dobby.__version__" }

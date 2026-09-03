@@ -448,8 +448,24 @@ def cmd_doctor(args):
     for rel, purpose in _REQUIRED_DATA:
         p = os.path.join(data, rel)
         if not os.path.exists(p):
+            # NOT `dobby init --scan .`, which is what this used to say.
+            # Measured from a pip-installed dobby in an empty directory:
+            # `init --scan` reported success and wrote `inventory.json` and
+            # `knowledge/kg.bootstrap.json` -- and none of the six files
+            # checked here. Running it again produces the same six failures,
+            # so the advice sent an operator round a loop.
+            #
+            # These are the project's SEED data and they come from the
+            # distribution: `install.sh` copies `.dobby/` into a host only if
+            # absent, deliberately, because overwriting curated knowledge is
+            # the worst thing an installer of this kind can do. A `pip install`
+            # ships the engine and no data at all, which is correct and is why
+            # this message has to name the other route.
             check(f"data:{rel}", False, f"missing: {p} ({purpose})",
-                  "restore from the distribution, or run: dobby init --scan .")
+                  "copy .dobby/ from the dobby distribution (install.sh does "
+                  "this, and never overwrites data that is already there); "
+                  "`dobby init --scan .` scans a project and does NOT create "
+                  "this file")
             continue
         try:
             with open(p, encoding="utf-8") as f:

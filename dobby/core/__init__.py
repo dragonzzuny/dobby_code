@@ -5,7 +5,13 @@ the data directory (default: .dobby/ at the repo root). See
 docs/HARNESS_V2_ARCHITECTURE.md.
 """
 
-__version__ = "2.0.0"
+#: Re-exported, not declared. This said "2.0.0" while `dobby/__init__.py` said
+#: "0.1.0" and `dobby doctor` reported the second -- two numbers for one engine,
+#: and nothing imported this one. A version nobody reads is free to drift, and
+#: the first thing anybody asks about a bug report is which version produced it.
+#:
+#: `tests/test_version.py` holds them to being the same object.
+from .. import __version__  # noqa: F401
 
 import os
 
