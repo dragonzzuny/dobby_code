@@ -219,5 +219,50 @@ class TheSessionIsReleased(ScaleCase):
         self.assertIsNone(getattr(store._local, "conn", None))
 
 
+class HarvestIsFlatToo(ScaleCase):
+    """The third walk with the same shape, found by sweeping for it.
+
+    `flywheel.harvest` reads every recorded run and then its attempts. Measured
+    before the fix: five accumulated runs took six connections and 0.283s,
+    eighty took eighty-one and 0.780s -- one round trip per run that had ever
+    finished, in the function whose job is to notice recurring failures.
+
+    Swept for with an AST pass over every store call inside a loop in a
+    function that holds no session. Twenty-nine sites came back and all but
+    this one were false positives, which is worth recording: `metrics`' own
+    walks are already inside `report`'s session, `architect_activity` measured
+    flat at three connections from 2 to 40 completed items, and `persevere`
+    loops over a retry ceiling rather than over anything that accumulates.
+    """
+
+    def test_harvest_opens_one_connection(self):
+        from dobby.runtime.flywheel import harvest
+
+        self.assertEqual(self.connects_for(lambda s: harvest(s)), 1)
+
+    def test_the_unwrapped_walk_still_costs_one_per_run(self):
+        """The control: without the session it scales with history."""
+        from dobby.runtime.flywheel import _harvest
+
+        many = self.connects_for(
+            lambda s: _harvest(s, limit=500, min_occurrences=2))
+        self.assertGreater(many, self.accumulated,
+                           "the connection counter is not counting")
+
+    def test_it_returns_what_it_did_before(self):
+        from dobby.runtime.flywheel import _harvest, harvest
+
+        store = RunStore(self.data)
+        self.assertEqual(harvest(store),
+                         _harvest(store, limit=500, min_occurrences=2))
+
+    def test_the_session_is_released(self):
+        from dobby.runtime.flywheel import harvest
+
+        store = RunStore(self.data)
+        harvest(store)
+        self.assertIsNone(getattr(store._local, "conn", None))
+
+
 if __name__ == "__main__":
     unittest.main()

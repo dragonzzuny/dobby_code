@@ -97,7 +97,22 @@ class Candidate:
 
 def harvest(store, *, limit: int = 500,
             min_occurrences: int = MIN_OCCURRENCES) -> list[Candidate]:
-    """Recurring failures across the recorded runs, most frequent first."""
+    """Recurring failures across the recorded runs, most frequent first.
+
+    One connection for the walk. This reads every recorded run and then its
+    attempts, so a per-call connection costs one round trip per accumulated
+    run. Measured on this machine: five runs took six connections and 0.283s,
+    eighty took eighty-one and 0.780s.
+
+    The third place in this repository with the shape, after `metrics.report`
+    and `session._unconfirmed_by_run` -- reading about work already finished
+    costing more the more of it there is.
+    """
+    with store.session():
+        return _harvest(store, limit=limit, min_occurrences=min_occurrences)
+
+
+def _harvest(store, *, limit: int, min_occurrences: int) -> list:
     groups: dict[tuple, Candidate] = {}
     for run in store.list_runs(limit=limit):
         loaded = None
