@@ -14,7 +14,9 @@ Security (OWASP LLM06, lethal-trifecta leg removal, tool-poisoning defenses):
   - destructive-command guard (dobby/core/security.guard_command) as backstop;
   - output size caps + secret redaction; results wrapped in an untrusted-data
     envelope; no network tools exist at all (leg 3 structurally absent);
-  - every call is audit-logged to .dobby/state/audit.jsonl.
+  - every call is audit-logged to .dobby/state/audit.jsonl, intent AND
+    outcome: an `invoke` line before, a `result` line after carrying ok
+    and the error. Only the shape of the result, never the result.
 
 Run: python3 mcp/dobby_mcp_server.py --repo <repo_root>
 Register (Claude Code): claude mcp add dobby -- python3 mcp/dobby_mcp_server.py --repo .
@@ -144,9 +146,25 @@ class Gateway:
         if cap is None:
             return {"error": f"'{cid}' is not an allowlisted capability"}
         self.audit("invoke", {"id": cid, "args": args})
-        if cap["kind"] == "builtin":
-            return self._builtin(cid, args)
-        return self._exec(cap, args)
+        result = (self._builtin(cid, args) if cap["kind"] == "builtin"
+                  else self._exec(cap, args))
+        # The OUTCOME, not just the intent. `invoke` is written before the call
+        # and was the only record of it, so a capability that failed left a log
+        # entry indistinguishable from one that worked -- 324 entries in this
+        # repository's own audit, zero of them saying whether anything
+        # succeeded. Nothing downstream could learn from a file that only
+        # records what was attempted.
+        #
+        # The result itself is NOT logged, only its shape: a capability's
+        # output can be a whole file and this log is append-only.
+        self.audit("result", {
+            "id": cid,
+            "ok": not (isinstance(result, dict) and "error" in result),
+            "error": (str(result.get("error"))[:300]
+                      if isinstance(result, dict) and "error" in result
+                      else None),
+        })
+        return result
 
     def _exec(self, cap: dict, args: dict) -> dict:
         # `{python}` is an ENGINE-supplied placeholder, not a caller argument:

@@ -196,15 +196,31 @@ def _key(entry: dict) -> str:
 
 def report(store, data_dir: str, *, write: bool = False,
            min_occurrences: int = MIN_OCCURRENCES) -> dict:
-    """The proposals, and an honest word when there are none."""
-    candidates = harvest(store, min_occurrences=min_occurrences)
+    """The proposals, their sample size, and an honest word when there are none.
+
+    `runs_examined` is here because the note used to tell the reader to "check
+    the run count" and the report did not carry it -- while the walk that
+    produced the note had just read every run there was. An empty finding whose
+    sample size the reader has to go and fetch is the same shape as a token
+    total that does not say it is a floor: it reads as a measurement of zero.
+
+    On this repository the answer was zero runs, so "nothing has failed twice"
+    was true of nothing at all.
+    """
+    with store.session():
+        runs_examined = len(store.list_runs(limit=500))
+        candidates = _harvest(store, limit=500,
+                              min_occurrences=min_occurrences)
     out = {"candidates": [c.to_dict() for c in candidates],
-           "min_occurrences": min_occurrences}
+           "min_occurrences": min_occurrences,
+           "runs_examined": runs_examined}
     if not candidates:
         out["note"] = (
-            "nothing has failed twice the same way. That is either a healthy "
-            "system or a young one — check the run count before reading it as "
-            "the first")
+            f"nothing has failed twice the same way across {runs_examined} "
+            f"recorded run(s)"
+            + (". There is nothing here to learn from yet -- this is not a "
+               "finding about the system" if runs_examined < min_occurrences
+               else ", which on this sample size is a real absence"))
     if write and candidates:
         out["written_to"] = write_candidates(data_dir, candidates)
     return out

@@ -95,10 +95,35 @@ class Harvesting(unittest.TestCase):
         self.assertEqual(row["status"], "candidate")
         self.assertIn("a human decides", row["promote_by"])
 
-    def test_an_empty_pile_says_which_of_the_two_it_might_be(self):
+    def test_an_empty_pile_says_which_of_the_two_it_is(self):
+        """It used to say the empty pile was "either a healthy system or a
+        young one -- check the run count", and the report did not carry the run
+        count. The walk that wrote that note had just read every run there was,
+        so the reader was sent to fetch a number the writer already had. It now
+        answers, and these assertions are on the ANSWER rather than on the
+        words: an empty pile from no runs and an empty pile from many runs are
+        different findings and must not read the same."""
         out = F.report(self.runner.store, self.data)
         self.assertEqual(out["candidates"], [])
-        self.assertIn("young one", out["note"])
+        self.assertEqual(out["runs_examined"], 0)
+        self.assertIn("not a finding about the system", out["note"])
+
+    def test_an_empty_pile_from_enough_runs_is_a_real_absence(self):
+        self.fail_a_run("schema mismatch at $.steps")
+        self.fail_a_run("timeout after 120s")
+        out = F.report(self.runner.store, self.data)
+        self.assertEqual(out["candidates"], [],
+                         "two DIFFERENT failures are not a recurrence")
+        self.assertGreaterEqual(out["runs_examined"], 2)
+        self.assertIn("real absence", out["note"])
+
+    def test_the_two_empty_piles_do_not_read_the_same(self):
+        """The property the old wording was guarding, asserted directly."""
+        young = F.report(self.runner.store, self.data)["note"]
+        self.fail_a_run("schema mismatch at $.steps")
+        self.fail_a_run("timeout after 120s")
+        grown = F.report(self.runner.store, self.data)["note"]
+        self.assertNotEqual(young, grown)
 
 
 class PersistingCandidates(unittest.TestCase):
