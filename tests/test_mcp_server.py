@@ -1,17 +1,37 @@
+import atexit
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER = os.path.join(REPO, "mcp", "dobby_mcp_server.py")
 
+#: A copy of this repository's state, so a test run does not append to it.
+#:
+#: These tests drove a server at `--repo REPO` and every one of them wrote to
+#: the real `.dobby/state/audit.jsonl` -- visible in it as 261 invoke entries,
+#: most of them from test runs. Harmless while the log was write-only. It
+#: stopped being harmless when `friction-report` began READING that log and
+#: `get_context_pack` began opening trajectories: a test run would have seeded
+#: the improvement corpus with its own noise and then reported on it.
+#:
+#: Copied once per process rather than per test: the server is a fresh
+#: subprocess on every call, and the point is isolation from the repository,
+#: not from the other tests.
+DATA = os.path.join(tempfile.mkdtemp(prefix="dobby-mcp-"), ".dobby")
+shutil.copytree(os.path.join(REPO, ".dobby"), DATA)
+atexit.register(shutil.rmtree, os.path.dirname(DATA), True)
+
 
 def rpc(requests, timeout=60):
     """Send JSON-RPC lines to a fresh server process; return responses by id."""
     lines = "\n".join(json.dumps(r) for r in requests) + "\n"
-    proc = subprocess.run([sys.executable, SERVER, "--repo", REPO],
+    proc = subprocess.run([sys.executable, SERVER, "--repo", REPO,
+                           "--data", DATA],
                           input=lines, capture_output=True, text=True,
                           encoding="utf-8", timeout=timeout)
     out = {}
@@ -77,7 +97,7 @@ class TestMCPServer(unittest.TestCase):
         self.assertEqual(res["exit_code"], 0)
         self.assertTrue(res["output"]["untrusted"],
                         "exec output must be marked untrusted (injection defense)")
-        audit = os.path.join(REPO, ".dobby", "state", "audit.jsonl")
+        audit = os.path.join(DATA, "state", "audit.jsonl")
         self.assertTrue(os.path.exists(audit))
 
     def test_unlisted_capability_refused(self):

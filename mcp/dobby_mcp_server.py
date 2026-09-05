@@ -93,9 +93,18 @@ META_TOOLS = [
 
 
 class Gateway:
-    def __init__(self, repo: str):
+    def __init__(self, repo: str, data: str | None = None):
+        """`data` overrides where state is read and WRITTEN.
+
+        It exists because this gateway's own tests drove a server against the
+        real repository and appended to the real audit log -- and once
+        `get_context_pack` began opening trajectories, a test run would have
+        seeded the improvement corpus with its own noise. The default is
+        unchanged: `<repo>/.dobby`.
+        """
         self.repo = os.path.abspath(repo)
-        self.data = os.path.join(self.repo, ".dobby")
+        self.data = os.path.abspath(data) if data else os.path.join(
+            self.repo, ".dobby")
         onto = Ontology.load(os.path.join(self.data, "ontology.json"))
         self.kg = merged_graph(onto, self.data)
         self.policies = PolicyBook(os.path.join(self.data, "policies", "policies.json"))
@@ -247,8 +256,31 @@ class Gateway:
         return {"error": f"builtin '{cid}' not implemented"}
 
     def get_context_pack(self, task: str) -> dict:
+        """The routing plan, and the start of this task's trajectory.
+
+        Opening the trajectory here is the fix for a measured starvation, not
+        bookkeeping for its own sake. `record_evidence` and `handoff` were the
+        only live path that wrote one, and across 394 audit entries spanning a
+        month neither had ever been called: the corpus `friction-report` reads
+        stopped on 2026-08-18 while the gateway log ran to 2026-09-04. An
+        improvement loop fed only by an explicit call nobody makes is not a
+        loop.
+
+        A context pack request IS a task starting -- that is what the argument
+        says -- so it is the honest place to begin recording. One trajectory
+        per task: asking again about the same task appends to the same file
+        rather than starting a rival one, and asking about a different task
+        starts a new one.
+
+        This makes a read-looking call write a file. That is deliberate and it
+        is why `data` is overridable.
+        """
         plan = self.router.route(task).to_dict()
         self.audit("context_pack", {"task": task, "level": plan["level"]})
+        if self.trajectory is None or self.trajectory.task != task:
+            self.trajectory = Trajectory(self.data, task)
+        self.trajectory.append("route", {"level": plan["level"],
+                                         "policies": plan["policies"]})
         return plan
 
 
@@ -324,8 +356,10 @@ def main():
     force_utf8_io()
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", default=".")
+    ap.add_argument("--data", default=None,
+                    help="state directory (default: <repo>/.dobby)")
     args = ap.parse_args()
-    serve(Gateway(args.repo))
+    serve(Gateway(args.repo, args.data))
 
 
 if __name__ == "__main__":
