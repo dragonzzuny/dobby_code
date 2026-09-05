@@ -64,6 +64,18 @@ class GatewayCase(unittest.TestCase):
             return sum(1 for line in fh if line.strip())
 
     def new_lines(self):
+        """The lines written since `setUp`, or none if there is no log.
+
+        The absence guard is not defensive padding. Without it this class
+        passed here and failed on every clean checkout: a developer machine
+        has an `audit.jsonl` with real history in it, and CI has a repository
+        where nothing has ever called the gateway. The one test that asserts
+        NOTHING was written is exactly the one that never creates the file, so
+        it was the one that broke -- an assertion about an empty log that
+        could only run where the log was not empty.
+        """
+        if not os.path.exists(self.audit):
+            return []
         with io.open(self.audit, encoding="utf-8") as fh:
             rows = [json.loads(line) for line in fh if line.strip()]
         return rows[self.mark:]
