@@ -45,27 +45,11 @@ MIN_OCCURRENCES = 2
 
 #: Volatile fragments, replaced before grouping. Order matters — paths first,
 #: because a path contains digits that the number rule would otherwise eat.
-_NOISE = (
-    (re.compile(r"[A-Za-z]:\\[^\s'\"]+"), "<path>"),
-    (re.compile(r"/[^\s'\"]{2,}"), "<path>"),
-    (re.compile(r"\b[0-9a-f]{8,}\b"), "<hash>"),
-    (re.compile(r"\d{4}-\d{2}-\d{2}[T ][\d:]+"), "<time>"),
-    # No word boundaries. `\b\d+\b` refuses `120s` (no boundary before `s`) and
-    # takes only the `0` out of `0.03s`, so two runs of the same failure that
-    # merely took different amounts of time produced different signatures and
-    # were counted as unrelated — which is precisely the miscount this grouping
-    # exists to prevent.
-    (re.compile(r"\d+(?:\.\d+)*"), "<n>"),
-    (re.compile(r"\s+"), " "),
-)
-
-
-def signature(detail: str) -> str:
-    """A failure detail with the parts that differ between runs removed."""
-    text = detail or ""
-    for pattern, replacement in _NOISE:
-        text = pattern.sub(replacement, text)
-    return text.strip()[:200]
+#: Both live in `core.textsig` now: `core.friction` groups capability
+#: failures the same way and `core` cannot import `runtime`. Re-exported
+#: rather than moved outright -- `flywheel.signature` is what the tests
+#: and the harvest call.
+from ..core.textsig import _NOISE, signature  # noqa: F401,E402
 
 
 @dataclass
