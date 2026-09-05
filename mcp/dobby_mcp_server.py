@@ -18,7 +18,10 @@ Security (OWASP LLM06, lethal-trifecta leg removal, tool-poisoning defenses):
     outcome: an `invoke` line before, a `result` line after carrying ok
     and the error. Only the shape of the result, never the result.
 
-Run: python3 mcp/dobby_mcp_server.py --repo <repo_root>
+Run: python3 mcp/dobby_mcp_server.py --repo <repo_root> [--data <state_dir>]
+  --data moves the audit log and the trajectory corpus somewhere other than
+  <repo_root>/.dobby. Use it when the gateway must not write into the
+  repository it is reading -- this project's own tests do.
 Register (Claude Code): claude mcp add dobby -- python3 mcp/dobby_mcp_server.py --repo .
 """
 
@@ -155,8 +158,19 @@ class Gateway:
         if cap is None:
             return {"error": f"'{cid}' is not an allowlisted capability"}
         self.audit("invoke", {"id": cid, "args": args})
-        result = (self._builtin(cid, args) if cap["kind"] == "builtin"
-                  else self._exec(cap, args))
+        # A capability that RAISES is still a capability that failed. It used
+        # to leave the `invoke` line above and nothing else, which is the same
+        # intent-without-outcome shape the `result` line below exists to fix --
+        # and it is the shape a crash takes, the one failure most worth
+        # learning from. Reproduced with `record_evidence` against a state
+        # directory it could not create: FileExistsError out of
+        # `invoke_capability`, answered by `serve` as an RPC-level -32603, and
+        # invisible to every reader of the log.
+        try:
+            result = (self._builtin(cid, args) if cap["kind"] == "builtin"
+                      else self._exec(cap, args))
+        except Exception as exc:
+            result = {"error": f"{type(exc).__name__}: {str(exc)[:300]}"}
         # The OUTCOME, not just the intent. `invoke` is written before the call
         # and was the only record of it, so a capability that failed left a log
         # entry indistinguishable from one that worked -- 324 entries in this
@@ -274,13 +288,27 @@ class Gateway:
 
         This makes a read-looking call write a file. That is deliberate and it
         is why `data` is overridable.
+
+        Recording is SECONDARY to answering, and the try/except is the whole
+        reason that sentence is worth writing. Measured with a file sitting
+        where `state/trajectories` needs to be a directory: before the guard,
+        `get_context_pack` -- the first call every client makes -- raised
+        FileExistsError and returned no plan at all. A read-only mount or a
+        full disk does the same thing. Losing the recording costs a line in
+        the improvement corpus; losing the answer costs the session. The
+        failure is audited rather than swallowed, so a corpus that stops
+        growing has a reason on the record.
         """
         plan = self.router.route(task).to_dict()
         self.audit("context_pack", {"task": task, "level": plan["level"]})
-        if self.trajectory is None or self.trajectory.task != task:
-            self.trajectory = Trajectory(self.data, task)
-        self.trajectory.append("route", {"level": plan["level"],
-                                         "policies": plan["policies"]})
+        try:
+            if self.trajectory is None or self.trajectory.task != task:
+                self.trajectory = Trajectory(self.data, task)
+            self.trajectory.append("route", {"level": plan["level"],
+                                             "policies": plan["policies"]})
+        except OSError as exc:
+            self.trajectory = None
+            self.audit("record_failed", {"task": task, "error": str(exc)[:300]})
         return plan
 
 

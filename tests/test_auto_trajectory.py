@@ -177,6 +177,106 @@ class TheDataOverrideIsRealIsolation(GatewayCase):
         self.assertEqual(before, after)
 
 
+class RecordingIsSecondaryToAnswering(GatewayCase):
+    """The regression the recording itself introduced, and its guard.
+
+    Measured with a file sitting where `state/trajectories` has to be a
+    directory -- the shape a read-only mount or a full disk produces:
+
+        before   FileExistsError out of get_context_pack, no plan at all
+        after    the plan, and `record_failed` on the audit
+
+    `get_context_pack` is the first call every client makes. Losing the
+    recording costs a line in the improvement corpus. Losing the answer costs
+    the session.
+    """
+
+    def block_recording(self):
+        """Make the trajectory directory impossible to create."""
+        shutil.rmtree(self.traj_dir, ignore_errors=True)
+        with io.open(self.traj_dir, "w", encoding="utf-8") as fh:
+            fh.write("not a directory")
+
+    def audit_rows(self):
+        """Only the rows this test wrote.
+
+        The copied state carries the real repository's audit history -- 40
+        result lines at the time of writing -- so an unfiltered count is a
+        count of somebody else's calls.
+        """
+        path = os.path.join(self.data, "state", "audit.jsonl")
+        if not os.path.exists(path):
+            return []
+        with io.open(path, encoding="utf-8") as fh:
+            rows = [json.loads(line) for line in fh if line.strip()]
+        return rows[self.mark:]
+
+    def setUp(self):
+        super().setUp()
+        path = os.path.join(self.data, "state", "audit.jsonl")
+        self.mark = 0
+        if os.path.exists(path):
+            with io.open(path, encoding="utf-8") as fh:
+                self.mark = sum(1 for line in fh if line.strip())
+
+    def test_the_plan_still_comes_back(self):
+        self.block_recording()
+        plan = self.gateway.get_context_pack("write the migration script")
+        self.assertIn("level", plan)
+        self.assertIn("policies", plan)
+
+    def test_the_plan_is_the_same_one_it_would_have_given(self):
+        self.block_recording()
+        got = self.gateway.get_context_pack("write the migration script")
+        self.assertEqual(got, M.Gateway(REPO, self.data).router.route(
+            "write the migration script").to_dict())
+
+    def test_the_failure_is_recorded_rather_than_swallowed(self):
+        """A corpus that stops growing should have a reason on the record."""
+        self.block_recording()
+        self.gateway.get_context_pack("write the migration script")
+        failed = [r for r in self.audit_rows() if r["kind"] == "record_failed"]
+        self.assertEqual(len(failed), 1)
+        self.assertTrue(failed[0]["error"])
+
+    def test_a_later_call_tries_again_rather_than_reusing_a_broken_one(self):
+        self.block_recording()
+        self.gateway.get_context_pack("write the migration script")
+        self.assertIsNone(self.gateway.trajectory)
+        os.remove(self.traj_dir)
+        self.gateway.get_context_pack("write the migration script")
+        self.assertIsNotNone(self.gateway.trajectory)
+        self.assertEqual(len(self.files()), 1)
+
+    def test_evidence_recording_is_not_silently_guarded(self):
+        """record_evidence is a call whose ONLY purpose is to record. Failing
+        quietly there would report success for work not done -- the guard on
+        `get_context_pack` is for a call that has another job."""
+        self.block_recording()
+        result = self.gateway.invoke_capability("record_evidence",
+                                                {"detail": "x"})
+        self.assertIsInstance(result, dict)
+        self.assertIn("error", result)
+
+    def test_a_raising_capability_is_recorded_as_a_failure(self):
+        """It used to leave the `invoke` line and nothing else -- the same
+        intent-without-outcome shape the result line exists to fix, on the
+        one failure most worth learning from."""
+        self.block_recording()
+        self.gateway.invoke_capability("record_evidence", {"detail": "x"})
+        results = [r for r in self.audit_rows() if r["kind"] == "result"]
+        self.assertEqual(len(results), 1)
+        self.assertFalse(results[0]["ok"])
+        self.assertIn("FileExistsError", results[0]["error"])
+
+    def test_a_raising_capability_reaches_the_friction_report(self):
+        self.block_recording()
+        self.gateway.invoke_capability("record_evidence", {"detail": "x"})
+        failures = friction_report(self.data)["capability_failures"]
+        self.assertEqual([f["capability"] for f in failures],
+                         ["record_evidence"])
+
+
 class TheLoopStopsBeingUnfed(GatewayCase):
     """End to end: the report that said UNFED now has something to read."""
 
