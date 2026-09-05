@@ -211,22 +211,33 @@ class Gateway:
         # single quotes `shlex.quote` produces, so `x && whoami` executed
         # `whoami` despite being "quoted". Arguments are data; an argument
         # carrying shell syntax is refused rather than escaped.
+        # Validate the value AS GIVEN. This used to split on NUL first and
+        # validate the pieces, so the separator itself was never checked and a
+        # scalar string could become several argv words:
+        #
+        #   scan_root = ".\x00--overwrite\x00--scan\x00/"
+        #   -> init --scan . --overwrite --scan / --overwrite
+        #
+        # `safe_arg` refuses control characters now, and the split is gone.
+        # It was redundant anyway: a list argument is the explicit way to pass
+        # several values, and it is right below.
         for k in keys:
             values = args[k] if isinstance(args[k], list) else [args[k]]
             for part in values:
-                for piece in str(part).split("\x00"):
-                    ok, why = safe_arg(piece)
-                    if not ok:
-                        self.audit("rejected_arg", {"id": cap["id"], "arg": k,
-                                                    "reason": why})
-                        return {"error": f"argument {k!r} rejected: {why}"}
+                ok, why = safe_arg(str(part))
+                if not ok:
+                    self.audit("rejected_arg", {"id": cap["id"], "arg": k,
+                                                "reason": why})
+                    return {"error": f"argument {k!r} rejected: {why}"}
 
-        quoted = {k: " ".join(shlex.quote(p) for p in str(args[k]).split("\x00")) if "\x00" in str(args[k])
-                  else shlex.quote(str(args[k])) for k in keys}
-        # allow multi-path args passed as list
+        quoted = {}
         for k in keys:
             if isinstance(args[k], list):
+                # Multi-value on purpose: the template author asked for it by
+                # accepting a list, and every element was validated above.
                 quoted[k] = " ".join(shlex.quote(str(p)) for p in args[k])
+            else:
+                quoted[k] = shlex.quote(str(args[k]))
         cmd = tpl.format(**quoted)
         allowed, reason = guard_command(cmd, self.protected)
         if not allowed:

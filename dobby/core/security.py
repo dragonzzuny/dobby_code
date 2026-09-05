@@ -214,6 +214,28 @@ def safe_arg(value: str) -> tuple[bool, str]:
         return True, "empty"
     if len(text) > 4096:
         return False, f"argument is {len(text)} chars; refused above 4096"
+    control = sorted({c for c in text if ord(c) < 0x20 or ord(c) == 0x7F})
+    if control:
+        # NUL is the one that mattered. The gateway split arguments on it to
+        # support multi-path values, and the split ran BEFORE this check, so a
+        # single string became several argv words and this function never saw
+        # the separator. Measured against `init --scan {scan_root}`:
+        #
+        #   scan_root = ".\x00--overwrite\x00--scan\x00/"
+        #   -> init --scan . --overwrite --scan / --overwrite
+        #
+        # The caller redirected the scan to the filesystem root without a
+        # shell metacharacter anywhere, and `guard_command` answered "no
+        # destructive token". Quoting keeps one argument one argument; a
+        # separator inside the argument is how that guarantee is lost.
+        #
+        # The rest of the control range comes with it: a path does not
+        # contain one, and terminal escapes in an argument are a rendering
+        # attack on whoever reads the log.
+        printable = ", ".join(repr(c) for c in control)
+        return False, (f"argument contains control character(s) {printable}. "
+                       "One argument must stay one argument; a separator "
+                       "inside it is not data")
     bad = sorted({c for c in text if c in SHELL_METACHARACTERS})
     if bad:
         printable = ", ".join(repr(c) for c in bad)

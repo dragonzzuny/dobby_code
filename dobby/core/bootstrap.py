@@ -100,7 +100,29 @@ def scan_repo(repo: str, max_files: int = 20000) -> dict:
 
 
 def inventory_to_kg(inv: dict, repo_name: str) -> dict:
-    """Turn the inventory into ontology-valid nodes/edges."""
+    """Turn the inventory into ontology-valid nodes/edges.
+
+    The docstring is a promise and it was breakable. `repo_name` reaches the
+    `repo` node's `name`, the ontology requires that field to be non-empty,
+    and `os.path.basename` of a drive or filesystem root is the empty string:
+
+        os.path.basename("C:/")  ->  ""
+        os.path.basename("/")    ->  ""
+
+    So `dobby init --scan C:/` wrote a graph that `merged_graph` then refused
+    to load -- OntologyError, from every entry point that builds the graph,
+    permanently, until somebody rescanned. Observed on this machine: a probe
+    argument resolved to a root, the scan reported 20000 files, and the MCP
+    gateway would not start.
+
+    A name is substituted rather than an exception raised. The scan itself
+    succeeded and its 20000 files are real; refusing to name the root would
+    throw away a good inventory over a cosmetic field.
+    """
+    # `str(None)` is `"None"`, which passes the ontology and reads like a name
+    # somebody chose. A missing name has to look missing.
+    repo_name = ("" if repo_name is None else str(repo_name).strip()
+                 ) or "unnamed repository root"
     nodes, edges = [], []
 
     def node(nid, ntype, name, summary, confidence="verified",
@@ -158,7 +180,11 @@ def bootstrap(repo: str, data_dir: str | None = None,
     curation is never clobbered (anti Stale-Memory Override)."""
     data_dir = data_dir or os.path.join(repo, ".dobby")
     inv = scan_repo(repo)
-    kg = inventory_to_kg(inv, os.path.basename(os.path.abspath(repo)))
+    # A root has no basename. `inventory_to_kg` has a fallback for that, but
+    # the absolute path is a better name than a generic one -- "C:/" says
+    # which root was scanned and the generic string does not.
+    root = os.path.abspath(repo)
+    kg = inventory_to_kg(inv, os.path.basename(root) or root)
     os.makedirs(os.path.join(data_dir, "knowledge"), exist_ok=True)
     inv_path = os.path.join(data_dir, "inventory.json")
     kg_path = os.path.join(data_dir, "knowledge", "kg.bootstrap.json")
