@@ -270,8 +270,79 @@ def load_protected(config: dict | None) -> list[str]:
 # echoing its own environment, a stack trace carrying a header. Each vendor
 # prefix below is deliberately distinctive enough that a false positive costs a
 # `[REDACTED]` in prose and a false negative costs the credential.
+#: Credential words that are unambiguous in this codebase, and the assignment
+#: that makes a name an assignment. `token` is deliberately NOT here: see
+#: `_AMBIGUOUS_WORD`.
+_SECRET_WORD = r"(?:api[_-]?key|secret|passwd|password|credential)"
+
+#: `token` and `authorization` matched mid-word ate this project's own
+#: telemetry. The repository emits `output_tokens` 36 times, `input_tokens` 26,
+#: `thinking_tokens` 23, `verdict_token`, `cache_read_tokens`,
+#: `billable_tokens` -- and `tests/test_usage_survives_cap` failed twice the
+#: moment the widened rule reached them, because a redacted usage line is a
+#: call whose cost was thrown away. An LLM token and a parser token are not
+#: credentials and this codebase talks about both constantly.
+#:
+#: So these two keep the ORIGINAL narrow rule: the word has to sit immediately
+#: against the delimiter. `token=ghp_...` is redacted; `total_tokens: 1234` is
+#: not, because `token` is followed by `s`.
+_AMBIGUOUS_WORD = r"(?:token|authorization)"
+
+#: An optional suffix that must START with a separator. Without that
+#: constraint `token` swallowed the `s` of `tokens` and `_count` of
+#: `token_count`; with it, `SECRET_ACCESS_KEY` and `PASSWORD_VALUE` still
+#: match and the count nouns do not.
+_ASSIGNMENT = r"(?:[_-][a-z0-9_-]{0,40})?[\"']?\s*[=:]\s*[\"']?\S+"
+
 SECRET_PATTERNS = [
-    re.compile(r"(?i)(api[_-]?key|token|secret|password|authorization)\s*[=:]\s*\S+"),
+    # The PEM BODY, not only its header. The header-only pattern below used to
+    # be the whole defence and its comment said "the body is what leaks" --
+    # then let the body through. Measured: a four-line RSA block came back with
+    # the header replaced and every base64 line of the key intact.
+    #
+    # The unterminated form is second and deliberately greedy to end of text:
+    # if a BEGIN line has no matching END, everything after it is key material
+    # that got truncated, and truncated key material is still key material.
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"
+               r".*?-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*"),
+    # `Authorization: Bearer <token>`. The keyword rule below stops at the
+    # first whitespace, so it redacted the word "Bearer" and left the token.
+    re.compile(r"(?i)\bauthorization\s*[=:]\s*\S+(?:[ \t]+\S+)?"),
+    # The keyword rule, widened twice after measuring what escaped it:
+    #
+    #   {"password": "hunter2"}          the quote sits between the name and
+    #                                    the colon, so `password\s*:` missed
+    #   AWS_SECRET_ACCESS_KEY=...        the keyword is not the last token
+    #                                    before `=`, and `_` is a word
+    #                                    character so `\b` never matched
+    #   PGPASSWORD=...                   nor is a letter
+    #
+    # TWO patterns, not one with `[a-z0-9_-]*` in front of the keyword. That
+    # first attempt was a ReDoS: an unbounded run on both sides of an
+    # alternation makes the engine try every start position against every
+    # prefix length, and `redact_secrets` runs on untrusted command output
+    # BEFORE `cap_output` trims it. Measured on a single long line:
+    #
+    #     1000 chars   0.105s
+    #     5000 chars   1.823s
+    #    20000 chars  32.632s
+    #
+    # A fixed-width lookbehind says "the keyword may start mid-word" without
+    # any backtracking: 100000 chars now costs 0.019s. The trailing run is
+    # bounded for the same reason -- no environment variable name needs more
+    # than forty characters after the keyword.
+    #
+    # `password reset flow` stays untouched either way: there is no
+    # delimiter, and the delimiter is what makes it an assignment rather than
+    # prose.
+    re.compile(r"(?i)\b" + _SECRET_WORD + _ASSIGNMENT),
+    re.compile(r"(?i)(?<=[a-z0-9_])" + _SECRET_WORD + _ASSIGNMENT),
+    re.compile(r"(?i)" + _AMBIGUOUS_WORD + r"\s*[=:]\s*\S+"),
+    # Credentials in a URL: `postgres://user:pass@host/db`. Only the
+    # `user:pass` run is matched, so the scheme and host survive and the
+    # reader can still see where the connection went.
+    re.compile(r"(?<=://)[^/\s:@]+:[^/\s@]+(?=@)"),
     # OpenAI / Anthropic / Moonshot and anything else on the `sk-` convention
     re.compile(r"sk-[A-Za-z0-9_-]{16,}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),                      # AWS access key id
@@ -286,10 +357,11 @@ SECRET_PATTERNS = [
     # JWTs: three base64url segments, the first two starting with the standard
     # `{"` header/payload prefix. Specific enough not to fire on prose.
     re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),
-    # PEM blocks. Matching the HEADER is what matters: the body is what leaks,
-    # and the header is the reliable marker that a body follows.
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
-    re.compile(r"-----BEGIN OPENSSH PRIVATE KEY-----"),
+    # The two header-only PEM patterns that used to sit here are gone. They
+    # said matching the header "is what matters: the body is what leaks", and
+    # then matched only the header. The two patterns at the top of this list
+    # take the body with it, and both subsume these: `[A-Z ]*` already covers
+    # `OPENSSH `.
 ]
 
 
