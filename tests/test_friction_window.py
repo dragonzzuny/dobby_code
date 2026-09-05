@@ -240,6 +240,107 @@ class TheGatewayLogIsRead(Case):
         self.assertIn("friction found", friction_report(self.data)["verdict"])
 
 
+class TheLoopReportsItsOwnStarvation(Case):
+    """Why the trajectories stopped, traced and then made self-reporting.
+
+    Measured on this repository: 9 capabilities registered, 394 audit entries
+    over a month, and exactly two capabilities ever invoked --
+
+        used         kg_query 184, env_probe 92
+        never used   bootstrap_scan, handoff, record_evidence, route_task,
+                     run_tests, skill_index, skill_signature
+
+    `record_evidence` and `handoff` are the only live path that writes a
+    trajectory (`dobby exec-slice` is the other, and it needs a scenario in
+    slice_plans.json). Neither has ever been called. That is the whole causal
+    chain: agent uses the gateway, gateway offers record_evidence, nobody calls
+    it, trajectories stop, the friction report has nothing to read, the
+    improvement loop has no input.
+
+    None of which was visible from the report. It said `clean`.
+
+    The report does not fix the starvation -- filling it means writing
+    trajectories automatically, which has side effects on somebody's
+    repository and is a decision, not a defect. It says it is starving, which
+    is the difference between a system that is quiet and a system that has
+    been unplugged.
+    """
+
+    REGISTRY = {"capabilities": [
+        {"id": "kg_query"}, {"id": "record_evidence"}, {"id": "handoff"}]}
+
+    def registry(self, data=None):
+        path = os.path.join(self.data, "registry", "capabilities.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(self.REGISTRY if data is None else data, fh)
+        return path
+
+    def invoke(self, cid, t="2026-09-01T09:00:00"):
+        return {"t": t, "kind": "invoke", "id": cid, "args": {}}
+
+    def test_no_registry_means_no_claim_about_what_is_unused(self):
+        """An unreadable registry is not evidence that nothing is registered."""
+        self.audit([self.invoke("kg_query")])
+        out = friction_report(self.data)
+        self.assertEqual(out["capabilities_never_used"], [])
+        self.assertFalse(out["unfed"])
+
+    def test_capabilities_never_called_are_named(self):
+        self.registry()
+        self.audit([self.invoke("kg_query")])
+        self.assertEqual(friction_report(self.data)["capabilities_never_used"],
+                         ["handoff", "record_evidence"])
+
+    def test_a_loop_with_no_evidence_calls_is_unfed(self):
+        self.registry()
+        self.a_quiet_task()
+        self.audit([self.invoke("kg_query")])
+        self.assertTrue(friction_report(self.data)["unfed"])
+
+    def test_the_unfed_verdict_names_the_capabilities_and_the_consequence(self):
+        self.registry()
+        self.a_quiet_task()
+        self.audit([self.invoke("kg_query")])
+        verdict = friction_report(self.data)["verdict"]
+        self.assertIn("record_evidence", verdict)
+        self.assertIn("handoff", verdict)
+        self.assertIn("not about the work being done now", verdict)
+
+    def test_one_evidence_call_is_enough_to_stop_being_unfed(self):
+        """The loop is fed or it is not. Half is fed."""
+        self.registry()
+        self.audit([self.invoke("record_evidence")])
+        self.assertFalse(friction_report(self.data)["unfed"])
+
+    def test_a_gateway_offering_neither_is_not_reported_as_starving(self):
+        """A deployment without those capabilities has a different problem,
+        and claiming this one would be claiming something unmeasured."""
+        self.registry({"capabilities": [{"id": "kg_query"}]})
+        self.audit([self.invoke("kg_query")])
+        self.assertFalse(friction_report(self.data)["unfed"])
+
+    def test_an_absent_audit_log_with_a_registry_is_unfed_too(self):
+        """Never called and no log at all are the same fact."""
+        self.registry()
+        self.assertTrue(friction_report(self.data)["unfed"])
+
+    def test_starvation_outranks_a_clean_scan(self):
+        """`clean` from a corpus nothing is feeding is the defect itself."""
+        self.registry()
+        self.a_quiet_task()
+        self.assertNotIn("clean", friction_report(self.data)["verdict"])
+
+    def test_a_malformed_registry_makes_no_claim_either(self):
+        path = self.registry()
+        with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("{not json")
+        self.audit([self.invoke("kg_query")])
+        out = friction_report(self.data)
+        self.assertEqual(out["capabilities_never_used"], [])
+        self.assertFalse(out["unfed"])
+
+
 class NothingElseMoved(Case):
     """The signals that were already right must still be right."""
 

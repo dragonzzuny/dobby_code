@@ -50,6 +50,12 @@ from .textsig import signature
 #: project is caught. It is a parameter so a caller who disagrees can say so.
 STALE_AFTER_DAYS = 14
 
+#: The two gateway capabilities that write the improvement loop's OWN input.
+#: Everything else a capability does is work; these two are the work being
+#: recorded. If neither has ever been called, the loop is not quiet -- it is
+#: unfed, and every downstream report is a report about nothing.
+EVIDENCE_CAPABILITIES = ("record_evidence", "handoff")
+
 
 def _events(path: str) -> list[dict]:
     out = []
@@ -75,6 +81,30 @@ def _days_between(older: str, newer: str) -> int | None:
     return (b - a).days
 
 
+def _registered_capabilities(data_dir: str) -> list[str]:
+    """Every capability the gateway offers, or none if there is no registry.
+
+    Read so the report can say which ones have never been called. A registry
+    that cannot be read yields an empty list and therefore no claim -- an
+    unreadable registry is not evidence that nothing is registered.
+    """
+    path = os.path.join(data_dir, "registry", "capabilities.json")
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except ValueError:
+        return []
+    items = data.get("capabilities", data) if isinstance(data, dict) else data
+    if isinstance(items, dict):
+        items = list(items.values())
+    if not isinstance(items, list):
+        return []
+    return sorted({c["id"] for c in items
+                   if isinstance(c, dict) and c.get("id")})
+
+
 def _audit_signals(data_dir: str) -> dict:
     """What the gateway's own log says about capability calls.
 
@@ -84,8 +114,12 @@ def _audit_signals(data_dir: str) -> dict:
     """
     path = os.path.join(data_dir, "state", "audit.jsonl")
     out = {"audit_entries": 0, "audit_window": {}, "audited_outcomes": 0,
-           "capability_failures": [], "capabilities_used": {}}
+           "capability_failures": [], "capabilities_used": {},
+           "capabilities_never_used": [], "unfed": False}
+    registered = _registered_capabilities(data_dir)
     if not os.path.exists(path):
+        out["capabilities_never_used"] = registered
+        out["unfed"] = any(c in registered for c in EVIDENCE_CAPABILITIES)
         return out
     rows = []
     with open(path, encoding="utf-8") as fh:
@@ -97,6 +131,8 @@ def _audit_signals(data_dir: str) -> dict:
             except ValueError:
                 continue           # a torn last line is not a finding
     if not rows:
+        out["capabilities_never_used"] = registered
+        out["unfed"] = any(c in registered for c in EVIDENCE_CAPABILITIES)
         return out
     stamps = sorted(s for s in (_stamp(r) for r in rows) if s)
     out["audit_entries"] = len(rows)
@@ -105,6 +141,12 @@ def _audit_signals(data_dir: str) -> dict:
     out["capabilities_used"] = dict(
         Counter(r.get("id") for r in rows
                 if r.get("kind") == "invoke" and r.get("id")))
+    out["capabilities_never_used"] = [c for c in registered
+                                      if c not in out["capabilities_used"]]
+    out["unfed"] = all(c not in out["capabilities_used"]
+                       for c in EVIDENCE_CAPABILITIES
+                       if c in registered) and bool(
+        [c for c in EVIDENCE_CAPABILITIES if c in registered])
 
     results = [r for r in rows if r.get("kind") == "result"]
     out["audited_outcomes"] = len(results)
@@ -205,6 +247,13 @@ def _verdict(report: dict) -> str:
     also clean, because "clean" about a corpus that stopped growing is a claim
     about the past wearing the tense of the present.
     """
+    if report.get("unfed"):
+        never = ", ".join(c for c in EVIDENCE_CAPABILITIES
+                          if c in report.get("capabilities_never_used", []))
+        return (f"UNFED: {never} has never been called, so this report is "
+                f"about whatever was recorded before that stopped "
+                f"({report['tasks_scanned']} task(s)) and not about the work "
+                f"being done now")
     if not report["tasks_scanned"]:
         if report.get("capability_failures"):
             return ("no trajectories yet, but the gateway log records "
